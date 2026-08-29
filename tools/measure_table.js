@@ -11,6 +11,7 @@
 
 'use strict';
 const { ChartEngine, TfPackEngine } = require('./engine.js');
+const { TfPackV2 } = require('./tfpack_v2.js');
 
 function mulberry32(a) {
   return function () {
@@ -71,6 +72,31 @@ console.log(`   INTERNAL column wrong: ${disInt} (${pc(disInt)})`);
 console.log(`   INNER    column wrong: ${disInner} (${pc(disInner)})`);
 console.log(`   at least one wrong:    ${anyDis} (${pc(anyDis)})`);
 examples.forEach(e => console.log(e));
+
+// ── A2. the SAME comparison against the REBUILT f_tfPack (v15.16) ───────────
+for (const alt of [false, true]) {
+  let dT = 0, dI = 0, dN = 0, any = 0, tot = 0;
+  const ex = [];
+  for (let s = 1; s <= RUNS; s++) {
+    const bars = series(s, N);
+    const ce = new ChartEngine({ altMode: alt });
+    const te = new TfPackV2({ altMode: alt });
+    for (const b of bars) { ce.step(b); te.step(b); }
+    const c = ce.readout(), t = te.readout();
+    tot++;
+    if (c[0] !== t[0]) dT++;
+    if (c[1] !== t[1]) dI++;
+    if (c[2] !== t[2]) dN++;
+    if (c[0] !== t[0] || c[1] !== t[1] || c[2] !== t[2]) {
+      any++;
+      if (ex.length < 3) ex.push(`    seed ${s}: chart [${c}]  table [${t}]`);
+    }
+  }
+  console.log(`\nA2. REBUILT f_tfPack vs chart engine, identical bars, altMode ${alt ? 'ON ' : 'OFF'}`);
+  console.log(`   TREND ${dT}   INTERNAL ${dI}   INNER ${dN}   any ${any}/${tot}` +
+              (any ? '' : '   -- exact agreement'));
+  ex.forEach(e => console.log(e));
+}
 
 // ── B. data window, identical rules ──────────────────────────────────────────
 // The same chart engine, run over the full series vs over only the last W bars,

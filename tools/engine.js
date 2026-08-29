@@ -278,9 +278,10 @@ class ChartEngine {
         if (bar.h > s.price) {
           if (s.swpP === null || bar.h > s.swpP) { s.swpP = bar.h; s.swpB = bar.i; }
           if (this.altMode && !s.idmHit && s.idmP !== null && bar.c > s.price && s.swpP !== null) {
-            // ALT-mode migration — NOTE: anchor moves to the sweep bar (see README finding 1)
-            const mpC = s.swpP, mbC = s.swpB, mdC = s.sid;
-            this.ceilS = this.mkSLine(mpC, mbC, mdC);
+            // ALT-mode migration, as patched in v15.16: the scope anchor stays
+            // latched on the pivot; only the DRAW bar moves to the sweep.
+            const mpC = s.swpP, mbC = s.x1, mdC = s.sid, maC = s.swpB;
+            this.ceilS = this.mkSLine(mpC, mbC, mdC, maC);
             this.armIdm(this.ceilS);
           }
         }
@@ -317,8 +318,8 @@ class ChartEngine {
         if (bar.l < s.price) {
           if (s.swpP === null || bar.l < s.swpP) { s.swpP = bar.l; s.swpB = bar.i; }
           if (this.altMode && !s.idmHit && s.idmP !== null && bar.c < s.price && s.swpP !== null) {
-            const mpF = s.swpP, mbF = s.swpB, mdF = s.sid;
-            this.florS = this.mkSLine(mpF, mbF, mdF);
+            const mpF = s.swpP, mbF = s.x1, mdF = s.sid, maF = s.swpB;
+            this.florS = this.mkSLine(mpF, mbF, mdF, maF);
             this.armIdm(this.florS);
           }
         }

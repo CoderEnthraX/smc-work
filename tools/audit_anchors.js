@@ -77,6 +77,29 @@ for (let s = 1; s <= RUNS; s++) {
   }
 }
 
+// ---- after P1/P2: the DRAW bar is what the line starts from. Every mark must
+// ---- now begin on a bar that actually traded the marked price.
+{
+  let n = 0, bad = 0;
+  const badBy = {};
+  for (let s = 1; s <= RUNS; s++) {
+    const bars = series(s, N);
+    const e = new ChartEngine();
+    for (const b of bars) e.step(b);
+    for (const m of e.marks) {
+      n++;
+      const isCeil = m.dir === 'up';
+      const db = m.priceBar;
+      const dbBar = db !== undefined && db !== null ? bars[db] : null;
+      const ok = dbBar && (isCeil ? dbBar.h === m.price : dbBar.l === m.price);
+      if (!ok) { bad++; const k = m.tier + ' ' + m.kind; badBy[k] = (badBy[k] || 0) + 1; }
+    }
+  }
+  console.log(`AFTER THE FIX - marks whose DRAW bar lacks the marked price: ${bad}/${n}` +
+              (bad ? '  ' + JSON.stringify(badBy) : '  (none)'));
+  console.log();
+}
+
 console.log(`marks audited: ${totalMarks} over ${RUNS} series x ${N} bars\n`);
 console.log('  tier / kind          count   anchor bar lacks the marked price   anchor not before break');
 for (const k of Object.keys(stats).sort()) {

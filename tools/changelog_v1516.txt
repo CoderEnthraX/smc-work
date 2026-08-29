@@ -1,0 +1,111 @@
+//  THREE REPORTED PROBLEMS, ALL THREE DIAGNOSED IN A NODE PORT FIRST.
+//
+//  1. THE MTF TABLE CONTRADICTED THE CHART, AND THE ROW CHANGED WITH THE
+//     CHART'S OWN TIMEFRAME.
+//     REPORTED on USDCAD: the 1M row read INTERNAL bullish from a 1M chart,
+//     bearish from a 1D chart and bullish-but-with-a-bearish-TREND from 1h.
+//     The 1M reading taken ON the 1M chart was the correct one.
+//     TWO INDEPENDENT CAUSES, separated by measurement.
+//     (a) RULE DRIFT. f_tfPack - the function each of the 18 request.security
+//         calls runs - was a SECOND, OLDER implementation of the three
+//         engines. It had drifted five versions behind the chart:
+//           - an equal-price pivot still took the level (v15.5 removed that)
+//           - no sweep guard on the chart-start adopt (v15.1)
+//           - the level was anchored on the CONFIRMATION bar, not the pivot bar
+//           - the opposite side re-anchored to a running extreme instead of
+//             f_retExtInc from the pivot (v15.14)
+//           - no pivot-2 promotion at all (v15.14 / v15.15)
+//           - no IDM gate and no 'Internal pivot strength' filter
+//         The chart's own row reads the real engine and every other row read
+//         that older one, so the two could not help but disagree. Measured
+//         over 400 randomised series: they gave a different reading in 1.5%.
+//     (b) DATA WINDOW. request.security on a higher timeframe sees only as
+//         much history of that timeframe as the chart has loaded, and the
+//         engine's opening range is anchored on the extreme of whatever window
+//         it is given. The SAME engine over a short window disagrees with
+//         itself: 65% at 40 bars, 35% at 80, 17% at 150, 2.5% at 300. THIS IS
+//         THE DOMINANT CAUSE and no rule change can remove it - the data is
+//         not there to remove it with.
+//     THE FIX, both halves.
+//     (a) f_tfPack is rebuilt as a faithful transcription of the v15.15 chart
+//         engine: same Module 1, same alternating stream, same adopt guards,
+//         same sweep and pivot-2 promotion, same f_retExtInc re-anchor, same
+//         IDM and pivot-strength tests. It runs on FUNCTION-LOCAL price
+//         buffers, which is what makes this legal inside request.security -
+//         invariant 6 forbids reading the chart's global buffers there. Five
+//         new helpers (f_retExtB, rearmB, f_isSwingB, f_lastMinorB,
+//         f_armIdmB) take the buffers as arguments so the rules exist once.
+//         MEASURED: over 400 series the rebuilt table engine and the chart
+//         engine now agree EXACTLY - 0 disagreements on all three columns,
+//         with the ALTERNATE rule both off and on.
+//     (b) A WARM-UP GATE, one new input. The engine forgets where it started
+//         once enough events have gone by: measured against full-history
+//         truth, agreement is 63% after one confirmed main event, 91% after
+//         four, 98% after seven and effectively exact by eleven. So each
+//         timeframe now reports its own confirmed-event count, and until it
+//         reaches the threshold its row reads no trend rather than a
+//         confident wrong one. Default 6. Set it to 0 for the old raw
+//         behaviour. The chart's own row is never gated.
+//     IDM is computed in the per-timeframe engine only while the ALTERNATE
+//     rule is on. With it off, idmP stays na, every break gate is satisfied by
+//     na(idmP), and IDM cannot reach the trend - so this costs nothing and
+//     changes nothing. It is a deliberate saving, because 18 timeframes each
+//     now run a full three-engine simulation.
+//     IF YOU EVER SEE 'Stopped - Calculation error' ON AN ALERT, untick some
+//     timeframes in group 8. Each ticked timeframe is one more simulation.
+//
+//  2. nBOS / nCHOCH COULD NOT BE SELECTED IN THE ALERT DIALOG.
+//     REPORTED from the Create-alert dropdown: iBOS, iCHOCH, 'Any internal
+//     structure event' and the three retracement entries were all there, and
+//     nothing for the inner tier.
+//     THE CAUSE: the inner events had alert() calls but no alertcondition()
+//     entries, and it is alertcondition that populates that dropdown. There
+//     were 21 conditions and not one of them inner.
+//     THE FIX: seven appended - Bullish nBOS, Bearish nBOS, Bullish nCHOCH,
+//     Bearish nCHOCH, Any nBOS, Any nCHOCH, Any inner structure event. They
+//     obey the arming gate exactly like every other condition. No input is
+//     added; the existing inner alert checkboxes in group 0 already control
+//     the alert() path and are untouched.
+//
+//  3. MARKS WERE DRAWN AT A PRICE THEIR OWN ANCHOR CANDLE NEVER TRADED.
+//     AUDITED, not guessed: 19,748 marks over 2,000 randomised series were
+//     checked against the rule that a mark's line must start on a bar that
+//     actually traded the marked price. 604 failed - 5.7% of BOS, 6.7% of
+//     iBOS, 6.9% of nBOS, and never a single CHOCH.
+//     THE CAUSE, and all 604 are the same thing: the pivot-2 promotion.
+//     v15.15 fixed a real bug by making the promotion keep the ORIGINAL anchor
+//     while taking the swept wick as the price - the anchor is what the later
+//     f_retExtInc scan measures from, so moving it forward produced a shallow
+//     opposite level. That fix is right and stands. But x1 was doing two jobs:
+//     the latched SCOPE of the range, and the bar the line is DRAWN from. So
+//     the line correctly kept its scope and was then drawn from a candle that
+//     predates the wick it sits at, with its left end hanging in open space.
+//     THE FIX: the two jobs are separated. SLine gains a drawB field; x1 stays
+//     the latched scope anchor and is never touched, and drawB is what the
+//     line and its label are drawn from. On a promotion drawB becomes the
+//     SWEEP bar - the candle that actually made that price. The internal and
+//     inner tiers get the same treatment, which is why iCeilSwpB, iFlorSwpB,
+//     nCeilSwpB and nFlorSwpB are back: they went write-only when v15.15
+//     stopped anchoring on the sweep, and drawing from it needs them again.
+//     MEASURED: the same 19,748 marks, 0 now start on a bar that never traded
+//     the price. Not one level, range, break, event or alert changes - this
+//     moves where a line begins, nothing else.
+//     ALSO FIXED HERE, same class, found by inspection: the ALTERNATE-rule
+//     sweep migration still moved x1 onto the sweep bar, which is exactly the
+//     fault v15.5 fixed for the equal-price retest and v15.15 fixed for the
+//     promotion. It now keeps the latched anchor and draws from the sweep.
+//     This one DOES change behaviour, but only while the ALTERNATE rule is on,
+//     and only by restoring invariant 2.
+//
+//  INVARIANT 4, restored to its v15.15 wording. The optimised header had
+//  shortened it to 'never adopt or seed a level price has already closed
+//  beyond', which contradicts the code it ships with: v15.14 deliberately
+//  reversed it for the pivot-2 promotion, which takes a bare swept wick.
+//
+//  ONE INPUT IS ADDED and it is APPENDED (invariant 5), so all existing
+//  inputs keep their declaration positions, saved settings carry over and no
+//  settings reset is needed. The table render block is deferred to the end of
+//  the file so it can read that appended input - the v14.0 pattern; it is a
+//  pure move, verified by a position-independent diff.
+//  EXISTING ALERTS MUST BE DELETED AND RECREATED to see any of this: an alert
+//  runs its own frozen copy of the code and settings from when it was made.

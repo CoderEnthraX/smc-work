@@ -1,0 +1,647 @@
+f_tfPack(bool on) =>
+    int trOut = 0
+    int evOut = 0
+    int inOut = 0
+    int nnOut = 0
+    int mcOut = 0
+    if on
+        var array<float> _bH = array.new_float()
+        var array<float> _bL = array.new_float()
+        var array<int>   _bD = array.new_int()
+        var array<int>   _msLoB = array.new_int()
+        var array<float> _msLoP = array.new_float()
+        var array<int>   _msHiB = array.new_int()
+        var array<float> _msHiP = array.new_float()
+        var array<float> qHiP = array.new_float()
+        var array<int>   qHiB = array.new_int()
+        var array<float> qLoP = array.new_float()
+        var array<int>   qLoB = array.new_int()
+        var SwingTracker tkHi = SwingTracker.new(true,  na, na, 0, na)
+        var SwingTracker tkLo = SwingTracker.new(false, na, na, 0, na)
+        var SwingTracker tkAH = SwingTracker.new(true,  na, na, 0, na)
+        var SwingTracker tkAL = SwingTracker.new(false, na, na, 0, na)
+        var bool  hntH   = true
+        var bool  hntL   = true
+        var float lHiP   = na
+        var float lLoP   = na
+        var float tAllHi = na
+        var float tAllLo = na
+        var int   tTrend = 0
+        var int   mCount = 0
+        var float tCeP   = na
+        var int   tCeX   = na
+        var int   tCeBorn = na
+        var float tCeSwp = na
+        var int   tCeSwpB = na
+        var float tCeRef = na
+        var float tCeIdmP = na
+        var bool  tCeIdmHit = false
+        var float tFlP   = na
+        var int   tFlX   = na
+        var int   tFlBorn = na
+        var float tFlSwp = na
+        var int   tFlSwpB = na
+        var float tFlRef = na
+        var float tFlIdmP = na
+        var bool  tFlIdmHit = false
+        var int   iTr    = 0
+        var int   iAncB  = na
+        var float iCeP   = na
+        var int   iCeB   = na
+        var int   iCeBorn = na
+        var float iCeSwp = na
+        var float iCeRef = na
+        var float iCeIdmP = na
+        var bool  iCeIdmHit = false
+        var float iFlP   = na
+        var int   iFlB   = na
+        var int   iFlBorn = na
+        var float iFlSwp = na
+        var float iFlRef = na
+        var float iFlIdmP = na
+        var bool  iFlIdmHit = false
+        var int   nTr    = 0
+        var int   nAncB  = na
+        var float nCeP   = na
+        var int   nCeB   = na
+        var int   nCeBorn = na
+        var float nCeSwp = na
+        var float nCeRef = na
+        var float nCeIdmP = na
+        var bool  nCeIdmHit = false
+        var float nFlP   = na
+        var int   nFlB   = na
+        var int   nFlBorn = na
+        var float nFlSwp = na
+        var float nFlRef = na
+        var float nFlIdmP = na
+        var bool  nFlIdmHit = false
+
+        array.push(_bH, high)
+        array.push(_bL, low)
+        array.push(_bD, close > open ? 1 : close < open ? -1 : 0)
+        int _sz = array.size(_bH)
+        if _sz > 2100
+            _bH := array.copy(array.slice(_bH, _sz - 2000, _sz))
+            _bL := array.copy(array.slice(_bL, _sz - 2000, _sz))
+            _bD := array.copy(array.slice(_bD, _sz - 2000, _sz))
+        tAllHi := na(tAllHi) ? high : math.max(tAllHi, high)
+        tAllLo := na(tAllLo) ? low  : math.min(tAllLo, low)
+
+        if bar_index >= 2
+            if low[1] < low[2] and low[1] < low
+                array.push(_msLoB, bar_index - 1)
+                array.push(_msLoP, low[1])
+                if array.size(_msLoB) > 200
+                    array.shift(_msLoB)
+                    array.shift(_msLoP)
+            if high[1] > high[2] and high[1] > high
+                array.push(_msHiB, bar_index - 1)
+                array.push(_msHiP, high[1])
+                if array.size(_msHiB) > 200
+                    array.shift(_msHiB)
+                    array.shift(_msHiP)
+
+        [phP, phB] = tkHi.update()
+        [plP, plB] = tkLo.update()
+
+        float aPhP = na
+        int   aPhB = na
+        float aPlP = na
+        int   aPlB = na
+        if hntH
+            [_ph, _phb] = tkAH.update()
+            aPhP := _ph
+            aPhB := _phb
+        if hntL
+            [_pl, _plb] = tkAL.update()
+            aPlP := _pl
+            aPlB := _plb
+        if not na(aPhP)
+            hntH := false
+            hntL := true
+            lHiP := aPhP
+            [_rlp, _rlb] = f_retExtB(_bH, _bL, aPhB, false, false)
+            bool _useNow = na(_rlp) or low <= _rlp
+            tkAL.rearmB(_useNow ? low : _rlp, _useNow ? bar_index : _rlb, _bH, _bL, _bD)
+        if not na(aPlP)
+            hntL := false
+            hntH := true
+            lLoP := aPlP
+            [_rhp, _rhb] = f_retExtB(_bH, _bL, aPlB, true, false)
+            bool _useNowH = na(_rhp) or high >= _rhp
+            tkAH.rearmB(_useNowH ? high : _rhp, _useNowH ? bar_index : _rhb, _bH, _bL, _bD)
+        if not hntH and not na(lHiP) and high >= lHiP
+            hntH := true
+            hntL := false
+            tkAH.armHere()
+        else if not hntL and not na(lLoP) and low <= lLoP
+            hntL := true
+            hntH := false
+            tkAL.armHere()
+
+        if not na(aPhP)
+            array.push(qHiP, aPhP)
+            array.push(qHiB, aPhB)
+            if array.size(qHiB) > 300
+                array.shift(qHiP)
+                array.shift(qHiB)
+        if not na(aPlP)
+            array.push(qLoP, aPlP)
+            array.push(qLoB, aPlB)
+            if array.size(qLoB) > 300
+                array.shift(qLoP)
+                array.shift(qLoB)
+
+        if not na(phP)
+            bool _cSwept = not na(tCeSwp)
+            bool _cEq    = not na(tCeP) and phP == tCeP
+            bool adoptC  = tTrend == 0 ? (phP >= tAllHi and not _cSwept and not _cEq) : na(tCeP)
+            if adoptC
+                tCeP    := phP
+                tCeX    := phB
+                tCeBorn := bar_index
+                tCeSwp  := na
+                tCeSwpB := na
+                tCeRef  := na
+                if altMode
+                    [_ip, _ih] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, phB, true)
+                    tCeIdmP   := _ip
+                    tCeIdmHit := _ih
+        if not na(plP)
+            bool _fSwept = not na(tFlSwp)
+            bool _fEq    = not na(tFlP) and plP == tFlP
+            bool adoptF  = tTrend == 0 ? (plP <= tAllLo and not _fSwept and not _fEq) : na(tFlP)
+            if adoptF
+                tFlP    := plP
+                tFlX    := plB
+                tFlBorn := bar_index
+                tFlSwp  := na
+                tFlSwpB := na
+                tFlRef  := na
+                if altMode
+                    [_jp, _jh] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, plB, false)
+                    tFlIdmP   := _jp
+                    tFlIdmHit := _jh
+
+        if not na(tCeP) and not tCeIdmHit and not na(tCeIdmP) and low < tCeIdmP
+            tCeIdmHit := true
+        if not na(tFlP) and not tFlIdmHit and not na(tFlIdmP) and high > tFlIdmP
+            tFlIdmHit := true
+
+        bool mEvt = false
+        if not na(tCeP) and not na(tCeBorn) and bar_index > tCeBorn
+            if close > tCeP and (tTrend == -1 or not altMode or tCeIdmHit or na(tCeIdmP))
+                mEvt := true
+                [_rpC, _rbC] = f_retExtB(_bH, _bL, tCeX, false, true)
+                if not na(_rpC)
+                    tFlP    := _rpC
+                    tFlX    := _rbC
+                    tFlBorn := bar_index
+                    tFlSwp  := na
+                    tFlSwpB := na
+                    tFlRef  := na
+                    if altMode
+                        [_kp, _kh] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, _rbC, false)
+                        tFlIdmP   := _kp
+                        tFlIdmHit := _kh
+                tTrend  := 1
+                tCeP    := na
+                tCeX    := na
+                tCeBorn := na
+                tCeSwp  := na
+                tCeSwpB := na
+                tCeRef  := na
+                tCeIdmP   := na
+                tCeIdmHit := false
+            else
+                if high > tCeP
+                    if na(tCeSwp) or high > tCeSwp
+                        tCeSwp  := high
+                        tCeSwpB := bar_index
+                    if altMode and not tCeIdmHit and not na(tCeIdmP) and close > tCeP and not na(tCeSwp)
+                        tCeP    := tCeSwp
+                        tCeBorn := bar_index
+                        tCeSwp  := na
+                        tCeSwpB := na
+                        tCeRef  := na
+                        [_e2p, _e2h] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, tCeX, true)
+                        tCeIdmP   := _e2p
+                        tCeIdmHit := _e2h
+                if not na(tCeSwp) and na(tCeRef)
+                    [_refPc, _refBc] = f_retExtB(_bH, _bL, tCeX, false, false)
+                    tCeRef := _refPc
+                if tTrend == 1 and not na(tCeSwp) and not na(tCeRef) and low < tCeRef
+                    tCeP    := tCeSwp
+                    tCeBorn := bar_index
+                    tCeSwp  := na
+                    tCeSwpB := na
+                    tCeRef  := na
+                    if altMode
+                        [_lp, _lh] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, tCeX, true)
+                        tCeIdmP   := _lp
+                        tCeIdmHit := _lh
+
+        if not na(tFlP) and not na(tFlBorn) and bar_index > tFlBorn
+            if close < tFlP and (tTrend == 1 or not altMode or tFlIdmHit or na(tFlIdmP))
+                mEvt := true
+                [_rpF, _rbF] = f_retExtB(_bH, _bL, tFlX, true, true)
+                if not na(_rpF)
+                    tCeP    := _rpF
+                    tCeX    := _rbF
+                    tCeBorn := bar_index
+                    tCeSwp  := na
+                    tCeSwpB := na
+                    tCeRef  := na
+                    if altMode
+                        [_mp, _mh] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, _rbF, true)
+                        tCeIdmP   := _mp
+                        tCeIdmHit := _mh
+                tTrend  := -1
+                tFlP    := na
+                tFlX    := na
+                tFlBorn := na
+                tFlSwp  := na
+                tFlSwpB := na
+                tFlRef  := na
+                tFlIdmP   := na
+                tFlIdmHit := false
+            else
+                if low < tFlP
+                    if na(tFlSwp) or low < tFlSwp
+                        tFlSwp  := low
+                        tFlSwpB := bar_index
+                    if altMode and not tFlIdmHit and not na(tFlIdmP) and close < tFlP and not na(tFlSwp)
+                        tFlP    := tFlSwp
+                        tFlBorn := bar_index
+                        tFlSwp  := na
+                        tFlSwpB := na
+                        tFlRef  := na
+                        [_f2p, _f2h] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, tFlX, false)
+                        tFlIdmP   := _f2p
+                        tFlIdmHit := _f2h
+                if not na(tFlSwp) and na(tFlRef)
+                    [_refPf, _refBf] = f_retExtB(_bH, _bL, tFlX, true, false)
+                    tFlRef := _refPf
+                if tTrend == -1 and not na(tFlSwp) and not na(tFlRef) and high > tFlRef
+                    tFlP    := tFlSwp
+                    tFlBorn := bar_index
+                    tFlSwp  := na
+                    tFlSwpB := na
+                    tFlRef  := na
+                    if altMode
+                        [_np, _nh] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, tFlX, false)
+                        tFlIdmP   := _np
+                        tFlIdmHit := _nh
+
+        if mEvt
+            mCount += 1
+        trOut := tTrend
+        mcOut := mCount
+
+        int iAnchor = na
+        if tTrend == 1
+            if not na(tCeX)
+                iAnchor := tCeX
+        else if tTrend == -1
+            if not na(tFlX)
+                iAnchor := tFlX
+        if mEvt
+            iTr    := 0
+            iAncB  := na
+            iCeP   := na
+            iCeB   := na
+            iCeBorn := na
+            iCeSwp := na
+            iCeRef := na
+            iCeIdmP   := na
+            iCeIdmHit := false
+            iFlP   := na
+            iFlB   := na
+            iFlBorn := na
+            iFlSwp := na
+            iFlRef := na
+            iFlIdmP   := na
+            iFlIdmHit := false
+        if na(iAncB) and not na(iAnchor)
+            iAncB := iAnchor
+            if na(iCeP) and array.size(qHiB) > 0
+                for _s = 0 to array.size(qHiB) - 1
+                    int _sb = array.get(qHiB, _s)
+                    if _sb > iAncB and close < array.get(qHiP, _s) and (inPivK <= 1 or f_isSwingB(_bH, _bL, _sb, true, inPivK))
+                        iCeP    := array.get(qHiP, _s)
+                        iCeB    := _sb
+                        iCeBorn := bar_index
+                        if altMode
+                            [_op, _oh] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, _sb, true)
+                            iCeIdmP   := _op
+                            iCeIdmHit := _oh
+                        break
+            if na(iFlP) and array.size(qLoB) > 0
+                for _s = 0 to array.size(qLoB) - 1
+                    int _sb = array.get(qLoB, _s)
+                    if _sb > iAncB and close > array.get(qLoP, _s) and (inPivK <= 1 or f_isSwingB(_bH, _bL, _sb, false, inPivK))
+                        iFlP    := array.get(qLoP, _s)
+                        iFlB    := _sb
+                        iFlBorn := bar_index
+                        if altMode
+                            [_pp, _ph2] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, _sb, false)
+                            iFlIdmP   := _pp
+                            iFlIdmHit := _ph2
+                        break
+
+        bool iEvt = false
+        if not mEvt and not na(iAncB)
+            if not na(aPhP) and aPhB > iAncB and close < aPhP and (inPivK <= 1 or f_isSwingB(_bH, _bL, aPhB, true, inPivK))
+                if na(iCeP)
+                    iCeP    := aPhP
+                    iCeB    := aPhB
+                    iCeBorn := bar_index
+                    iCeSwp  := na
+                    iCeRef  := na
+                    if altMode
+                        [_qp, _qh] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, aPhB, true)
+                        iCeIdmP   := _qp
+                        iCeIdmHit := _qh
+            if not na(aPlP) and aPlB > iAncB and close > aPlP and (inPivK <= 1 or f_isSwingB(_bH, _bL, aPlB, false, inPivK))
+                if na(iFlP)
+                    iFlP    := aPlP
+                    iFlB    := aPlB
+                    iFlBorn := bar_index
+                    iFlSwp  := na
+                    iFlRef  := na
+                    if altMode
+                        [_rp, _rh] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, aPlB, false)
+                        iFlIdmP   := _rp
+                        iFlIdmHit := _rh
+
+            if not na(iCeP) and not iCeIdmHit and not na(iCeIdmP) and low < iCeIdmP
+                iCeIdmHit := true
+            if not na(iFlP) and not iFlIdmHit and not na(iFlIdmP) and high > iFlIdmP
+                iFlIdmHit := true
+
+            if not na(iCeP) and not na(iCeBorn) and bar_index > iCeBorn
+                if close > iCeP
+                    iEvt := true
+                    [_iRpU, _iRbU] = f_retExtB(_bH, _bL, iCeB, false, true)
+                    if not na(_iRpU)
+                        iFlP    := _iRpU
+                        iFlB    := _iRbU
+                        iFlBorn := bar_index
+                        iFlSwp  := na
+                        iFlRef  := na
+                        if altMode
+                            [_sp, _sh] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, _iRbU, false)
+                            iFlIdmP   := _sp
+                            iFlIdmHit := _sh
+                    iTr     := 1
+                    iCeP    := na
+                    iCeB    := na
+                    iCeBorn := na
+                    iCeSwp  := na
+                    iCeRef  := na
+                    iCeIdmP   := na
+                    iCeIdmHit := false
+                else
+                    if high > iCeP
+                        if na(iCeRef)
+                            [_iRefPu, _iRefBu] = f_retExtB(_bH, _bL, iCeB, false, false)
+                            iCeRef := _iRefPu
+                        if na(iCeSwp) or high > iCeSwp
+                            iCeSwp := high
+                    if iTr == 1 and not na(iCeSwp) and not na(iCeRef) and low < iCeRef
+                        iCeP    := iCeSwp
+                        iCeBorn := bar_index
+                        iCeSwp  := na
+                        iCeRef  := na
+                        if altMode
+                            [_tp, _th2] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, iCeB, true)
+                            iCeIdmP   := _tp
+                            iCeIdmHit := _th2
+
+            if not na(iFlP) and not na(iFlBorn) and bar_index > iFlBorn
+                if close < iFlP
+                    iEvt := true
+                    [_iRpD, _iRbD] = f_retExtB(_bH, _bL, iFlB, true, true)
+                    if not na(_iRpD)
+                        iCeP    := _iRpD
+                        iCeB    := _iRbD
+                        iCeBorn := bar_index
+                        iCeSwp  := na
+                        iCeRef  := na
+                        if altMode
+                            [_up, _uh] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, _iRbD, true)
+                            iCeIdmP   := _up
+                            iCeIdmHit := _uh
+                    iTr     := -1
+                    iFlP    := na
+                    iFlB    := na
+                    iFlBorn := na
+                    iFlSwp  := na
+                    iFlRef  := na
+                    iFlIdmP   := na
+                    iFlIdmHit := false
+                else
+                    if low < iFlP
+                        if na(iFlRef)
+                            [_iRefPd, _iRefBd] = f_retExtB(_bH, _bL, iFlB, true, false)
+                            iFlRef := _iRefPd
+                        if na(iFlSwp) or low < iFlSwp
+                            iFlSwp := low
+                    if iTr == -1 and not na(iFlSwp) and not na(iFlRef) and high > iFlRef
+                        iFlP    := iFlSwp
+                        iFlBorn := bar_index
+                        iFlSwp  := na
+                        iFlRef  := na
+                        if altMode
+                            [_vp, _vh] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, iFlB, false)
+                            iFlIdmP   := _vp
+                            iFlIdmHit := _vh
+        inOut := iTr
+
+        int nAnchor = na
+        if iTr == 1
+            if not na(iCeB)
+                nAnchor := iCeB
+        else if iTr == -1
+            if not na(iFlB)
+                nAnchor := iFlB
+        if mEvt or iEvt
+            nTr    := 0
+            nAncB  := na
+            nCeP   := na
+            nCeB   := na
+            nCeBorn := na
+            nCeSwp := na
+            nCeRef := na
+            nCeIdmP   := na
+            nCeIdmHit := false
+            nFlP   := na
+            nFlB   := na
+            nFlBorn := na
+            nFlSwp := na
+            nFlRef := na
+            nFlIdmP   := na
+            nFlIdmHit := false
+        if na(nAncB) and not na(nAnchor)
+            nAncB := nAnchor
+            if na(nCeP) and array.size(qHiB) > 0
+                for _n = 0 to array.size(qHiB) - 1
+                    int _nb = array.get(qHiB, _n)
+                    if _nb > nAncB and close < array.get(qHiP, _n) and (inPivK <= 1 or f_isSwingB(_bH, _bL, _nb, true, inPivK))
+                        nCeP    := array.get(qHiP, _n)
+                        nCeB    := _nb
+                        nCeBorn := bar_index
+                        if altMode
+                            [_wp, _wh] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, _nb, true)
+                            nCeIdmP   := _wp
+                            nCeIdmHit := _wh
+                        break
+            if na(nFlP) and array.size(qLoB) > 0
+                for _n = 0 to array.size(qLoB) - 1
+                    int _nb = array.get(qLoB, _n)
+                    if _nb > nAncB and close > array.get(qLoP, _n) and (inPivK <= 1 or f_isSwingB(_bH, _bL, _nb, false, inPivK))
+                        nFlP    := array.get(qLoP, _n)
+                        nFlB    := _nb
+                        nFlBorn := bar_index
+                        if altMode
+                            [_xp, _xh] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, _nb, false)
+                            nFlIdmP   := _xp
+                            nFlIdmHit := _xh
+                        break
+
+        if not mEvt and not iEvt and not na(nAncB)
+            if not na(aPhP) and aPhB > nAncB and close < aPhP and (inPivK <= 1 or f_isSwingB(_bH, _bL, aPhB, true, inPivK))
+                if na(nCeP)
+                    nCeP    := aPhP
+                    nCeB    := aPhB
+                    nCeBorn := bar_index
+                    nCeSwp  := na
+                    nCeRef  := na
+                    if altMode
+                        [_yp, _yh] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, aPhB, true)
+                        nCeIdmP   := _yp
+                        nCeIdmHit := _yh
+            if not na(aPlP) and aPlB > nAncB and close > aPlP and (inPivK <= 1 or f_isSwingB(_bH, _bL, aPlB, false, inPivK))
+                if na(nFlP)
+                    nFlP    := aPlP
+                    nFlB    := aPlB
+                    nFlBorn := bar_index
+                    nFlSwp  := na
+                    nFlRef  := na
+                    if altMode
+                        [_zp, _zh] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, aPlB, false)
+                        nFlIdmP   := _zp
+                        nFlIdmHit := _zh
+
+            if not na(nCeP) and not nCeIdmHit and not na(nCeIdmP) and low < nCeIdmP
+                nCeIdmHit := true
+            if not na(nFlP) and not nFlIdmHit and not na(nFlIdmP) and high > nFlIdmP
+                nFlIdmHit := true
+
+            if not na(nCeP) and not na(nCeBorn) and bar_index > nCeBorn
+                if close > nCeP
+                    [_nRpU, _nRbU] = f_retExtB(_bH, _bL, nCeB, false, true)
+                    if not na(_nRpU)
+                        nFlP    := _nRpU
+                        nFlB    := _nRbU
+                        nFlBorn := bar_index
+                        nFlSwp  := na
+                        nFlRef  := na
+                        if altMode
+                            [_a2p, _a2h] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, _nRbU, false)
+                            nFlIdmP   := _a2p
+                            nFlIdmHit := _a2h
+                    nTr     := 1
+                    nCeP    := na
+                    nCeB    := na
+                    nCeBorn := na
+                    nCeSwp  := na
+                    nCeRef  := na
+                    nCeIdmP   := na
+                    nCeIdmHit := false
+                else
+                    if high > nCeP
+                        if na(nCeRef)
+                            [_nRefPu, _nRefBu] = f_retExtB(_bH, _bL, nCeB, false, false)
+                            nCeRef := _nRefPu
+                        if na(nCeSwp) or high > nCeSwp
+                            nCeSwp := high
+                    if nTr == 1 and not na(nCeSwp) and not na(nCeRef) and low < nCeRef
+                        nCeP    := nCeSwp
+                        nCeBorn := bar_index
+                        nCeSwp  := na
+                        nCeRef  := na
+                        if altMode
+                            [_b2p, _b2h] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, nCeB, true)
+                            nCeIdmP   := _b2p
+                            nCeIdmHit := _b2h
+
+            if not na(nFlP) and not na(nFlBorn) and bar_index > nFlBorn
+                if close < nFlP
+                    [_nRpD, _nRbD] = f_retExtB(_bH, _bL, nFlB, true, true)
+                    if not na(_nRpD)
+                        nCeP    := _nRpD
+                        nCeB    := _nRbD
+                        nCeBorn := bar_index
+                        nCeSwp  := na
+                        nCeRef  := na
+                        if altMode
+                            [_c2p, _c2h] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, _nRbD, true)
+                            nCeIdmP   := _c2p
+                            nCeIdmHit := _c2h
+                    nTr     := -1
+                    nFlP    := na
+                    nFlB    := na
+                    nFlBorn := na
+                    nFlSwp  := na
+                    nFlRef  := na
+                    nFlIdmP   := na
+                    nFlIdmHit := false
+                else
+                    if low < nFlP
+                        if na(nFlRef)
+                            [_nRefPd, _nRefBd] = f_retExtB(_bH, _bL, nFlB, true, false)
+                            nFlRef := _nRefPd
+                        if na(nFlSwp) or low < nFlSwp
+                            nFlSwp := low
+                    if nTr == -1 and not na(nFlSwp) and not na(nFlRef) and high > nFlRef
+                        nFlP    := nFlSwp
+                        nFlBorn := bar_index
+                        nFlSwp  := na
+                        nFlRef  := na
+                        if altMode
+                            [_d2p, _d2h] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, nFlB, false)
+                            nFlIdmP   := _d2p
+                            nFlIdmHit := _d2h
+        nnOut := nTr
+
+        bool swHi = high[1] > high[2] and close[1] < high[2]
+        bool swLo = low[1]  < low[2]  and close[1] > low[2]
+
+        var float fvgBT = na
+        var float fvgBB = na
+        var float fvgST = na
+        var float fvgSB = na
+        var bool  frBullPrev = false
+        var bool  frBearPrev = false
+        bool frBullNow = not na(fvgBT) and low  <= fvgBT and close > fvgBT
+        bool frBearNow = not na(fvgSB) and high >= fvgSB and close < fvgSB
+        bool frBull = frBullNow or frBullPrev
+        bool frBear = frBearNow or frBearPrev
+        frBullPrev := frBullNow
+        frBearPrev := frBearNow
+        if low > high[2]
+            fvgBB := high[2]
+            fvgBT := low
+        if high < low[2]
+            fvgST := low[2]
+            fvgSB := high
+        if not na(fvgBB) and close < fvgBB
+            fvgBT := na
+            fvgBB := na
+        if not na(fvgST) and close > fvgST
+            fvgST := na
+            fvgSB := na
+        evOut := (swHi ? 1 : 0) + (swLo ? 2 : 0) + (frBull ? 4 : 0) + (frBear ? 8 : 0)
+    [trOut, evOut, inOut, nnOut, mcOut]
