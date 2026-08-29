@@ -1,0 +1,2582 @@
+//@version=6
+// ═════════════════════════════════════════════════════════════════════════════
+//  SMC MARKET STRUCTURE — 3-CANDLE PULLBACK ENGINE + EMA  ·  v1.5
+//  Structure half of the toolkit. Companion: SMC Volume Profiles + VWAP.
+// ═════════════════════════════════════════════════════════════════════════════
+//  Built from Market_Structure_SMC v15.9 by removing every volume-profile and
+//  VWAP module and adding an EMA module. EVERY STRUCTURE RULE IS UNCHANGED: the
+//  engine block is byte-identical to v15.9.
+//
+//  v1.5  THE PIVOT-2 PROMOTION NO LONGER MOVES THE ANCHOR.
+//    Reported on BTCUSD 15m after v15.14: a main BOS and a main CHOCH printing
+//    on adjacent candles a few points apart.
+//    THE CAUSE, and it is v15.5 all over again. v15.14 promoted the level to
+//    the swept wick AND set the new line x1 to the SWEEP BAR:
+//        int sbC = ceilS.swpB
+//        ceilS := mkSLine(spC, sbC, sdC, drawOk)
+//    When that ceiling is later broken the opposite side re-anchors with
+//    f_retExtInc(ceilS.x1, false), which scans from x1 + 1. With x1 sitting on
+//    the sweep bar, the SWEEP CANDLE OWN LOW is outside the window — and so is
+//    everything between the original pivot and the sweep. refP never covered
+//    the sweep bar either, so nothing else compensates. The new floor comes out
+//    shallower than the leg really was, and the next candle closes straight
+//    back through it: BOS, then CHOCH, one bar apart.
+//    v15.5 fixed the identical fault for the equal-price retest and stated it
+//    plainly: move x1 forward and that window shrinks, so the floor lands on a
+//    shallow low inside the real leg. Invariant 2 says the same thing —
+//    re-creating the trend-side line inside a range must not re-scope it.
+//    THE FIX: the promotion takes the swept wick PRICE and keeps the ORIGINAL
+//    anchor bar, at all six sites. The rule you asked for in v15.14 is intact —
+//    the level still becomes the swept wick — only the scope is preserved.
+//    MEASURED over 83,239 randomised promotion-then-break sequences: the two
+//    give a different floor in 9,035 of them (10.9%), and the kept anchor is
+//    deeper or equal in every single one. It never raises a floor.
+//    Six lines. No input added, removed or moved; no settings reset needed.
+//
+//  v1.4  TWO RULE CHANGES, BOTH REQUESTED, BOTH IN ALL THREE ENGINES.
+//
+//  1. THE BREAK CANDLE NOW COUNTS TOWARDS THE OPPOSITE LEVEL.
+//     Reported on GBPCAD 4h: candles 1-4 formed the pullback that confirmed a
+//     swing high; candle 5 wicked BELOW candle 4 low, then closed above the
+//     ceiling and printed the iBOS. The new floor landed on candle 4 low, not
+//     on candle 5 wick, even though candle 5 wick was the deepest point of that
+//     pullback and happened before the break close.
+//     THE CAUSE, one clause in f_retExtreme:
+//         int jEnd = sz - 1          // index of the CURRENT bar
+//         for j = j0 to jEnd - 1     // <- the break candle is skipped
+//     It implemented the documented rule literally — "the extreme wick STRICTLY
+//     BETWEEN the broken pivot candle and the break candle, both excluded".
+//     Excluding the pivot candle is right. Excluding the BREAK candle is not:
+//     it discards the deepest point of the leg in exactly the case that matters
+//     most, where the candle sweeps the previous low, takes the liquidity, and
+//     then closes up through the level. That wick is the strong low.
+//     THE FIX: f_retExtInc, identical except that it scans to jEnd, is used at
+//     the SIX opposite-side re-anchors — main, internal and inner, up-break and
+//     down-break. It can only ever deepen the level, and only when the break
+//     candle genuinely made the leg extreme; on an ordinary break candle the
+//     two functions return the same bar, so nothing else moves.
+//     NOT CHANGED, deliberately: the six opposite-REFERENCE calls that arm the
+//     pivot-2 promotion, the two IDM taken-past tests, and the two Module 1
+//     alternation re-arms all still use the exclusive f_retExtreme.
+//     The strong-point stamps follow the new level, because they read the same
+//     result — so the marks now sit on the sweep wick.
+//
+//  2. A PIVOT-2 PROMOTION TAKES THE SWEPT WICK.
+//     Reported on GBPCHF 4h: P1 was the ceiling and P2 the floor, confirmed by
+//     the P1-P2 pullback satisfying the 3-candle rule. P3 then wicked ABOVE P1
+//     and closed back inside — a sweep — and P4 took out P2. P4 became the
+//     possible CHOCH, but P3 never became the possible BOS, so the later break
+//     was measured against P1 at 1.0922 instead of P3 at 1.0944.
+//     THE CAUSE: the promotion called f_confExt, which requires the replacement
+//     to be a 3-candle-CONFIRMED pivot (v13.4, extended to internal in v13.6).
+//     P3 high was never confirmed, so f_confExt returned na, no promotion fired
+//     and the original pivot kept the line — which is what the rulebook said.
+//     THE RULE, as requested: once a pullback has satisfied the 3-candle rule,
+//     no later pullback has to satisfy it again until a break happens. So the
+//     swept extreme itself takes the level.
+//     THE FIX: the six promotions now take the recorded sweep extreme
+//     (ceilS.swpP / florS.swpP, iCeilSwp / iFlorSwp, nCeilSwp / nFlorSwp) and
+//     its bar, instead of asking f_confExt for a confirmed pivot. f_confExt has
+//     no callers left; the definition is kept so this is easy to revert.
+//     BOTH TRIGGERS ARE UNCHANGED. A promotion still requires a genuine sweep
+//     of the level AND price then taking out the opposite reference. This is
+//     not "any wick can become a level".
+//     IT DOES REVERSE INVARIANT 4 for this one path, which v13.4 added on
+//     purpose. Invariant 4 has been reworded rather than quietly broken. If a
+//     mark ever lands on a wick you do not consider structure, this is the
+//     first thing to look at.
+//
+//  MEASURED IN NODE against both reported sequences: change 1 moves the floor
+//  from candle 4 low to the break candle wick and is inert on an ordinary break
+//  candle; change 2 leaves the ceiling on P1 under the old code and promotes it
+//  to P3 swept wick under the new one, and is inert when no sweep occurred.
+//  NO INPUT is added, removed or moved, so saved settings carry over and no
+//  settings reset is needed. Module 1, the 3-candle rule itself, the alternating
+//  and free-running streams, the retracement alerts and the arming gate are all
+//  untouched. Existing alerts should be recreated only if you want them to see
+//  the new levels.
+//
+//  v1.3  EMA IS OFF BY DEFAULT AND HAS A MASTER SWITCH AT THE TOP.
+//    NEW INPUT: "▶ EMA — show exponential moving averages", off by default,
+//    drawn in group 0 Master Visibility Toggles alongside MASTER A and B.
+//    While it is off the module is completely inert: no line, no ribbon, no
+//    label, and no EMA cross alert can fire. Turn it on and the EMAs appear
+//    exactly as group 9 has them set — 9, 21, 50 and 200, with 100 available.
+//    IT IS A GATE, NOT AN OVERRIDE. Unlike MASTER A and MASTER B, which force
+//    their whole group on and ignore the individual boxes, this one can only
+//    silence the module. It will never switch on an EMA you unticked. That is
+//    deliberate: a show/hide switch for one module wants to preserve your
+//    per-EMA choices, not overrule them.
+//    The five per-EMA checkboxes keep their previous defaults, because a
+//    master that turned on and drew nothing would be worse than useless.
+//    WHERE IT SITS: declared AFTER every other input and placed on screen with
+//    group = gTog. A group renders where its earliest-declared member sits, so
+//    it appears at the top while costing no declaration shift — all existing
+//    inputs keep their positions and saved settings carry over untouched.
+//    ta.ema still runs on every bar whatever the switch says, because a ta.*
+//    function must to keep its state correct. It is one multiply and one add.
+//
+//  v1.2  LONDON KILLZONE DEFAULT SESSION IS NOW 0600-0900.
+//    Was 0700-1000. One default value; the input itself has not moved and no
+//    input has been added or removed, so every saved setting still lines up.
+//    It drives the London killzone BOX and the London session VOLUME PROFILE
+//    together, because both read the same window, and the killzone hour shift
+//    still applies on top of it.
+//    A DEFAULT ONLY TAKES EFFECT ON A FRESH START. A chart that already has
+//    this indicator on it keeps whatever is saved in its settings — it will
+//    still say 0700-1000. To pick the new default up, either type 0600-0900
+//    into the London session field yourself, or remove the indicator and
+//    re-add it (Defaults -> Reset settings does the same).
+//
+//  v1.1 carries the v15.10 retracement-latch fix: the "already reported"
+//  latch is burned only on a live bar with the alert gate open, so the
+//  historical replay performed when an alert is created can no longer
+//  consume a level before the alert is listening. Same three lines as the
+//  main file; nothing else differs from v1.0.
+//
+//  REMOVED, and why it is faster for it:
+//    · request.security_lower_tf — this file no longer requests intrabar data
+//      at all. That was the single heaviest call in the original.
+//    · f_render, the per-profile binning pass: for every profile it walked every
+//      intrabar bar and spread its volume across up to 100 price rows, then ran
+//      a value-area expansion loop. Gone entirely.
+//    · the VPStyle and DrawQueue types, ten drawing queues, and the four VPCol
+//      volume arrays (a VPCol now carries only x1 / hi / lo).
+//    · session, previous-day and current-day profiles; VWAP and its three bands.
+//  KEPT: the three structure engines, the 3-candle pullback rule, IDM and ALT
+//    mode, sweeps, retracement alerts, the arming gate, the MTF table, and the
+//    killzone BOXES including the top/bottom line mode with its own text.
+//  ADDED: EMA module — five EMAs, ribbon fill, cross alerts, last-bar labels.
+//
+//  THE 3-CANDLE PULLBACK RULE (Module 1) — swing HIGH; lows mirror
+//    1. CANDIDATE = highest high so far; a new OR EQUAL extreme replaces it.
+//    2. Three BEARISH pullback candles: c1 = first bearish candle at/after the
+//       candidate (its LOW locks); c2 must CLOSE below c1 low; c3 must CLOSE
+//       below c2 low -> CONFIRMED.
+//    3. Always body-close beyond the previous locked WICK. Never body-to-body.
+//    4. Noise PAUSES, never resets. The three need not be consecutive.
+//    5. A new OR EQUAL extreme RESTARTS everything.
+//    6. Reported on the confirmation bar, ANCHORED at the candidate bar.
+//
+//  TWO PIVOT STREAMS — never mix them up
+//    MAIN      hiT / loT   free-running.  Read by BOS / CHOCH only.
+//    INTERNAL  aHiT / aLoT alternating.   Read by iBOS / iCHOCH and nBOS / nCHOCH.
+//
+//  THREE NESTED ENGINES
+//    MAIN     BOS / CHOCH    · anchored on the absolute extreme at chart start
+//    INTERNAL iBOS / iCHOCH  · anchored on the main trend-side line pivot
+//    INNER    nBOS / nCHOCH  · anchored on the internal trend-side level
+//  Each: adopt into an EMPTY slot — an equal-price pivot never takes the level
+//  (v15.5) · first break of a range = CHOCH · then with-trend = BOS, against =
+//  CHOCH + flip · broken side empties and refills · opposite side re-anchors to
+//  the retracement extreme · sweeps arm a pivot-2 promotion.
+//
+//  INVARIANTS — break these and old bugs come back
+//    1. Only a confirmed MAIN event starts a new internal range; only a confirmed
+//       INTERNAL event starts a new inner range.
+//    2. The range anchor is LATCHED for the life of the range.
+//    3. Main = free-running pivots. Internal and inner = alternating.
+//    4. A structure level is a CONFIRMED PIVOT, with ONE deliberate exception
+//       (v15.14): a pivot-2 promotion takes the SWEPT WICK. There the sweep of
+//       the level plus price then taking out the opposite reference IS the
+//       qualification, so no separate 3-candle confirmation is required.
+//    5. Never adopt or seed a level price has already closed beyond.
+//    6. NEW INPUTS MUST BE APPENDED AT THE END — TradingView matches saved
+//       settings by declaration ORDER. Use group = to place them on screen.
+//    7. rearm() reads the chart price buffers, so it must never be called inside
+//       request.security(). armHere() is buffer-free and safe in both.
+//    8. No variable-offset history references — use bufHi / bufLo / bufDir.
+//    9. Pine has no bitwise operators; the EVENT bitmask is unpacked by
+//       subtraction. Pine cannot show, hide or disable an input conditionally.
+//   10. ANY COMPARISON INVOLVING na YIELDS na, AND if TREATS na AS FALSE, so
+//       "x != na" is FALSE. Guard every such test with na(x) first.
+//
+//  ARMING GATE (v15.6): a price slot arms only when price REACHES the level from
+//  the side it is actually on — close[1] fixes the side, then the wick must come
+//  to the level. Live bars only; one permanent latch; five OR-ed slots.
+// ═════════════════════════════════════════════════════════════════════════════
+indicator("SMC Market Structure — 3CP + EMA", "SMC 3CP+EMA", overlay = true,
+     max_lines_count = 500, max_labels_count = 500, max_boxes_count = 150, dynamic_requests = true)
+
+gStr = "Structure colour"
+whiteStruct = input.bool(false, "White BOS / CHOCH lines and text", group = gStr, tooltip = "One switch for the readability of the main structure marks on a dark or light chart.\n\nON  = every BOS, CHOCH, BOS* and CHOCH* line and label is drawn WHITE, whatever the individual colour pickers say.\nOFF = each one goes straight back to its own colour picker in groups 1 to 6 below. Nothing is overwritten; the switch only overrides while it is on.\n\nIt covers the six main style groups only. iBOS / iCHOCH and nBOS / nCHOCH keep their own colours, because they are meant to be distinguishable from main structure rather than matched to it.")
+
+gTog = "0. Master Visibility Toggles"
+mstB  = input.bool(false, "▶ MASTER B — all four killzone boxes", group = gTog, tooltip = "Master switch for the four killzone BOXES: Asia, London, New York and London Close.\n\nON  = all four are shown and their individual checkboxes are IGNORED.\nOFF = the four boxes take over and work on their own.\n\nThis indicator draws killzone BOXES only — the session volume profiles live in the companion Volume Profiles + VWAP file, so nothing here can switch a profile on.\n\nPair it with the Killzone boxes - top and bottom line only switch to get the four sessions as plain high/low levels with their names on them.\n\nPine cannot hide inputs, so switches that are not in charge stay visible — they simply have no effect.")
+
+kaOnI = input.bool(false, "Show Asia box", group = gTog)
+klOnI = input.bool(false, "Show London box", group = gTog)
+knOnI = input.bool(false, "Show New York box", group = gTog)
+kcOnI = input.bool(false, "Show London Close box", group = gTog)
+
+gA = "Alerts — enable, then create ONE alert using 'Any alert() function call'"
+aBB = input.bool(true,  "Bullish BOS alert",   group = gA)
+
+kaOn = mstB or kaOnI
+klOn = mstB or klOnI
+knOn = mstB or knOnI
+kcOn = mstB or kcOnI
+
+gVP = "Sessions — timezone & retention"
+vpTz   = input.string("UTC", "Timezone (UTC, UTC+5:30, America/New_York …)", tooltip = "The timezone used to calculate all Killzone session times. Entering 'UTC+5:30' ensures session inputs match India Standard Time.", group = gVP)
+vpSesDays = input.int(1, "Days of sessions to keep", minval = 1, maxval = 15, tooltip = "How many DAYS of session profiles/boxes to keep, counting the current day as day 1. With 1, ONLY the current day\'s sessions are visible: each session appears live while it runs today, and yesterday\'s prints are wiped at the day boundary.", group = gVP)
+vpDayTz   = input.string("Exchange", "Day boundary timezone (Exchange = auto)", tooltip = "The timezone used to determine when a new day starts for the Daily Profiles. 'Exchange' uses the chart's native exchange timezone.", group = gVP)
+
+gInt = "0. Internal + Inner structure — iBOS / iCHOCH · nBOS / nCHOCH"
+intDefOn = input.bool(true, "Internal marking — DEFAULT rule", tooltip = "Marks internal structure while the ALTERNATE rule is OFF. It is the BOS/CHOCH method run one level down, inside the current possible BOS*/CHOCH* range — the same rulebook, nothing else.\n\nRANGE ANCHOR: the range is only settled once the leg after the main break prints its extreme AND the 3-candle pullback confirms it — that is when the main engine adopts its new trend-side line and the BOS*/CHOCH* pair is complete. The candle that pivot sits on is the anchor, and internal structure exists only after it. Every pivot before it — the spike that started the impulse, any pullback made while price was still driving to the extreme — belongs to the impulse that BUILT the range and can never be an internal level. The anchor is LATCHED for the life of the range (v13.6): re-creating that line — the refill after a break, an equal-price retest, a pivot-2 promotion — never re-scopes the range and never deletes a level that formed inside it.\n\nLEVELS: the first 3-candle-pullback swing HIGH confirmed AFTER the anchor becomes the internal ceiling, the first confirmed swing LOW after it becomes the internal floor (adopt into an empty slot, exactly like the main engine). A pivot at the standing price re-anchors that level to the most recent touch. Only swings the 3-candle rule confirmed are ever eligible, and each must also pass the 'Internal pivot strength' test, so a candle in the middle of an impulse can never be a level.\n\nFIRST BREAK = iCHOCH: the internal trend starts NEUTRAL in every new range, so the first BODY close through either internal level prints iCHOCH and founds the internal trend in that direction — up through a pullback high, or down through a pullback low; both are iCHOCH.\n\nAFTER THAT, the main conditions unchanged: body close through the trend-side level → iBOS; through the opposite level → iCHOCH and the internal trend flips; the broken level empties and refills on the next 3CP swing; the OPPOSITE level re-anchors to the retracement swing between the broken pivot and the break candle; a WICK through with the body closing back inside is a SWEEP, not a break, and the swept wick is promoted to the level once price takes out the opposite reference (pivot-2 promotion); 💪 on iBOS only.\n\nEvery confirmed main BOS/CHOCH resets all of it — levels, sweeps and the internal trend — so each range hunts its own first iCHOCH. A main event bar never prints an internal mark as well. Whether older ranges stay on the chart is set by the 'Keep previous iBOS / iCHOCH' checkbox below (display only). No IDM gate: an internal level is already inducement-level structure.", group = gInt)
+intAltOn = input.bool(true, "Internal marking — ALTERNATE rule", tooltip = "The same internal iBOS/iCHOCH engine with the exact same rules, applied while the ALTERNATE rule is ON.", group = gInt)
+inPivK   = input.int(1, "Internal pivot strength — candles before the swing", minval = 1, maxval = 5, group = gInt, tooltip = "How many candles immediately BEFORE a confirmed pivot must stay inside it for that pivot to be usable as an internal level: for a swing high, the previous N candles must not print a higher high.\n\nWhy it exists: the 3-candle rule confirms the leg OUT of an extreme, not the leg INTO it, and the tracker re-arms on the bar after each confirmation — so one sustained impulse also confirms several candles in the MIDDLE of that leg. Those are the marks that used to land on a single candle with no pivot there. Requiring N candles on the left rejects them, because a mid-impulse candle always has a higher one (a lower one for lows) right next to it.\n\n1 (default) = OFF. Since v13.0 the swing detector alternates high/low/high, so a candle in the middle of a leg can no longer be confirmed as a pivot at all — the job this filter was invented for in v10.5 is done properly at the source, and leaving it on could only ever throw away a swing the 3-candle rule legitimately confirmed. 2-5 = re-enable it, progressively stricter: only well-separated swings become levels, so fewer iBOS/iCHOCH marks — raise this if you want internal structure thinned out inside ranges and bases. The right-hand side of a pivot needs no setting: the 3-candle rule already guarantees it.")
+inHist   = input.bool(false, "Keep previous iBOS / iCHOCH  (untick = current BOS*/CHOCH* range only)", group = gInt, tooltip ="DISPLAY ONLY — the internal engine and every iBOS/iCHOCH classification are identical either way.\n\nTICKED (default): internal history stays on the chart like the main BOS/CHOCH marks, so the first iBOS of an older range is still visible after the next main event confirms. Limited by 'Max history to draw', and the newest 150 lines / 300 labels are kept so internal marks cannot exhaust TradingView's drawing budget.\n\nUNTICKED: only the CURRENT possible BOS*/CHOCH* range is marked — every confirmed main BOS/CHOCH erases the previous range's iBOS / iCHOCH / 💪 marks and the new range starts clean.")
+inBosTxt = input.string("iBOS", "iBOS text", inline = "ii", group = gInt)
+inChoTxt = input.string("iCHOCH", "iCHOCH text", inline = "ii", group = gInt)
+inLc   = input.color(color.new(color.blue, 0), "Line ", inline = "ij", group = gInt)
+inTc   = input.color(color.new(color.blue, 0), "Text", inline = "ij", group = gInt)
+inLs   = input.string("Solid", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "ik", group = gInt)
+inW    = input.int(1, "Width", minval = 1, maxval = 5, inline = "ik", group = gInt)
+inTs   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "il", group = gInt)
+inShow = input.bool(true, "Show text", inline = "il", group = gInt)
+inStrOn  = input.bool(true, "Mark strong low / high after iBOS", inline = "im", group = gInt, tooltip = "The main engine's 'Mark strong low / high after BOS' rule, term for term, applied to internal breaks. On an internal iBOS the retracement swing that made the break possible — the swing the opposite internal level re-anchors to — is stamped: strong LOW under a bullish iBOS, strong HIGH above a bearish one.\n\nThree conditions, all shared with the main marker: the break must be an iBOS (an iCHOCH never stamps); the broken level's INDUCEMENT must have been taken, i.e. price traded through the last minor swing sitting just before that level's pivot candle — so a break whose pivot had no identifiable inducement stamps nothing, exactly as on the main engine; and the retracement swing must exist. The draw window is the main engine's too ('Max history to draw', measured on the break bar).\n\nText and size stay separate settings from the main marker, so you can style them independently.")
+inStrTxt = input.string("💎", "", inline = "im", group = gInt)
+inStrSz  = input.string("Small", "", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "im", group = gInt)
+
+gMS = "Market structure — mode & inducement (IDM)"
+altMode = input.bool(false, "ALTERNATE rule: BOS is valid only AFTER IDM", tooltip = "OFF = complete default structure. ON = a body close beyond the trend-side line only prints a valid BOS if that pivot's inducement (IDM) has been taken first; without IDM the break is ignored and the engine waits for the IDM, then the next body close beyond the pivot is the valid BOS. CHOCH flips are never gated.", group = gMS)
+showIdm = input.bool(false, "Mark IDM (inducement)", inline = "id", group = gMS)
+idmTxt  = input.string("IDM", "", inline = "id", group = gMS)
+idmSz   = input.string("Small", "", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "id", group = gMS)
+idmUpC  = input.color(color.new(#26a69a, 0), "Bullish", inline = "ic", group = gMS)
+idmDnC  = input.color(color.new(#ef5350, 0), "Bearish", inline = "ic", group = gMS)
+idmTc   = input.color(color.white, "Text", inline = "ic", group = gMS)
+showStr = input.bool(true, "Mark strong low / high after BOS", inline = "st", group = gMS)
+strTxt  = input.string("💪", "", inline = "st", group = gMS)
+strSz   = input.string("Small", "", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "st", group = gMS)
+
+grpE = "Engine"
+onClose   = input.bool(true,  "Evaluate on bar close only (no intrabar repaint)", tooltip = "If true, market structure events (BOS/CHOCH) are only confirmed when the candle fully closes. If false, they trigger immediately in real-time but might repaint if the price drops back before closing.", group = grpE)
+histBars  = input.int(5000, "Max history to draw (bars back from last)", minval = 500, maxval = 20000, tooltip = "TradingView keeps only ~500 drawings per script, so this focuses the drawing budget on the most recent N bars: structure older than this is computed but not drawn. The engine itself always runs on every bar of history.", group = grpE)
+showPiv   = input.bool(false, "Mark confirmed pivots (•)", inline = "pv", group = grpE)
+colPivHi  = input.color(color.new(color.red, 30),  "", inline = "pv", group = grpE)
+colPivLo  = input.color(color.new(color.teal, 30), "", inline = "pv", group = grpE)
+showSweep = input.bool(false, "Mark liquidity sweeps (×)", inline = "sw", group = grpE)
+colSweep  = input.color(color.gray, "", inline = "sw", group = grpE)
+paintBg   = input.bool(false, "Tint background by trend", group = grpE)
+
+g1 = "① Bullish BOS"
+b1_lc   = input.color(color.black, "Line ", inline = "1a", group = g1)
+b1_tc   = input.color(color.black, "Text", inline = "1a", group = g1)
+b1_ls   = input.string("Solid", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "1b", group = g1)
+b1_w    = input.int(1, "Width", minval = 1, maxval = 5, inline = "1b", group = g1)
+b1_txt  = input.string("BOS", "Label text", group = g1)
+b1_ts   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "1c", group = g1)
+b1_show = input.bool(true, "Show text", inline = "1c", group = g1)
+b1_tv   = input.string("Middle", "Vertical", options = ["Above", "Middle", "Below"], inline = "1d", group = g1)
+b1_th   = input.string("Center", "Horizontal", options = ["Left", "Center", "Right"], inline = "1d", group = g1)
+
+g2 = "② Bearish BOS"
+b2_lc   = input.color(color.black, "Line ", inline = "2a", group = g2)
+b2_tc   = input.color(color.black, "Text", inline = "2a", group = g2)
+b2_ls   = input.string("Solid", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "2b", group = g2)
+b2_w    = input.int(1, "Width", minval = 1, maxval = 5, inline = "2b", group = g2)
+b2_txt  = input.string("BOS", "Label text", group = g2)
+b2_ts   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "2c", group = g2)
+b2_show = input.bool(true, "Show text", inline = "2c", group = g2)
+b2_tv   = input.string("Middle", "Vertical", options = ["Above", "Middle", "Below"], inline = "2d", group = g2)
+b2_th   = input.string("Center", "Horizontal", options = ["Left", "Center", "Right"], inline = "2d", group = g2)
+
+g3 = "③ Bullish CHOCH"
+c1_lc   = input.color(color.black, "Line ", inline = "3a", group = g3)
+c1_tc   = input.color(color.black, "Text", inline = "3a", group = g3)
+c1_ls   = input.string("Solid", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "3b", group = g3)
+c1_w    = input.int(1, "Width", minval = 1, maxval = 5, inline = "3b", group = g3)
+c1_txt  = input.string("CHOCH", "Label text", group = g3)
+c1_ts   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "3c", group = g3)
+c1_show = input.bool(true, "Show text", inline = "3c", group = g3)
+c1_tv   = input.string("Middle", "Vertical", options = ["Above", "Middle", "Below"], inline = "3d", group = g3)
+c1_th   = input.string("Center", "Horizontal", options = ["Left", "Center", "Right"], inline = "3d", group = g3)
+
+g4 = "④ Bearish CHOCH"
+c2_lc   = input.color(color.black, "Line ", inline = "4a", group = g4)
+c2_tc   = input.color(color.black, "Text", inline = "4a", group = g4)
+c2_ls   = input.string("Solid", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "4b", group = g4)
+c2_w    = input.int(1, "Width", minval = 1, maxval = 5, inline = "4b", group = g4)
+c2_txt  = input.string("CHOCH", "Label text", group = g4)
+c2_ts   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "4c", group = g4)
+c2_show = input.bool(true, "Show text", inline = "4c", group = g4)
+c2_tv   = input.string("Middle", "Vertical", options = ["Above", "Middle", "Below"], inline = "4d", group = g4)
+c2_th   = input.string("Center", "Horizontal", options = ["Left", "Center", "Right"], inline = "4d", group = g4)
+
+g5 = "⑤ Possible BOS (active extended line)"
+p1_lc   = input.color(color.black, "Line ", inline = "5a", group = g5)
+p1_tc   = input.color(color.black, "Text", inline = "5a", group = g5)
+p1_ls   = input.string("Dotted", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "5b", group = g5)
+p1_w    = input.int(1, "Width", minval = 1, maxval = 5, inline = "5b", group = g5)
+p1_txt  = input.string("BOS*", "Label text", group = g5)
+p1_ts   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "5c", group = g5)
+p1_show = input.bool(true, "Show text", inline = "5c", group = g5)
+p1_tv   = input.string("Middle", "Vertical", options = ["Above", "Middle", "Below"], inline = "5d", group = g5)
+p1_th   = input.string("Center", "Horizontal", options = ["Left", "Center", "Right"], inline = "5d", group = g5)
+
+g6 = "⑥ Possible CHOCH (active extended line)"
+p2_lc   = input.color(color.black, "Line ", inline = "6a", group = g6)
+p2_tc   = input.color(color.black, "Text", inline = "6a", group = g6)
+p2_ls   = input.string("Dotted", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "6b", group = g6)
+p2_w    = input.int(1, "Width", minval = 1, maxval = 5, inline = "6b", group = g6)
+p2_txt  = input.string("CHOCH*", "Label text", group = g6)
+p2_ts   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "6c", group = g6)
+p2_show = input.bool(true, "Show text", inline = "6c", group = g6)
+p2_tv   = input.string("Middle", "Vertical", options = ["Above", "Middle", "Below"], inline = "6d", group = g6)
+p2_th   = input.string("Center", "Horizontal", options = ["Left", "Center", "Right"], inline = "6d", group = g6)
+
+aSB = input.bool(true,  "Bearish BOS alert",   group = gA)
+aBC = input.bool(true,  "Bullish CHOCH alert", group = gA)
+aSC = input.bool(true,  "Bearish CHOCH alert", group = gA)
+aSW = input.bool(false, "Liquidity sweep alert", group = gA)
+aIBB = input.bool(false, "Bullish iBOS alert",   group = gA)
+aISB = input.bool(false, "Bearish iBOS alert",   group = gA)
+aIBC = input.bool(false, "Bullish iCHOCH alert", group = gA)
+aISC = input.bool(false, "Bearish iCHOCH alert", group = gA)
+aAIB = input.bool(false, "Any iBOS alert",       group = gA)
+aAIC = input.bool(false, "Any iCHOCH alert",     group = gA)
+aAIE = input.bool(false, "Any internal structure event alert", group = gA)
+aRetPct  = input.float(50.0, "Retracement % for range alerts", minval = 1.0, maxval = 99.0, step = 0.1, group = gA, tooltip = "How far price must give back before the retracement alerts fire. ONE value, shared by all three of them — main, internal and inner.\n\nIT IS MEASURED BACK FROM THE EXTREME OF THE LEG (changed in v14.9):\n  20 = a shallow pullback, price returning 20% of the leg\n  50 = the midpoint\n  79 = a deep pullback, close to where the leg began\nIn a bullish leg the level sits that far BELOW the highest point reached since the break; in a bearish leg that far ABOVE the lowest point.\n\nBefore v14.9 the number was measured up from the far end of the range, so 20 meant an 80% give-back. 50 is the same under either reading, which is why the difference only shows once you set something else.\n\nTo get several levels from one indicator: set a value, create the alert, change it, create another. An alert freezes its settings when you create it, so each keeps its own percentage.")
+aMainRet = input.bool(false, "Price at N% of BOS*/CHOCH* range alert", group = gA, tooltip = "Fires when price gives back the set percentage of the MAIN leg — the move since the last BOS or CHOCH — measured back from that leg's extreme, on the tick it happens rather than at the close.\n\nIT DOES NOT WAIT FOR THE RANGE TO BE CONFIRMED. A break does not settle its range; the 3-candle pullback that confirms the next pivot does, and that is always later — those pullback candles are themselves the retracement. So the anchor is the highest point reached so far since the break (lowest in a bearish leg), and the alert is live from the break onward.\n\nIf price has not reached the level by the time the range is confirmed, the alert stays armed and fires on the first crossing afterwards.\n\nIt only fires on a move BACK from the extreme, never on a push in the trend direction, and never on the bar the level was established.")
+aIntRet  = input.bool(false, "Price at N% of internal iBOS/iCHOCH range alert", group = gA, tooltip = "The same rule on the INTERNAL leg — the move since the last iBOS or iCHOCH.\n\nThis is the tier the rule matters most for. Every internal break empties one internal level by design and it only refills when the 3-candle rule confirms the next pivot, a median of 16 bars later; the alert no longer waits for that. The anchor is the highest point reached since the internal event (lowest in a bearish leg), so an iBOS followed by a candle giving back the set percentage alerts on the touch.\n\nBetween a main BOS/CHOCH and the range's first iCHOCH there is no internal leg yet, so this stays silent until the internal trend exists.\n\nExpect more of these than the main one: internal legs are shorter and more frequent.")
+
+gPA = "Ⓐ Asia killzone — session window"
+aSes  = input.session("0000-0400", "Asia session (in profile timezone)", group = gPA)
+
+gPL = "Ⓛ London killzone — session window"
+lSes  = input.session("0600-0900", "London session (in profile timezone)", group = gPL)
+
+gPN = "Ⓝ New York killzone — session window"
+nSes  = input.session("1100-1400", "New York session (in profile timezone)", group = gPN)
+
+gPC = "Ⓒ London Close killzone — session window"
+cSes  = input.session("1400-1600", "London Close session (in profile timezone)", group = gPC)
+
+
+
+gKA = "Killzone box — Asia"
+kaF  = input.color(color.new(color.teal, 90), "Fill", inline = "ka", group = gKA)
+kaB  = input.color(color.new(color.teal, 40), "Border", inline = "ka", group = gKA)
+kaBs = input.string("Dashed", "Border style", options = ["Solid", "Dashed", "Dotted"], inline = "kb", group = gKA)
+kaBw = input.int(1, "Border width", minval = 1, maxval = 4, inline = "kb", group = gKA)
+kaT  = input.string("ASIA", "Text", inline = "kc", group = gKA)
+kaTs = input.string("Small", "Size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "kc", group = gKA)
+kaTc = input.color(color.new(color.teal, 30), "Colour", inline = "kc", group = gKA)
+kaTz = input.string("", "Timezone override (blank = use global)", group = gKA)
+kaTv = input.string("Top", "Text vert.", options = ["Top", "Middle", "Bottom", "Outside Top", "Outside Bottom"], inline = "kd", group = gKA)
+kaTh = input.string("Center", "Text horiz.", options = ["Left", "Center", "Right"], inline = "kd", group = gKA)
+
+gKL = "Killzone box — London"
+klF  = input.color(color.new(color.blue, 90), "Fill", inline = "ka", group = gKL)
+klB  = input.color(color.new(color.blue, 40), "Border", inline = "ka", group = gKL)
+klBs = input.string("Dashed", "Border style", options = ["Solid", "Dashed", "Dotted"], inline = "kb", group = gKL)
+klBw = input.int(1, "Border width", minval = 1, maxval = 4, inline = "kb", group = gKL)
+klT  = input.string("LONDON", "Text", inline = "kc", group = gKL)
+klTs = input.string("Small", "Size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "kc", group = gKL)
+klTc = input.color(color.new(color.blue, 30), "Colour", inline = "kc", group = gKL)
+klTz = input.string("", "Timezone override (blank = use global)", group = gKL)
+klTv = input.string("Top", "Text vert.", options = ["Top", "Middle", "Bottom", "Outside Top", "Outside Bottom"], inline = "kd", group = gKL)
+klTh = input.string("Center", "Text horiz.", options = ["Left", "Center", "Right"], inline = "kd", group = gKL)
+
+gKN = "Killzone box — New York"
+knF  = input.color(color.new(color.purple, 90), "Fill", inline = "ka", group = gKN)
+knB  = input.color(color.new(color.purple, 40), "Border", inline = "ka", group = gKN)
+knBs = input.string("Dashed", "Border style", options = ["Solid", "Dashed", "Dotted"], inline = "kb", group = gKN)
+knBw = input.int(1, "Border width", minval = 1, maxval = 4, inline = "kb", group = gKN)
+knT  = input.string("NEW YORK", "Text", inline = "kc", group = gKN)
+knTs = input.string("Small", "Size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "kc", group = gKN)
+knTc = input.color(color.new(color.purple, 30), "Colour", inline = "kc", group = gKN)
+knTz = input.string("", "Timezone override (blank = use global)", group = gKN)
+knTv = input.string("Top", "Text vert.", options = ["Top", "Middle", "Bottom", "Outside Top", "Outside Bottom"], inline = "kd", group = gKN)
+knTh = input.string("Center", "Text horiz.", options = ["Left", "Center", "Right"], inline = "kd", group = gKN)
+
+gKC = "Killzone box — London Close"
+kcF  = input.color(color.new(color.maroon, 90), "Fill", inline = "ka", group = gKC)
+kcB  = input.color(color.new(color.maroon, 40), "Border", inline = "ka", group = gKC)
+kcBs = input.string("Dashed", "Border style", options = ["Solid", "Dashed", "Dotted"], inline = "kb", group = gKC)
+kcBw = input.int(1, "Border width", minval = 1, maxval = 4, inline = "kb", group = gKC)
+kcT  = input.string("LDN CLOSE", "Text", inline = "kc", group = gKC)
+kcTs = input.string("Small", "Size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "kc", group = gKC)
+kcTc = input.color(color.new(color.maroon, 30), "Colour", inline = "kc", group = gKC)
+kcTz = input.string("", "Timezone override (blank = use global)", group = gKC)
+kcTv = input.string("Top", "Text vert.", options = ["Top", "Middle", "Bottom", "Outside Top", "Outside Bottom"], inline = "kd", group = gKC)
+kcTh = input.string("Center", "Text horiz.", options = ["Left", "Center", "Right"], inline = "kd", group = gKC)
+
+kzShift = input.int(0, "Killzone hour shift (+/-)", minval = -23, maxval = 23, group = gVP, tooltip = "Moves ALL FOUR killzones by whole hours, so you can realign the whole set to your broker's clock or to daylight saving without editing four session strings.\n\n-1 shifts every killzone one hour EARLIER: Asia 0000-0400 becomes 2300-0300.\n+1 shifts them one hour LATER: Asia 0000-0400 becomes 0100-0500.\n 0 leaves them exactly as typed.\n\nIt wraps around midnight, and it drives the killzone BOXES and the session VOLUME PROFILES together, because both read the same windows.\n\nIt shifts the WINDOW, not the timezone — the per-killzone timezone overrides and the global profile timezone still behave exactly as before.")
+
+f_hhmm(int h, int m) =>
+    (h < 10 ? "0" : "") + str.tostring(h, "0") + (m < 10 ? "0" : "") + str.tostring(m, "0")
+
+f_sesShift(string ses, int hrs) =>
+    string out = ses
+    if hrs != 0
+        int dash = str.pos(ses, "-")
+        if not na(dash) and dash >= 4 and str.length(ses) >= dash + 5
+            float ahf = str.tonumber(str.substring(ses, dash - 4, dash - 2))
+            float amf = str.tonumber(str.substring(ses, dash - 2, dash))
+            float bhf = str.tonumber(str.substring(ses, dash + 1, dash + 3))
+            float bmf = str.tonumber(str.substring(ses, dash + 3, dash + 5))
+            if not na(ahf) and not na(amf) and not na(bhf) and not na(bmf)
+                int ah = (int(ahf) + hrs) % 24
+                int bh = (int(bhf) + hrs) % 24
+                if ah < 0
+                    ah += 24
+                if bh < 0
+                    bh += 24
+                string tail = str.length(ses) > dash + 5 ? str.substring(ses, dash + 5) : ""
+                out := f_hhmm(ah, int(amf)) + "-" + f_hhmm(bh, int(bmf)) + tail
+    out
+
+lstyle(string s) => s == "Dashed" ? line.style_dashed : s == "Dotted" ? line.style_dotted : line.style_solid
+tsize(string s)  => s == "Tiny" ? size.tiny : s == "Small" ? size.small : s == "Large" ? size.large : s == "Huge" ? size.huge : size.normal
+lblStyle(string tv) => tv == "Above" ? label.style_label_down : tv == "Below" ? label.style_label_up : label.style_none
+
+var color _wS = color.white
+var color b1_lcE = whiteStruct ? _wS : b1_lc
+var color b1_tcE = whiteStruct ? _wS : b1_tc
+var color b2_lcE = whiteStruct ? _wS : b2_lc
+var color b2_tcE = whiteStruct ? _wS : b2_tc
+var color c1_lcE = whiteStruct ? _wS : c1_lc
+var color c1_tcE = whiteStruct ? _wS : c1_tc
+var color c2_lcE = whiteStruct ? _wS : c2_lc
+var color c2_tcE = whiteStruct ? _wS : c2_tc
+var color p1_lcE = whiteStruct ? _wS : p1_lc
+var color p1_tcE = whiteStruct ? _wS : p1_tc
+var color p2_lcE = whiteStruct ? _wS : p2_lc
+var color p2_tcE = whiteStruct ? _wS : p2_tc
+
+styleOf(int sid, bool pend) =>
+    if pend
+        if sid <= 1
+            [p1_lcE, p1_tcE, p1_ls, p1_w, p1_txt, p1_ts, p1_tv, p1_th, p1_show]
+        else
+            [p2_lcE, p2_tcE, p2_ls, p2_w, p2_txt, p2_ts, p2_tv, p2_th, p2_show]
+    else
+        switch sid
+            0 => [b1_lcE, b1_tcE, b1_ls, b1_w, b1_txt, b1_ts, b1_tv, b1_th, b1_show]
+            1 => [b2_lcE, b2_tcE, b2_ls, b2_w, b2_txt, b2_ts, b2_tv, b2_th, b2_show]
+            2 => [c1_lcE, c1_tcE, c1_ls, c1_w, c1_txt, c1_ts, c1_tv, c1_th, c1_show]
+            => [c2_lcE, c2_tcE, c2_ls, c2_w, c2_txt, c2_ts, c2_tv, c2_th, c2_show]
+
+type SLine
+    line  ln
+    label lb
+    int   x1
+    float price
+    int   sid
+    int   born
+    bool  done
+    float swpP
+    int   swpB
+    float refP
+    float idmP
+    int   idmB
+    bool  idmHit
+
+hAlignOf(int sid, bool pend) =>
+    if pend
+        sid <= 1 ? p1_th : p2_th
+    else
+        switch sid
+            0 => b1_th
+            1 => b2_th
+            2 => c1_th
+            => c2_th
+
+method repos(SLine s, int endBar) =>
+    if not na(s) and not na(s.ln) and not na(s.lb)
+        string th = hAlignOf(s.sid, not s.done)
+        if th != "Left"
+            s.lb.set_x(th == "Right" ? endBar : int(math.avg(s.x1, endBar)))
+
+method freeze(SLine s) =>
+    if not na(s) and not na(s.ln)
+        s.done := true
+        [lc, tc, ls, w, txt, ts, tv, th, showT] = styleOf(s.sid, false)
+        s.ln.set_x2(bar_index)
+        s.ln.set_extend(extend.none)
+        s.ln.set_color(lc)
+        s.ln.set_width(w)
+        s.ln.set_style(lstyle(ls))
+        if not na(s.lb)
+            s.lb.delete()
+            s.lb := na
+        if showT
+            int lx = th == "Left" ? s.x1 : th == "Right" ? bar_index : int(math.avg(s.x1, bar_index))
+            s.lb := label.new(lx, s.price, txt, color = color(na), textcolor = tc, style = lblStyle(tv), size = tsize(ts))
+
+method drop(SLine s) =>
+    if not na(s) and not na(s.ln)
+        s.ln.delete()
+        if not na(s.lb)
+            s.lb.delete()
+
+mkSLine(float p, int b, int sid, bool draw) =>
+    [lc, tc, ls, w, txt, ts, tv, th, showT] = styleOf(sid, true)
+    line ln = na
+    label lb = na
+    if draw
+        ln := line.new(b, p, bar_index, p, color = lc, width = w, style = lstyle(ls), extend = extend.right)
+    if draw and showT
+        int lx = th == "Left" ? b : th == "Right" ? bar_index : int(math.avg(b, bar_index))
+        lb := label.new(lx, p, txt, color = color(na), textcolor = tc, style = lblStyle(tv), size = tsize(ts))
+    SLine.new(ln, lb, b, p, sid, bar_index, false, na, na, na, na, na, false)
+
+type SwingTracker
+    bool  isHigh
+    float potential
+    int   potentialBar
+    int   count
+    float refLevel
+
+method update(SwingTracker t) =>
+    float confP = na
+    int   confB = na
+    bool bearC  = close < open
+    bool bullC  = close > open
+    bool pb     = t.isHigh ? bearC : bullC
+    bool newExt = na(t.potential) or (t.isHigh ? high >= t.potential : low <= t.potential)
+    if newExt
+        t.potential    := t.isHigh ? high : low
+        t.potentialBar := bar_index
+        t.count        := pb ? 1 : 0
+        t.refLevel     := pb ? (t.isHigh ? low : high) : na
+    else if pb
+        if t.count == 0
+            t.count    := 1
+            t.refLevel := t.isHigh ? low : high
+        else if t.count == 1 and (t.isHigh ? close < t.refLevel : close > t.refLevel)
+            t.count    := 2
+            t.refLevel := t.isHigh ? low : high
+        else if t.count == 2 and (t.isHigh ? close < t.refLevel : close > t.refLevel)
+            confP := t.potential
+            confB := t.potentialBar
+            t.potential    := t.isHigh ? high : low
+            t.potentialBar := bar_index
+            t.count        := 1
+            t.refLevel     := t.isHigh ? low : high
+    [confP, confB]
+
+var array<float> bufHi = array.new_float()
+var array<float> bufLo = array.new_float()
+var array<int>   bufDir = array.new_int()
+
+f_retExtreme(int fromBar, bool findHigh) =>
+    int sz   = array.size(bufLo)
+    int jEnd = sz - 1
+    float p  = na
+    int   b  = na
+    if jEnd > 0
+        int j0 = math.max(0, math.min(fromBar - bar_index + sz, jEnd - 1))
+        array<float> src = findHigh ? bufHi : bufLo
+        int base = bar_index - sz + 1
+        for j = j0 to jEnd - 1
+            float v = array.get(src, j)
+            if na(p) or (findHigh ? v >= p : v <= p)
+                p := v
+                b := base + j
+    [p, b]
+
+f_retExtInc(int fromBar, bool findHigh) =>
+    int sz   = array.size(bufLo)
+    int jEnd = sz - 1
+    float p  = na
+    int   b  = na
+    if jEnd >= 0
+        int j0 = math.max(0, math.min(fromBar - bar_index + sz, jEnd))
+        array<float> src = findHigh ? bufHi : bufLo
+        int base = bar_index - sz + 1
+        for j = j0 to jEnd
+            float v = array.get(src, j)
+            if na(p) or (findHigh ? v >= p : v <= p)
+                p := v
+                b := base + j
+    [p, b]
+
+method rearm(SwingTracker t, float p, int b) =>
+    t.potential    := p
+    t.potentialBar := b
+    int  sz  = array.size(bufHi)
+    int  idx = b - bar_index + sz - 1
+    bool ok  = not na(b) and idx >= 0 and idx <= sz - 1
+    int  dir = ok ? array.get(bufDir, idx) : 0
+    bool pb  = t.isHigh ? dir == -1 : dir == 1
+    t.count    := pb ? 1 : 0
+    t.refLevel := pb ? (t.isHigh ? array.get(bufLo, idx) : array.get(bufHi, idx)) : na
+
+method armHere(SwingTracker t) =>
+    t.potential    := t.isHigh ? high : low
+    t.potentialBar := bar_index
+    bool pb = t.isHigh ? close < open : close > open
+    t.count    := pb ? 1 : 0
+    t.refLevel := pb ? (t.isHigh ? low : high) : na
+
+f_isSwing(int pb, bool isHigh, int k) =>
+    int  sz  = array.size(bufHi)
+    int  idx = pb - bar_index + sz - 1
+    bool ok  = not na(pb) and idx - k >= 0 and idx <= sz - 1
+    if ok
+        float p = isHigh ? array.get(bufHi, idx) : array.get(bufLo, idx)
+        for j = 1 to k
+            float v = isHigh ? array.get(bufHi, idx - j) : array.get(bufLo, idx - j)
+            if isHigh ? v > p : v < p
+                ok := false
+    ok
+
+var array<int>   msLoB = array.new_int()
+var array<float> msLoP = array.new_float()
+var array<int>   msHiB = array.new_int()
+var array<float> msHiP = array.new_float()
+
+var array<float> mnHiP = array.new_float()
+var array<int>   mnHiB = array.new_int()
+var array<float> mnLoP = array.new_float()
+var array<int>   mnLoB = array.new_int()
+
+f_confExt(array<int> arrB, array<float> arrP, bool wantLow, int afterBar, float beyond) =>
+    float p = na
+    int   b = na
+    int   n = array.size(arrB)
+    if n > 0
+        for i = n - 1 to 0
+            int cb = array.get(arrB, i)
+            if cb <= afterBar
+                break
+            float cp = array.get(arrP, i)
+            if (wantLow ? cp <= beyond : cp >= beyond) and (na(p) or (wantLow ? cp < p : cp > p))
+                p := cp
+                b := cb
+    [p, b]
+
+
+f_lastMinor(bool wantLow, int beforeBar) =>
+    arrB = wantLow ? msLoB : msHiB
+    arrP = wantLow ? msLoP : msHiP
+    float p = na
+    int   b = na
+    int   n = array.size(arrB)
+    if n > 0
+        for i = n - 1 to 0
+            if array.get(arrB, i) < beforeBar
+                p := array.get(arrP, i)
+                b := array.get(arrB, i)
+                break
+    [p, b]
+
+f_idmMark(SLine s) =>
+    bool inWin = (last_bar_index - bar_index) <= histBars
+    if showIdm and inWin and not na(s.idmP) and not na(s.idmB) and (bar_index - s.idmB) <= histBars
+        bool isCeil = s.sid == 0 or s.sid == 2
+        label.new(s.idmB, s.idmP, idmTxt, color = isCeil ? idmUpC : idmDnC, textcolor = idmTc, style = isCeil ? label.style_label_up : label.style_label_down, size = tsize(idmSz))
+
+method armIdm(SLine s) =>
+    if not na(s)
+        bool isCeil = s.sid == 0 or s.sid == 2
+        [ip, ib] = f_lastMinor(isCeil, s.x1)
+        s.idmP   := ip
+        s.idmB   := ib
+        s.idmHit := false
+        if not na(ip)
+            [xp, xb] = f_retExtreme(s.x1, not isCeil)
+            bool takenPast = not na(xp) and (isCeil ? xp < ip : xp > ip)
+            bool takenNow  = isCeil ? low < ip : high > ip
+            if takenPast or takenNow
+                s.idmHit := true
+                f_idmMark(s)
+
+f_intArmIdm(int pivB, bool isCeil) =>
+    [ip, ib] = f_lastMinor(isCeil, pivB)
+    bool hit = false
+    if not na(ip)
+        [xp, xb] = f_retExtreme(pivB, not isCeil)
+        bool takenPast = not na(xp) and (isCeil ? xp < ip : xp > ip)
+        bool takenNow  = isCeil ? low < ip : high > ip
+        hit := takenPast or takenNow
+    [ip, hit]
+
+bool intUse = altMode ? intAltOn : intDefOn
+var array<line>  intLn = array.new<line>()
+var array<label> intLb = array.new<label>()
+
+f_intPrune() =>
+    while array.size(intLn) > 150
+        line.delete(array.shift(intLn))
+    while array.size(intLb) > 300
+        label.delete(array.shift(intLb))
+
+f_intClear() =>
+    while array.size(intLn) > 0
+        line.delete(array.pop(intLn))
+    while array.size(intLb) > 0
+        label.delete(array.pop(intLb))
+
+f_intMark(float p, int pb, bool isCho) =>
+    bool inWin = (last_bar_index - bar_index) <= histBars and (bar_index - pb) <= histBars
+    if intUse and inWin
+        array.push(intLn, line.new(pb, p, bar_index, p, color = inLc, width = inW, style = lstyle(inLs)))
+        if inShow
+            array.push(intLb, label.new(int(math.avg(pb, bar_index)), p, isCho ? inChoTxt : inBosTxt, color = color(na), textcolor = inTc, style = label.style_none, size = tsize(inTs)))
+        f_intPrune()
+
+f_intStrong(int b, bool isLow) =>
+    bool inWin = (last_bar_index - bar_index) <= histBars
+    if intUse and inStrOn and inWin
+        array.push(intLb, label.new(b, na, inStrTxt, yloc = isLow ? yloc.belowbar : yloc.abovebar, style = label.style_none, textcolor = color.gray, size = tsize(inStrSz)))
+        f_intPrune()
+
+var SwingTracker hiT = SwingTracker.new(true,  na, na, 0, na)
+var SwingTracker loT = SwingTracker.new(false, na, na, 0, na)
+var SwingTracker aHiT = SwingTracker.new(true,  na, na, 0, na)
+var SwingTracker aLoT = SwingTracker.new(false, na, na, 0, na)
+var bool huntHi = true
+var bool huntLo = true
+var float lastAHiP = na
+var float lastALoP = na
+
+var int   trendDir = 0
+var SLine ceilS = na
+var SLine florS = na
+var float allHi = na
+var float allLo = na
+bool evBosUp  = false
+bool evBosDn  = false
+bool evChoUp  = false
+bool evChoDn  = false
+bool evSwpHi  = false
+bool evSwpLo  = false
+bool evIBosUp = false
+bool evIBosDn = false
+bool evIChoUp = false
+bool evIChoDn = false
+
+var bool  mainRetFired  = false
+var float lastMainRetLvl = na
+var int   mainRetBorn   = na
+var float mainRetAnch   = na
+var bool  intRetFired   = false
+var float lastIntRetLvl = na
+var int   intRetBorn    = na
+var float intRetAnch    = na
+var bool  nnRetFired    = false
+var float lastNnRetLvl  = na
+var int   nnRetBorn     = na
+var float nnRetAnch     = na
+var float mRunHi = na
+var float mRunLo = na
+var float iRunHi = na
+var float iRunLo = na
+var float nRunHi = na
+var float nRunLo = na
+
+var int   iTrend    = 0
+var array<float> pvHiP = array.new_float()
+var array<int>   pvHiB = array.new_int()
+var array<float> pvLoP = array.new_float()
+var array<int>   pvLoB = array.new_int()
+var int   iAncB     = na
+var float iCeilP    = na
+var int   iCeilB    = na
+var int   iCeilBorn = na
+var float iCeilSwp  = na
+var int   iCeilSwpB = na
+var float iCeilRef  = na
+var float iCeilIdmP   = na
+var bool  iCeilIdmHit = false
+var float iFlorP    = na
+var int   iFlorB    = na
+var int   iFlorBorn = na
+var float iFlorSwp  = na
+var int   iFlorSwpB = na
+var float iFlorRef  = na
+var float iFlorIdmP   = na
+var bool  iFlorIdmHit = false
+
+var int   nTrend    = 0
+var int   nAncB     = na
+var float nCeilP    = na
+var int   nCeilB    = na
+var int   nCeilBorn = na
+var float nCeilSwp  = na
+var int   nCeilSwpB = na
+var float nCeilRef  = na
+var float nCeilIdmP   = na
+var bool  nCeilIdmHit = false
+var float nFlorP    = na
+var int   nFlorB    = na
+var int   nFlorBorn = na
+var float nFlorSwp  = na
+var int   nFlorSwpB = na
+var float nFlorRef  = na
+var float nFlorIdmP   = na
+var bool  nFlorIdmHit = false
+bool evNBosUp = false
+bool evNBosDn = false
+bool evNChoUp = false
+bool evNChoDn = false
+float rqUpP  = na
+int   rqUpB  = na
+bool  rqUpCho = false
+float rqDnP  = na
+int   rqDnB  = na
+bool  rqDnCho = false
+int   rqStrUp = na
+int   rqStrDn = na
+bool  rqClear = false
+
+if not onClose or barstate.isconfirmed
+
+    array.push(bufHi, high)
+    array.push(bufLo, low)
+    array.push(bufDir, close > open ? 1 : close < open ? -1 : 0)
+    int _bufSz = array.size(bufHi)
+    if _bufSz > 5150
+        bufHi  := array.copy(array.slice(bufHi,  _bufSz - 4900, _bufSz))
+        bufLo  := array.copy(array.slice(bufLo,  _bufSz - 4900, _bufSz))
+        bufDir := array.copy(array.slice(bufDir, _bufSz - 4900, _bufSz))
+    allHi := na(allHi) ? high : math.max(allHi, high)
+    allLo := na(allLo) ? low  : math.min(allLo, low)
+    bool drawOk = (last_bar_index - bar_index) <= histBars
+    if bar_index >= 2
+        if low[1] < low[2] and low[1] < low
+            array.push(msLoB, bar_index - 1)
+            array.push(msLoP, low[1])
+            if array.size(msLoB) > 200
+                array.shift(msLoB)
+                array.shift(msLoP)
+        if high[1] > high[2] and high[1] > high
+            array.push(msHiB, bar_index - 1)
+            array.push(msHiP, high[1])
+            if array.size(msHiB) > 200
+                array.shift(msHiB)
+                array.shift(msHiP)
+
+    [phP, phB] = hiT.update()
+    [plP, plB] = loT.update()
+
+    if not na(phP)
+        array.push(mnHiP, phP)
+        array.push(mnHiB, phB)
+        if array.size(mnHiB) > 300
+            array.shift(mnHiP)
+            array.shift(mnHiB)
+    if not na(plP)
+        array.push(mnLoP, plP)
+        array.push(mnLoB, plB)
+        if array.size(mnLoB) > 300
+            array.shift(mnLoP)
+            array.shift(mnLoB)
+
+    float aPhP = na
+    int   aPhB = na
+    float aPlP = na
+    int   aPlB = na
+    if huntHi
+        [_ph, _phb] = aHiT.update()
+        aPhP := _ph
+        aPhB := _phb
+    if huntLo
+        [_pl, _plb] = aLoT.update()
+        aPlP := _pl
+        aPlB := _plb
+    if not na(aPhP)
+        huntHi   := false
+        huntLo   := true
+        lastAHiP := aPhP
+        [_rlp, _rlb] = f_retExtreme(aPhB, false)
+        bool _useNow = na(_rlp) or low <= _rlp
+        aLoT.rearm(_useNow ? low : _rlp, _useNow ? bar_index : _rlb)
+    if not na(aPlP)
+        huntLo   := false
+        huntHi   := true
+        lastALoP := aPlP
+        [_rhp, _rhb] = f_retExtreme(aPlB, true)
+        bool _useNowH = na(_rhp) or high >= _rhp
+        aHiT.rearm(_useNowH ? high : _rhp, _useNowH ? bar_index : _rhb)
+
+    if not huntHi and not na(lastAHiP) and high >= lastAHiP
+        huntHi := true
+        huntLo := false
+        aHiT.armHere()
+    else if not huntLo and not na(lastALoP) and low <= lastALoP
+        huntLo := true
+        huntHi := false
+        aLoT.armHere()
+
+    if not na(aPhP)
+        array.push(pvHiP, aPhP)
+        array.push(pvHiB, aPhB)
+        if array.size(pvHiB) > 300
+            array.shift(pvHiP)
+            array.shift(pvHiB)
+    if not na(aPlP)
+        array.push(pvLoP, aPlP)
+        array.push(pvLoB, aPlB)
+        if array.size(pvLoB) > 300
+            array.shift(pvLoP)
+            array.shift(pvLoB)
+
+    if not na(phP)
+        bool _cSwept = false
+        bool _cEq    = false
+        if not na(ceilS)
+            _cSwept := not na(ceilS.swpP)
+            _cEq    := phP == ceilS.price
+        bool adoptC  = trendDir == 0 ? (phP >= allHi and not _cSwept and not _cEq) : na(ceilS)
+        if adoptC
+            ceilS.drop()
+            ceilS := mkSLine(phP, phB, trendDir == -1 ? 2 : 0, drawOk)
+            ceilS.armIdm()
+        if showPiv
+            if drawOk
+                label.new(phB, phP, "•", style = label.style_none, textcolor = colPivHi, size = size.small)
+
+    if not na(plP)
+        bool _fSwept = false
+        bool _fEq    = false
+        if not na(florS)
+            _fSwept := not na(florS.swpP)
+            _fEq    := plP == florS.price
+        bool adoptF  = trendDir == 0 ? (plP <= allLo and not _fSwept and not _fEq) : na(florS)
+        if adoptF
+            florS.drop()
+            florS := mkSLine(plP, plB, trendDir == 1 ? 3 : 1, drawOk)
+            florS.armIdm()
+        if showPiv
+            if drawOk
+                label.new(plB, plP, "•", style = label.style_none, textcolor = colPivLo, size = size.small)
+
+    if not na(ceilS) and not ceilS.idmHit and not na(ceilS.idmP) and low < ceilS.idmP
+        ceilS.idmHit := true
+        f_idmMark(ceilS)
+    if not na(florS) and not florS.idmHit and not na(florS.idmP) and high > florS.idmP
+        florS.idmHit := true
+        f_idmMark(florS)
+
+    if not na(ceilS) and bar_index > ceilS.born
+        if close > ceilS.price and (trendDir == -1 or not altMode or ceilS.idmHit or na(ceilS.idmP))
+            bool isCho = trendDir == -1
+            evChoUp := isCho
+            evBosUp := not isCho
+            int srcC = ceilS.x1
+            ceilS.freeze()
+            [rpC, rbC] = f_retExtInc(srcC, false)
+            if not na(rpC)
+                florS.drop()
+                florS := mkSLine(rpC, rbC, 3, drawOk)
+                florS.armIdm()
+            if showStr and not isCho and ceilS.idmHit and not na(rpC) and drawOk
+                label.new(rbC, na, strTxt, yloc = yloc.belowbar, style = label.style_none, textcolor = color.gray, size = tsize(strSz))
+            trendDir := 1
+            ceilS := na
+        else
+            if high > ceilS.price
+                evSwpHi := true
+                if na(ceilS.swpP) or high > ceilS.swpP
+                    ceilS.swpP := high
+                    ceilS.swpB := bar_index
+                if showSweep and drawOk
+                    label.new(bar_index, na, "×", yloc = yloc.abovebar, style = label.style_none, textcolor = colSweep, size = size.small)
+                if altMode and not ceilS.idmHit and not na(ceilS.idmP) and close > ceilS.price and not na(ceilS.swpP)
+                    float mpC = ceilS.swpP
+                    int   mbC = ceilS.swpB
+                    int   mdC = ceilS.sid
+                    ceilS.drop()
+                    ceilS := mkSLine(mpC, mbC, mdC, drawOk)
+                    ceilS.armIdm()
+            if not na(ceilS.swpP) and na(ceilS.refP)
+                [refPc, refBc] = f_retExtreme(ceilS.x1, false)
+                ceilS.refP := refPc
+            if trendDir == 1 and not na(ceilS.swpP) and not na(ceilS.refP) and low < ceilS.refP
+                float spC = ceilS.swpP
+                int   sbC = ceilS.x1
+                if not na(spC)
+                    int sdC = ceilS.sid
+                    ceilS.drop()
+                    ceilS := mkSLine(spC, sbC, sdC, drawOk)
+                    ceilS.armIdm()
+
+    if not na(florS) and bar_index > florS.born
+        if close < florS.price and (trendDir == 1 or not altMode or florS.idmHit or na(florS.idmP))
+            bool isCho = trendDir == 1
+            evChoDn := isCho
+            evBosDn := not isCho
+            int srcF = florS.x1
+            florS.freeze()
+            [rpF, rbF] = f_retExtInc(srcF, true)
+            if not na(rpF)
+                ceilS.drop()
+                ceilS := mkSLine(rpF, rbF, 2, drawOk)
+                ceilS.armIdm()
+            if showStr and not isCho and florS.idmHit and not na(rpF) and drawOk
+                label.new(rbF, na, strTxt, yloc = yloc.abovebar, style = label.style_none, textcolor = color.gray, size = tsize(strSz))
+            trendDir := -1
+            florS := na
+        else
+            if low < florS.price
+                evSwpLo := true
+                if na(florS.swpP) or low < florS.swpP
+                    florS.swpP := low
+                    florS.swpB := bar_index
+                if showSweep and drawOk
+                    label.new(bar_index, na, "×", yloc = yloc.belowbar, style = label.style_none, textcolor = colSweep, size = size.small)
+                if altMode and not florS.idmHit and not na(florS.idmP) and close < florS.price and not na(florS.swpP)
+                    float mpF = florS.swpP
+                    int   mbF = florS.swpB
+                    int   mdF = florS.sid
+                    florS.drop()
+                    florS := mkSLine(mpF, mbF, mdF, drawOk)
+                    florS.armIdm()
+            if not na(florS.swpP) and na(florS.refP)
+                [refPf, refBf] = f_retExtreme(florS.x1, true)
+                florS.refP := refPf
+            if trendDir == -1 and not na(florS.swpP) and not na(florS.refP) and high > florS.refP
+                float spF = florS.swpP
+                int   sbF = florS.x1
+                if not na(spF)
+                    int sdF = florS.sid
+                    florS.drop()
+                    florS := mkSLine(spF, sbF, sdF, drawOk)
+                    florS.armIdm()
+
+    bool mainEvt = evBosUp or evBosDn or evChoUp or evChoDn
+    if mainEvt
+        mRunHi := high
+        mRunLo := low
+    else
+        mRunHi := na(mRunHi) ? high : math.max(mRunHi, high)
+        mRunLo := na(mRunLo) ? low  : math.min(mRunLo, low)
+    int iAnchor = na
+    if trendDir == 1
+        if not na(ceilS)
+            iAnchor := ceilS.x1
+    else if trendDir == -1
+        if not na(florS)
+            iAnchor := florS.x1
+    if mainEvt
+        iTrend := 0
+        iAncB  := na
+        iCeilP    := na
+        iCeilB    := na
+        iCeilBorn := na
+        iCeilSwp  := na
+        iCeilSwpB := na
+        iCeilRef  := na
+        iCeilIdmP   := na
+        iCeilIdmHit := false
+        iFlorP    := na
+        iFlorB    := na
+        iFlorBorn := na
+        iFlorSwp  := na
+        iFlorSwpB := na
+        iFlorRef  := na
+        iFlorIdmP   := na
+        iFlorIdmHit := false
+        if not inHist
+            f_intClear()
+
+    if na(iAncB) and not na(iAnchor)
+        iAncB := iAnchor
+        if na(iCeilP) and array.size(pvHiB) > 0
+            for _s = 0 to array.size(pvHiB) - 1
+                int _sb = array.get(pvHiB, _s)
+                if _sb > iAncB and close < array.get(pvHiP, _s) and (inPivK <= 1 or f_isSwing(_sb, true, inPivK))
+                    iCeilP    := array.get(pvHiP, _s)
+                    iCeilB    := _sb
+                    iCeilBorn := bar_index
+                    [_sip, _sih] = f_intArmIdm(_sb, true)
+                    iCeilIdmP   := _sip
+                    iCeilIdmHit := _sih
+                    break
+        if na(iFlorP) and array.size(pvLoB) > 0
+            for _s = 0 to array.size(pvLoB) - 1
+                int _sb = array.get(pvLoB, _s)
+                if _sb > iAncB and close > array.get(pvLoP, _s) and (inPivK <= 1 or f_isSwing(_sb, false, inPivK))
+                    iFlorP    := array.get(pvLoP, _s)
+                    iFlorB    := _sb
+                    iFlorBorn := bar_index
+                    [_sjp, _sjh] = f_intArmIdm(_sb, false)
+                    iFlorIdmP   := _sjp
+                    iFlorIdmHit := _sjh
+                    break
+
+    if not mainEvt and not na(iAncB)
+        if not na(aPhP) and aPhB > iAncB and close < aPhP and (inPivK <= 1 or f_isSwing(aPhB, true, inPivK))
+            if na(iCeilP)
+                iCeilP    := aPhP
+                iCeilB    := aPhB
+                iCeilBorn := bar_index
+                iCeilSwp  := na
+                iCeilSwpB := na
+                iCeilRef  := na
+                [ipCa, ihCa] = f_intArmIdm(aPhB, true)
+                iCeilIdmP   := ipCa
+                iCeilIdmHit := ihCa
+        if not na(aPlP) and aPlB > iAncB and close > aPlP and (inPivK <= 1 or f_isSwing(aPlB, false, inPivK))
+            if na(iFlorP)
+                iFlorP    := aPlP
+                iFlorB    := aPlB
+                iFlorBorn := bar_index
+                iFlorSwp  := na
+                iFlorSwpB := na
+                iFlorRef  := na
+                [ipFa, ihFa] = f_intArmIdm(aPlB, false)
+                iFlorIdmP   := ipFa
+                iFlorIdmHit := ihFa
+
+        if not na(iCeilP) and not iCeilIdmHit and not na(iCeilIdmP) and low < iCeilIdmP
+            iCeilIdmHit := true
+        if not na(iFlorP) and not iFlorIdmHit and not na(iFlorIdmP) and high > iFlorIdmP
+            iFlorIdmHit := true
+
+        if not na(iCeilP) and not na(iCeilBorn) and bar_index > iCeilBorn
+            if close > iCeilP
+                bool isChoU = iTrend != 1
+                if isChoU
+                    evIChoUp := true
+                else
+                    evIBosUp := true
+                f_intMark(iCeilP, iCeilB, isChoU)
+                [iRpU, iRbU] = f_retExtInc(iCeilB, false)
+                if not na(iRpU)
+                    iFlorP    := iRpU
+                    iFlorB    := iRbU
+                    iFlorBorn := bar_index
+                    iFlorSwp  := na
+                    iFlorSwpB := na
+                    iFlorRef  := na
+                    [ipFr, ihFr] = f_intArmIdm(iRbU, false)
+                    iFlorIdmP   := ipFr
+                    iFlorIdmHit := ihFr
+                if not isChoU and iCeilIdmHit and not na(iRbU)
+                    f_intStrong(iRbU, true)
+                iTrend    := 1
+                iCeilP    := na
+                iCeilB    := na
+                iCeilBorn := na
+                iCeilSwp  := na
+                iCeilSwpB := na
+                iCeilRef  := na
+                iCeilIdmP   := na
+                iCeilIdmHit := false
+            else
+                if high > iCeilP
+                    if na(iCeilRef)
+                        [iRefPu, iRefBu] = f_retExtreme(iCeilB, false)
+                        iCeilRef := iRefPu
+                    if na(iCeilSwp) or high > iCeilSwp
+                        iCeilSwp  := high
+                        iCeilSwpB := bar_index
+                if iTrend == 1 and not na(iCeilSwp) and not na(iCeilRef) and low < iCeilRef
+                    float _ipC = iCeilSwp
+                    int   _ibC = iCeilB
+                    if not na(_ipC)
+                        iCeilP    := _ipC
+                        iCeilB    := _ibC
+                        iCeilBorn := bar_index
+                        iCeilSwp  := na
+                        iCeilSwpB := na
+                        iCeilRef  := na
+                        [ipCp, ihCp] = f_intArmIdm(_ibC, true)
+                        iCeilIdmP   := ipCp
+                        iCeilIdmHit := ihCp
+
+        if not na(iFlorP) and not na(iFlorBorn) and bar_index > iFlorBorn
+            if close < iFlorP
+                bool isChoD = iTrend != -1
+                if isChoD
+                    evIChoDn := true
+                else
+                    evIBosDn := true
+                f_intMark(iFlorP, iFlorB, isChoD)
+                [iRpD, iRbD] = f_retExtInc(iFlorB, true)
+                if not na(iRpD)
+                    iCeilP    := iRpD
+                    iCeilB    := iRbD
+                    iCeilBorn := bar_index
+                    iCeilSwp  := na
+                    iCeilSwpB := na
+                    iCeilRef  := na
+                    [ipCr, ihCr] = f_intArmIdm(iRbD, true)
+                    iCeilIdmP   := ipCr
+                    iCeilIdmHit := ihCr
+                if not isChoD and iFlorIdmHit and not na(iRbD)
+                    f_intStrong(iRbD, false)
+                iTrend    := -1
+                iFlorP    := na
+                iFlorB    := na
+                iFlorBorn := na
+                iFlorSwp  := na
+                iFlorSwpB := na
+                iFlorRef  := na
+                iFlorIdmP   := na
+                iFlorIdmHit := false
+            else
+                if low < iFlorP
+                    if na(iFlorRef)
+                        [iRefPd, iRefBd] = f_retExtreme(iFlorB, true)
+                        iFlorRef := iRefPd
+                    if na(iFlorSwp) or low < iFlorSwp
+                        iFlorSwp  := low
+                        iFlorSwpB := bar_index
+                if iTrend == -1 and not na(iFlorSwp) and not na(iFlorRef) and high > iFlorRef
+                    float _ipF = iFlorSwp
+                    int   _ibF = iFlorB
+                    if not na(_ipF)
+                        iFlorP    := _ipF
+                        iFlorB    := _ibF
+                        iFlorBorn := bar_index
+                        iFlorSwp  := na
+                        iFlorSwpB := na
+                        iFlorRef  := na
+                        [ipFp, ihFp] = f_intArmIdm(_ibF, false)
+                        iFlorIdmP   := ipFp
+                        iFlorIdmHit := ihFp
+
+    bool intEvt = evIBosUp or evIBosDn or evIChoUp or evIChoDn
+    if mainEvt or intEvt
+        iRunHi := high
+        iRunLo := low
+    else
+        iRunHi := na(iRunHi) ? high : math.max(iRunHi, high)
+        iRunLo := na(iRunLo) ? low  : math.min(iRunLo, low)
+
+    int nAnchor = na
+    if iTrend == 1
+        if not na(iCeilB)
+            nAnchor := iCeilB
+    else if iTrend == -1
+        if not na(iFlorB)
+            nAnchor := iFlorB
+
+    if mainEvt or intEvt
+        nTrend := 0
+        nAncB  := na
+        nCeilP    := na
+        nCeilB    := na
+        nCeilBorn := na
+        nCeilSwp  := na
+        nCeilSwpB := na
+        nCeilRef  := na
+        nCeilIdmP   := na
+        nCeilIdmHit := false
+        nFlorP    := na
+        nFlorB    := na
+        nFlorBorn := na
+        nFlorSwp  := na
+        nFlorSwpB := na
+        nFlorRef  := na
+        nFlorIdmP   := na
+        nFlorIdmHit := false
+        rqClear := true
+
+    if na(nAncB) and not na(nAnchor)
+        nAncB := nAnchor
+        if na(nCeilP) and array.size(pvHiB) > 0
+            for _n = 0 to array.size(pvHiB) - 1
+                int _nb = array.get(pvHiB, _n)
+                if _nb > nAncB and close < array.get(pvHiP, _n) and (inPivK <= 1 or f_isSwing(_nb, true, inPivK))
+                    nCeilP    := array.get(pvHiP, _n)
+                    nCeilB    := _nb
+                    nCeilBorn := bar_index
+                    [_nip, _nih] = f_intArmIdm(_nb, true)
+                    nCeilIdmP   := _nip
+                    nCeilIdmHit := _nih
+                    break
+        if na(nFlorP) and array.size(pvLoB) > 0
+            for _n = 0 to array.size(pvLoB) - 1
+                int _nb = array.get(pvLoB, _n)
+                if _nb > nAncB and close > array.get(pvLoP, _n) and (inPivK <= 1 or f_isSwing(_nb, false, inPivK))
+                    nFlorP    := array.get(pvLoP, _n)
+                    nFlorB    := _nb
+                    nFlorBorn := bar_index
+                    [_njp, _njh] = f_intArmIdm(_nb, false)
+                    nFlorIdmP   := _njp
+                    nFlorIdmHit := _njh
+                    break
+
+    if not mainEvt and not intEvt and not na(nAncB)
+        if not na(aPhP) and aPhB > nAncB and close < aPhP and (inPivK <= 1 or f_isSwing(aPhB, true, inPivK))
+            if na(nCeilP)
+                nCeilP    := aPhP
+                nCeilB    := aPhB
+                nCeilBorn := bar_index
+                nCeilSwp  := na
+                nCeilSwpB := na
+                nCeilRef  := na
+                [npCa, nhCa] = f_intArmIdm(aPhB, true)
+                nCeilIdmP   := npCa
+                nCeilIdmHit := nhCa
+        if not na(aPlP) and aPlB > nAncB and close > aPlP and (inPivK <= 1 or f_isSwing(aPlB, false, inPivK))
+            if na(nFlorP)
+                nFlorP    := aPlP
+                nFlorB    := aPlB
+                nFlorBorn := bar_index
+                nFlorSwp  := na
+                nFlorSwpB := na
+                nFlorRef  := na
+                [npFa, nhFa] = f_intArmIdm(aPlB, false)
+                nFlorIdmP   := npFa
+                nFlorIdmHit := nhFa
+
+        if not na(nCeilP) and not nCeilIdmHit and not na(nCeilIdmP) and low < nCeilIdmP
+            nCeilIdmHit := true
+        if not na(nFlorP) and not nFlorIdmHit and not na(nFlorIdmP) and high > nFlorIdmP
+            nFlorIdmHit := true
+
+        if not na(nCeilP) and not na(nCeilBorn) and bar_index > nCeilBorn
+            if close > nCeilP
+                bool isNChoU = nTrend != 1
+                if isNChoU
+                    evNChoUp := true
+                else
+                    evNBosUp := true
+                rqUpP   := nCeilP
+                rqUpB   := nCeilB
+                rqUpCho := isNChoU
+                [nRpU, nRbU] = f_retExtInc(nCeilB, false)
+                if not na(nRpU)
+                    nFlorP    := nRpU
+                    nFlorB    := nRbU
+                    nFlorBorn := bar_index
+                    nFlorSwp  := na
+                    nFlorSwpB := na
+                    nFlorRef  := na
+                    [npFr, nhFr] = f_intArmIdm(nRbU, false)
+                    nFlorIdmP   := npFr
+                    nFlorIdmHit := nhFr
+                if not isNChoU and nCeilIdmHit and not na(nRbU)
+                    rqStrUp := nRbU
+                nTrend    := 1
+                nCeilP    := na
+                nCeilB    := na
+                nCeilBorn := na
+                nCeilSwp  := na
+                nCeilSwpB := na
+                nCeilRef  := na
+                nCeilIdmP   := na
+                nCeilIdmHit := false
+            else
+                if high > nCeilP
+                    if na(nCeilRef)
+                        [nRefPu, nRefBu] = f_retExtreme(nCeilB, false)
+                        nCeilRef := nRefPu
+                    if na(nCeilSwp) or high > nCeilSwp
+                        nCeilSwp  := high
+                        nCeilSwpB := bar_index
+                if nTrend == 1 and not na(nCeilSwp) and not na(nCeilRef) and low < nCeilRef
+                    float _npC = nCeilSwp
+                    int   _nbC = nCeilB
+                    if not na(_npC)
+                        nCeilP    := _npC
+                        nCeilB    := _nbC
+                        nCeilBorn := bar_index
+                        nCeilSwp  := na
+                        nCeilSwpB := na
+                        nCeilRef  := na
+                        [npCp, nhCp] = f_intArmIdm(_nbC, true)
+                        nCeilIdmP   := npCp
+                        nCeilIdmHit := nhCp
+
+        if not na(nFlorP) and not na(nFlorBorn) and bar_index > nFlorBorn
+            if close < nFlorP
+                bool isNChoD = nTrend != -1
+                if isNChoD
+                    evNChoDn := true
+                else
+                    evNBosDn := true
+                rqDnP   := nFlorP
+                rqDnB   := nFlorB
+                rqDnCho := isNChoD
+                [nRpD, nRbD] = f_retExtInc(nFlorB, true)
+                if not na(nRpD)
+                    nCeilP    := nRpD
+                    nCeilB    := nRbD
+                    nCeilBorn := bar_index
+                    nCeilSwp  := na
+                    nCeilSwpB := na
+                    nCeilRef  := na
+                    [npCr, nhCr] = f_intArmIdm(nRbD, true)
+                    nCeilIdmP   := npCr
+                    nCeilIdmHit := nhCr
+                if not isNChoD and nFlorIdmHit and not na(nRbD)
+                    rqStrDn := nRbD
+                nTrend    := -1
+                nFlorP    := na
+                nFlorB    := na
+                nFlorBorn := na
+                nFlorSwp  := na
+                nFlorSwpB := na
+                nFlorRef  := na
+                nFlorIdmP   := na
+                nFlorIdmHit := false
+            else
+                if low < nFlorP
+                    if na(nFlorRef)
+                        [nRefPd, nRefBd] = f_retExtreme(nFlorB, true)
+                        nFlorRef := nRefPd
+                    if na(nFlorSwp) or low < nFlorSwp
+                        nFlorSwp  := low
+                        nFlorSwpB := bar_index
+                if nTrend == -1 and not na(nFlorSwp) and not na(nFlorRef) and high > nFlorRef
+                    float _npF = nFlorSwp
+                    int   _nbF = nFlorB
+                    if not na(_npF)
+                        nFlorP    := _npF
+                        nFlorB    := _nbF
+                        nFlorBorn := bar_index
+                        nFlorSwp  := na
+                        nFlorSwpB := na
+                        nFlorRef  := na
+                        [npFp, nhFp] = f_intArmIdm(_nbF, false)
+                        nFlorIdmP   := npFp
+                        nFlorIdmHit := nhFp
+
+    if mainEvt or intEvt or evNBosUp or evNBosDn or evNChoUp or evNChoDn
+        nRunHi := high
+        nRunLo := low
+    else
+        nRunHi := na(nRunHi) ? high : math.max(nRunHi, high)
+        nRunLo := na(nRunLo) ? low  : math.min(nRunLo, low)
+
+    ceilS.repos(bar_index)
+    florS.repos(bar_index)
+
+f_retLvl(int dir, float anch, float orig, float pct) =>
+    float l = na
+    if dir == 1 and not na(anch) and not na(orig) and anch > orig
+        l := anch - (anch - orig) * pct / 100.0
+    else if dir == -1 and not na(anch) and not na(orig) and orig > anch
+        l := anch + (orig - anch) * pct / 100.0
+    l
+
+float mAnch = na
+float mOrig = na
+if trendDir == 1
+    mAnch := mRunHi
+    mOrig := mRunLo
+    if not na(florS)
+        mOrig := florS.price
+else if trendDir == -1
+    mAnch := mRunLo
+    mOrig := mRunHi
+    if not na(ceilS)
+        mOrig := ceilS.price
+float mLvl = f_retLvl(trendDir, mAnch, mOrig, aRetPct)
+
+bool rtMainRet = false
+if evBosUp or evBosDn or evChoUp or evChoDn
+    mainRetFired := false
+if na(mLvl)
+    mainRetFired   := false
+    lastMainRetLvl := na
+    mainRetBorn    := na
+    mainRetAnch    := na
+else
+    if na(mainRetAnch) or mainRetAnch != mAnch
+        mainRetAnch := mAnch
+        if (trendDir == 1 and close > mLvl) or (trendDir == -1 and close < mLvl)
+            mainRetFired := false
+    bool _mNewLvl = na(lastMainRetLvl) or mLvl != lastMainRetLvl
+    if _mNewLvl
+        lastMainRetLvl := mLvl
+        mainRetBorn := bar_index
+    if not mainRetFired and not _mNewLvl
+        if (trendDir == 1 and low <= mLvl) or (trendDir == -1 and high >= mLvl)
+            rtMainRet    := true
+
+float iAnch = na
+float iOrig = na
+if iTrend == 1
+    iAnch := iRunHi
+    iOrig := not na(iFlorP) ? iFlorP : iRunLo
+else if iTrend == -1
+    iAnch := iRunLo
+    iOrig := not na(iCeilP) ? iCeilP : iRunHi
+float iLvl = f_retLvl(iTrend, iAnch, iOrig, aRetPct)
+
+bool rtIntRet = false
+if evIBosUp or evIBosDn or evIChoUp or evIChoDn or evBosUp or evBosDn or evChoUp or evChoDn
+    intRetFired := false
+if na(iLvl)
+    intRetFired   := false
+    lastIntRetLvl := na
+    intRetBorn    := na
+    intRetAnch    := na
+else
+    if na(intRetAnch) or intRetAnch != iAnch
+        intRetAnch := iAnch
+        if (iTrend == 1 and close > iLvl) or (iTrend == -1 and close < iLvl)
+            intRetFired := false
+    bool _iNewLvl = na(lastIntRetLvl) or iLvl != lastIntRetLvl
+    if _iNewLvl
+        lastIntRetLvl := iLvl
+        intRetBorn := bar_index
+    if not intRetFired and not _iNewLvl
+        if (iTrend == 1 and low <= iLvl) or (iTrend == -1 and high >= iLvl)
+            rtIntRet    := true
+
+float nAnch = na
+float nOrig = na
+if nTrend == 1
+    nAnch := nRunHi
+    nOrig := not na(nFlorP) ? nFlorP : nRunLo
+else if nTrend == -1
+    nAnch := nRunLo
+    nOrig := not na(nCeilP) ? nCeilP : nRunHi
+float nLvl = f_retLvl(nTrend, nAnch, nOrig, aRetPct)
+
+bool rtNnRet = false
+if evNBosUp or evNBosDn or evNChoUp or evNChoDn or evIBosUp or evIBosDn or evIChoUp or evIChoDn or evBosUp or evBosDn or evChoUp or evChoDn
+    nnRetFired := false
+if na(nLvl)
+    nnRetFired   := false
+    lastNnRetLvl := na
+    nnRetBorn    := na
+    nnRetAnch    := na
+else
+    if na(nnRetAnch) or nnRetAnch != nAnch
+        nnRetAnch := nAnch
+        if (nTrend == 1 and close > nLvl) or (nTrend == -1 and close < nLvl)
+            nnRetFired := false
+    bool _nNewLvl = na(lastNnRetLvl) or nLvl != lastNnRetLvl
+    if _nNewLvl
+        lastNnRetLvl := nLvl
+        nnRetBorn := bar_index
+    if not nnRetFired and not _nNewLvl
+        if (nTrend == 1 and low <= nLvl) or (nTrend == -1 and high >= nLvl)
+            rtNnRet    := true
+
+
+float _cs = timeframe.in_seconds(timeframe.period)
+bool sesVisible = _cs <= 900
+var int dayNum = 0
+var int _keepSesBars = int(math.ceil((vpSesDays + 2) * 86400.0 / _cs))
+
+
+
+type VPCol
+    bool  on
+    int   x1
+    float hi
+    float lo
+
+
+method begin(VPCol c) =>
+    c.on := true
+    c.x1 := bar_index
+    c.hi := high
+    c.lo := low
+
+method feed(VPCol c) =>
+    if c.on
+        c.hi := math.max(c.hi, high)
+        c.lo := math.min(c.lo, low)
+
+
+
+f_kzbox(VPCol c, int x2, color fillC, color brdC, string brdS, int brdW, string txt, string ts, color tc, string tHal, string tVal, array<box> q, array<label> lq, array<int> qd, int keep) =>
+    hA = tHal == "Left" ? text.align_left : tHal == "Right" ? text.align_right : text.align_center
+    if tVal == "Outside Top" or tVal == "Outside Bottom"
+        array.push(q, box.new(c.x1, c.hi, x2, c.lo, border_color = brdC, border_width = brdW, border_style = lstyle(brdS), bgcolor = fillC))
+        int lx = tHal == "Left" ? c.x1 : tHal == "Right" ? x2 : int((c.x1 + x2) / 2)
+        string lSt = tVal == "Outside Top" ? label.style_label_down : label.style_label_up
+        float ly = tVal == "Outside Top" ? c.hi : c.lo
+        array.push(lq, label.new(lx, ly, text = txt, color = color(na), textcolor = tc, style = lSt, size = tsize(ts), textalign = text.align_center))
+    else
+        vA = tVal == "Bottom" ? text.align_bottom : tVal == "Middle" ? text.align_center : text.align_top
+        array.push(q, box.new(c.x1, c.hi, x2, c.lo, border_color = brdC, border_width = brdW, border_style = lstyle(brdS), bgcolor = fillC, text = txt, text_size = tsize(ts), text_color = tc, text_halign = hA, text_valign = vA))
+        array.push(lq, label.new(bar_index, close, text="", color=color(na), textcolor=color(na)))
+    array.push(qd, dayNum)
+
+f_kzWipeLive(array<box> q, array<label> lq, array<int> qd) =>
+    while array.size(q) > 0
+        box.delete(array.pop(q))
+    while array.size(lq) > 0
+        label.delete(array.pop(lq))
+    array.clear(qd)
+
+f_sesPrune(array<box> kq, array<label> klq, array<int> kqd) =>
+    while array.size(kqd) > 0 and array.get(kqd, 0) <= dayNum - vpSesDays
+        array.shift(kqd)
+        if array.size(kq) > 0
+            box.delete(array.shift(kq))
+        if array.size(klq) > 0
+            label.delete(array.shift(klq))
+
+f_session(VPCol c, bool inSes, bool boxOn, color bF, color bB, string bBs, int bBw, string bT, string bTs, color bTc, string bTh, string bTv, array<box> kq, array<label> klq, array<int> kqd, int keep) =>
+    if inSes and not c.on
+        c.begin()
+    else if not inSes and c.on
+        c.on := false
+        if boxOn
+            f_kzbox(c, bar_index - 1, bF, bB, bBs, bBw, bT, bTs, bTc, bTh, bTv, kq, klq, kqd, keep)
+    if c.on
+        c.feed()
+
+string _tzA = kaTz != "" ? kaTz : vpTz
+string _tzL = klTz != "" ? klTz : vpTz
+string _tzN = knTz != "" ? knTz : vpTz
+string _tzC = kcTz != "" ? kcTz : vpTz
+string _sesA = f_sesShift(aSes, kzShift)
+string _sesL = f_sesShift(lSes, kzShift)
+string _sesN = f_sesShift(nSes, kzShift)
+string _sesC = f_sesShift(cSes, kzShift)
+bool inA = sesVisible and kaOn and not na(time(timeframe.period, _sesA, _tzA))
+bool inL = sesVisible and klOn and not na(time(timeframe.period, _sesL, _tzL))
+bool inN = sesVisible and knOn and not na(time(timeframe.period, _sesN, _tzN))
+bool inC = sesVisible and kcOn and not na(time(timeframe.period, _sesC, _tzC))
+string _dayTz = vpDayTz == "Exchange" ? syminfo.timezone : vpDayTz
+int _domS    = vpDayTz == "Exchange" ? 0 : dayofmonth(time, _dayTz)
+int _monS    = vpDayTz == "Exchange" ? 0 : month(time, _dayTz)
+int _chgDay  = ta.change(time("D"))
+int _chgDOMc = ta.change(_domS)
+int _chgMonc = ta.change(_monS)
+bool newDay = vpDayTz == "Exchange" ? _chgDay != 0 : (_chgDOMc != 0 or _chgMonc != 0)
+if newDay
+    dayNum += 1
+
+var VPCol colA = VPCol.new(false, na, na, na)
+var VPCol colL = VPCol.new(false, na, na, na)
+var VPCol colN = VPCol.new(false, na, na, na)
+var VPCol colC = VPCol.new(false, na, na, na)
+
+
+
+var array<box>  kqA = array.new<box>()
+var array<box>  kqL = array.new<box>()
+var array<box>  kqN = array.new<box>()
+var array<box>  kqC = array.new<box>()
+var array<label> kqAl = array.new<label>()
+var array<label> kqLl = array.new<label>()
+var array<label> kqNl = array.new<label>()
+var array<label> kqCl = array.new<label>()
+var array<int> kqAd = array.new<int>()
+var array<int> kqLd = array.new<int>()
+var array<int> kqNd = array.new<int>()
+var array<int> kqCd = array.new<int>()
+var array<box>   kqAv = array.new<box>()
+var array<box>   kqLv = array.new<box>()
+var array<box>   kqNv = array.new<box>()
+var array<box>   kqCv = array.new<box>()
+var array<label> kqAvl = array.new<label>()
+var array<label> kqLvl = array.new<label>()
+var array<label> kqNvl = array.new<label>()
+var array<label> kqCvl = array.new<label>()
+var array<int>   kqAvd = array.new<int>()
+var array<int>   kqLvd = array.new<int>()
+var array<int>   kqNvd = array.new<int>()
+var array<int>   kqCvd = array.new<int>()
+
+if not onClose or barstate.isconfirmed
+    if sesVisible and (last_bar_index - bar_index) <= _keepSesBars
+        if newDay
+            f_sesPrune(kqA, kqAl, kqAd)
+            f_sesPrune(kqL, kqLl, kqLd)
+            f_sesPrune(kqN, kqNl, kqNd)
+            f_sesPrune(kqC, kqCl, kqCd)
+        if kaOn
+            f_session(colA, inA, kaOn, kaF, kaB, kaBs, kaBw, kaT, kaTs, kaTc, kaTh, kaTv, kqA, kqAl, kqAd, vpSesDays)
+        if klOn
+            f_session(colL, inL, klOn, klF, klB, klBs, klBw, klT, klTs, klTc, klTh, klTv, kqL, kqLl, kqLd, vpSesDays)
+        if knOn
+            f_session(colN, inN, knOn, knF, knB, knBs, knBw, knT, knTs, knTc, knTh, knTv, kqN, kqNl, kqNd, vpSesDays)
+        if kcOn
+            f_session(colC, inC, kcOn, kcF, kcB, kcBs, kcBw, kcT, kcTs, kcTc, kcTh, kcTv, kqC, kqCl, kqCd, vpSesDays)
+
+
+if barstate.islast and sesVisible
+    f_kzWipeLive(kqAv, kqAvl, kqAvd)
+    if kaOn and colA.on
+        f_kzbox(colA, bar_index, kaF, kaB, kaBs, kaBw, kaT, kaTs, kaTc, kaTh, kaTv, kqAv, kqAvl, kqAvd, vpSesDays)
+    f_kzWipeLive(kqLv, kqLvl, kqLvd)
+    if klOn and colL.on
+        f_kzbox(colL, bar_index, klF, klB, klBs, klBw, klT, klTs, klTc, klTh, klTv, kqLv, kqLvl, kqLvd, vpSesDays)
+    f_kzWipeLive(kqNv, kqNvl, kqNvd)
+    if knOn and colN.on
+        f_kzbox(colN, bar_index, knF, knB, knBs, knBw, knT, knTs, knTc, knTh, knTv, kqNv, kqNvl, kqNvd, vpSesDays)
+    f_kzWipeLive(kqCv, kqCvl, kqCvd)
+    if kcOn and colC.on
+        f_kzbox(colC, bar_index, kcF, kcB, kcBs, kcBw, kcT, kcTs, kcTc, kcTh, kcTv, kqCv, kqCvl, kqCvd, vpSesDays)
+
+
+almGate  = input.bool(false, "Arm alerts only after price crosses a level", group = gA, tooltip = "OFF (default) = the alert system behaves exactly as it always has: every enabled event fires the moment it happens.\n\nON = the indicator stays SILENT until price reaches the level below. From that moment it is armed for good and every enabled alert fires normally. Marks are still drawn on the chart the whole time — only the alerts are held back.\n\nThis is what lets ONE alert do the work of two: create a single alert on 'Any alert() function call' and it stays quiet until your price is reached, then delivers whichever structure events you ticked above.\n\nLeave the level at 0 to disable the gate even while this box is ticked.\n\nARMS ON TOUCH, NOT ON CLOSE: the test reads the bar's wick, evaluated on every tick, so the arm trips the moment price trades at your level. It never waits for the candle to close.\n\nIT MUST BE REACHED, NOT MERELY BE ON ONE SIDE (v15.6): the level has to be approached. The previous bar's close decides which side price is on, and the arm then waits for the wick to come to the level from that side — up to it if price is below, down to it if price is above. Before v15.6 the test only asked whether the level lay on one side of the bar, so a level ABOVE price satisfied 'low <= level' on the first live bar and the gate opened having touched nothing at all. A gap straight through the level still arms, exactly as an ordinary TradingView price alert would.\n\nLIVE BARS ONLY (v13.6.1): the arm can only be tripped by a bar arriving in real time, after the alert has started running. Before this, TradingView's replay of the chart's history when the alert is created would trip the arm on any historical touch of your level, leaving the gate already open and the arm doing nothing. The consequence is that the gate cannot be observed on historical bars — on a chart it stays un-armed until live bars arrive.")
+almGateP = input.float(0.0, "  - Arm price level", step = 0.01, group = gA, tooltip = "The price that arms the alerts. 0 = gate disabled, so alerts behave normally even with the box above ticked. Wicks count, exactly like an ordinary TradingView price alert.")
+almGateD = input.string("Either", "  - Arms when price", options = ["Touches from below", "Touches from above", "Either"], group = gA, tooltip = "Which approach counts as a touch. The previous bar's close decides which side of the level price is currently on, and the direction says which of those approaches may arm the gate.\n\nTouches from below = price is below the level and its HIGH reaches up to it.\nTouches from above = price is above the level and its LOW reaches down to it.\nEither = whichever applies to where price actually is — this is the one to leave set unless you specifically want only one side.\n\nPick the option that does not match where price is and the gate will correctly wait: 'Touches from above' with the level ABOVE price waits for price to get above it first and then come back down to it. The readout at the bottom of the chart shows WAITING the whole time, so you can always see the gate is still shut.")
+
+bgcolor(paintBg ? (trendDir == 1 ? color.new(color.teal, 92) : trendDir == -1 ? color.new(color.red, 92) : na) : na)
+plot(trendDir, "Trend (1 = bull, -1 = bear, 0 = undefined)", display = display.data_window)
+
+gTbl      = "8. Multi-timeframe table"
+tblOn     = input.bool(true, "Show table", group = gTbl, tooltip = "Master switch for the whole table. While it is off no timeframe is requested at all, so the table costs nothing.")
+tblPos    = input.string("Top right", "Position", options = ["Top left", "Top center", "Top right", "Middle left", "Middle center", "Middle right", "Bottom left", "Bottom center", "Bottom right"], group = gTbl)
+
+tblC1     = input.string("TF",    "Column titles", inline = "tbc", group = gTbl)
+tblC2     = input.string("TREND", "", inline = "tbc", group = gTbl)
+tblC3     = input.string("EVENT", "", inline = "tbc", group = gTbl)
+
+tblHdrTc  = input.color(color.white, "Column title  text", inline = "tbh", group = gTbl)
+tblHdrSz  = input.string("Small", "", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "tbh", group = gTbl)
+tblHdrBg  = input.color(#2a2e39, "back", inline = "tbh", group = gTbl)
+
+tblRowTc  = input.color(color.white, "TF cell            text", inline = "tbr", group = gTbl)
+tblRowSz  = input.string("Small", "", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "tbr", group = gTbl)
+tblRowBg  = input.color(#1e222d, "back", inline = "tbr", group = gTbl, tooltip = "Text colour and background of the TF column's cells — the timeframe names down the left.")
+
+tblBullBg = input.color(color.new(color.black, 0), "TREND    bullish   back", inline = "tbt", group = gTbl)
+tblBullTc = input.color(color.new(color.green, 0), "text", inline = "tbt", group = gTbl)
+tblBearBg = input.color(color.new(color.black, 0), "TREND    bearish   back", inline = "tbn", group = gTbl)
+tblBearTc = input.color(color.new(color.red, 0), "text", inline = "tbn", group = gTbl)
+tblEvBg   = input.color(#1e222d, "EVENT    active     back", inline = "tbv", group = gTbl)
+tblEvTc   = input.color(#b2b5be, "text", inline = "tbv", group = gTbl)
+tblBgAll  = input.color(color.new(color.black, 100), "Table background", group = gTbl, tooltip = "Shows through anywhere a cell has no colour of its own.")
+
+tblFrmC   = input.color(color.gray, "Table border  colour", inline = "tbf", group = gTbl)
+tblFrmW   = input.int(1, "width", minval = 0, maxval = 5, inline = "tbf", group = gTbl)
+tblCelC   = input.color(color.gray, "Cell border    colour", inline = "tbb", group = gTbl)
+tblCelW   = input.int(1, "width", minval = 0, maxval = 5, inline = "tbb", group = gTbl, tooltip = "The lines between the columns and rows. 0 removes them.")
+
+tblBullTx = input.string("BULLISH", "Trend text", inline = "tbx", group = gTbl)
+tblBearTx = input.string("BEARISH", "", inline = "tbx", group = gTbl)
+tblFlatTx = input.string("—", "", inline = "tbx", group = gTbl, tooltip = "Bullish · Bearish · and the text used before that timeframe has produced its first BOS/CHOCH.")
+tblSwHiTx = input.string("SWEPT HIGH", "Event text", inline = "tbe1", group = gTbl)
+tblSwLoTx = input.string("SWEPT LOW",  "", inline = "tbe1", group = gTbl)
+tblFvgBTx = input.string("BULL FVG",   "", inline = "tbe2", group = gTbl)
+tblFvgSTx = input.string("BEAR FVG",   "", inline = "tbe2", group = gTbl)
+tblNoneTx = input.string("***", "No event", group = gTbl, tooltip = "Shown when that timeframe's candle has neither swept the previous candle nor reacted out of a fair value gap.")
+
+tbT1   = input.bool(true,  "1m",  inline = "tfa", group = gTbl)
+tbT2   = input.bool(false, "2m",  inline = "tfa", group = gTbl)
+tbT3   = input.bool(true,  "3m",  inline = "tfa", group = gTbl)
+tbT5   = input.bool(true,  "5m",  inline = "tfa", group = gTbl)
+tbT10  = input.bool(false, "10m", inline = "tfb", group = gTbl)
+tbT15  = input.bool(true,  "15m", inline = "tfb", group = gTbl)
+tbT30  = input.bool(true,  "30m", inline = "tfb", group = gTbl)
+tbT45  = input.bool(false, "45m", inline = "tfb", group = gTbl)
+tbT60  = input.bool(true,  "1h",  inline = "tfc", group = gTbl)
+tbT120 = input.bool(false, "2h",  inline = "tfc", group = gTbl)
+tbT180 = input.bool(false, "3h",  inline = "tfc", group = gTbl)
+tbT240 = input.bool(true,  "4h",  inline = "tfc", group = gTbl)
+tbT360 = input.bool(false, "6h",  inline = "tfd", group = gTbl)
+tbT480 = input.bool(false, "8h",  inline = "tfd", group = gTbl)
+tbT720 = input.bool(false, "12h", inline = "tfd", group = gTbl)
+tbTD   = input.bool(true,  "1D",  inline = "tfe", group = gTbl)
+tbTW   = input.bool(true,  "1W",  inline = "tfe", group = gTbl)
+tbTM   = input.bool(true,  "1M",  inline = "tfe", group = gTbl)
+
+tblMaster = input.bool(true, "▶ Show multi-timeframe table (TF · TREND · EVENT · INTERNAL)", group = gTog, tooltip = "Quick on/off for the whole table from the toggle list at the top of the settings. The table also has its own 'Show table' switch in group 8 — BOTH must be on for it to appear, which lets you park the table with either one and turn it back on from whichever panel you happen to be in.")
+tblC4     = input.string("INTERNAL", "Column 4 title", group = gTbl)
+tblEvOn   = input.bool(false, "Show EVENT column", inline = "tbcol", group = gTbl)
+tblInOn   = input.bool(true, "Show INTERNAL column", inline = "tbcol", group = gTbl, tooltip = "Turn either column off and the table narrows to the remaining ones — TF and TREND are always shown. INTERNAL reports the internal (iBOS/iCHOCH) trend of each timeframe.")
+
+tblTrNeuTc  = input.color(color.white, "TREND    no trend   text", inline = "tcn", group = gTbl)
+tblTrNeuBg  = input.color(#1e222d, "back", inline = "tcn", group = gTbl, tooltip = "The TREND cell before that timeframe has produced its first BOS/CHOCH. Bullish and bearish TREND colours are the two 'Bullish cell' / 'Bearish cell' pickers above.")
+tblInBullTc = input.color(color.new(color.black, 0), "INTERNAL bullish   text", inline = "tci1", group = gTbl)
+tblInBullBg = input.color(#b2b5be, "back", inline = "tci1", group = gTbl)
+tblInBearTc = input.color(#b2b5be, "INTERNAL bearish   text", inline = "tci2", group = gTbl)
+tblInBearBg = input.color(color.new(color.black, 0), "back", inline = "tci2", group = gTbl)
+tblInNeuTc  = input.color(color.white, "INTERNAL no trend text", inline = "tci3", group = gTbl)
+tblInNeuBg  = input.color(#1e222d, "back", inline = "tci3", group = gTbl, tooltip = "The INTERNAL cell before that timeframe's range has produced its first iCHOCH.")
+tblEvNoneTc = input.color(color.new(color.gray, 0), "EVENT    no event  text", inline = "tcev", group = gTbl)
+tblEvNoneBg = input.color(#1e222d, "back", inline = "tcev", group = gTbl, tooltip = "Styles the EVENT cell while it shows the 'no event' placeholder, so quiet timeframes can be dimmed and the ones that are actually doing something stand out. The 'Event cell' pickers above style it when a sweep or FVG reading IS present.")
+
+f_tfPack(bool on) =>
+    int trOut = 0
+    int evOut = 0
+    int inOut = 0
+    int nnOut = 0
+    if on
+        var SwingTracker tkHi = SwingTracker.new(true,  na, na, 0, na)
+        var SwingTracker tkLo = SwingTracker.new(false, na, na, 0, na)
+        var SwingTracker tkAH = SwingTracker.new(true,  na, na, 0, na)
+        var SwingTracker tkAL = SwingTracker.new(false, na, na, 0, na)
+        var float tCeil  = na
+        var int   tCeilB = na
+        var float tFlor  = na
+        var int   tFlorB = na
+        var float tRunLo = na
+        var float tRunHi = na
+        var int   tTrend = 0
+        var float tAllHi = na
+        var float tAllLo = na
+        tAllHi := na(tAllHi) ? high : math.max(tAllHi, high)
+        tAllLo := na(tAllLo) ? low  : math.min(tAllLo, low)
+        tRunLo := na(tRunLo) ? low  : math.min(tRunLo, low)
+        tRunHi := na(tRunHi) ? high : math.max(tRunHi, high)
+        var bool  hntH   = true
+        var bool  hntL   = true
+        var float lHiP   = na
+        var float lLoP   = na
+        var float rmLoP  = na
+        var int   rmLoB  = na
+        var int   rmLoDir = 0
+        var float rmLoHi = na
+        var float rmHiP  = na
+        var int   rmHiB  = na
+        var int   rmHiDir = 0
+        var float rmHiLo = na
+        if na(rmLoP) or low <= rmLoP
+            rmLoP   := low
+            rmLoB   := bar_index
+            rmLoDir := close > open ? 1 : close < open ? -1 : 0
+            rmLoHi  := high
+        if na(rmHiP) or high >= rmHiP
+            rmHiP   := high
+            rmHiB   := bar_index
+            rmHiDir := close > open ? 1 : close < open ? -1 : 0
+            rmHiLo  := low
+        [cfH, cfHb] = tkHi.update()
+        [cfL, cfLb] = tkLo.update()
+        int _hPot0 = tkAH.potentialBar
+        int _lPot0 = tkAL.potentialBar
+        float afH  = na
+        int   afHb = na
+        float afL  = na
+        int   afLb = na
+        if hntH
+            [_ch, _chb] = tkAH.update()
+            afH  := _ch
+            afHb := _chb
+        if hntL
+            [_cl, _clb] = tkAL.update()
+            afL  := _cl
+            afLb := _clb
+        if not na(afH)
+            hntH := false
+            hntL := true
+            lHiP := afH
+            tkAL.potential    := rmLoP
+            tkAL.potentialBar := rmLoB
+            bool _pbL = rmLoDir == 1
+            tkAL.count    := _pbL ? 1 : 0
+            tkAL.refLevel := _pbL ? rmLoHi : na
+        if not na(afL)
+            hntL := false
+            hntH := true
+            lLoP := afL
+            tkAH.potential    := rmHiP
+            tkAH.potentialBar := rmHiB
+            bool _pbH = rmHiDir == -1
+            tkAH.count    := _pbH ? 1 : 0
+            tkAH.refLevel := _pbH ? rmHiLo : na
+        if not hntH and not na(lHiP) and high >= lHiP
+            hntH := true
+            hntL := false
+            tkAH.armHere()
+        else if not hntL and not na(lLoP) and low <= lLoP
+            hntL := true
+            hntH := false
+            tkAL.armHere()
+        if tkAH.potentialBar != _hPot0
+            rmLoP := low
+            rmLoB := bar_index
+        if tkAL.potentialBar != _lPot0
+            rmHiP := high
+            rmHiB := bar_index
+        if not na(cfH)
+            bool adoptH = tTrend == 0 ? cfH >= tAllHi : na(tCeil)
+            if adoptH or (not na(tCeil) and cfH == tCeil)
+                tCeil  := cfH
+                tCeilB := bar_index
+                tRunLo := low
+        if not na(cfL)
+            bool adoptL = tTrend == 0 ? cfL <= tAllLo : na(tFlor)
+            if adoptL or (not na(tFlor) and cfL == tFlor)
+                tFlor  := cfL
+                tFlorB := bar_index
+                tRunHi := high
+        bool mEvt = false
+        if not na(tCeil) and not na(tCeilB) and bar_index > tCeilB and close > tCeil
+            tTrend := 1
+            mEvt   := true
+            tFlor  := tRunLo
+            tFlorB := bar_index
+            tRunHi := high
+            tCeil  := na
+            tCeilB := na
+        else if not na(tFlor) and not na(tFlorB) and bar_index > tFlorB and close < tFlor
+            tTrend := -1
+            mEvt   := true
+            tCeil  := tRunHi
+            tCeilB := bar_index
+            tRunLo := low
+            tFlor  := na
+            tFlorB := na
+        trOut := tTrend
+
+        var int   iTr  = 0
+        var int   iAnc = na
+        var float iCe  = na
+        var int   iCeB = na
+        var float iFl  = na
+        var int   iFlB = na
+        var float iRLo = na
+        var float iRHi = na
+        var array<float> qHiP = array.new_float()
+        var array<int>   qHiB = array.new_int()
+        var array<float> qLoP = array.new_float()
+        var array<int>   qLoB = array.new_int()
+        if not na(afH)
+            array.push(qHiP, afH)
+            array.push(qHiB, afHb)
+            if array.size(qHiB) > 120
+                array.shift(qHiP)
+                array.shift(qHiB)
+        if not na(afL)
+            array.push(qLoP, afL)
+            array.push(qLoB, afLb)
+            if array.size(qLoB) > 120
+                array.shift(qLoP)
+                array.shift(qLoB)
+        iRLo := na(iRLo) ? low  : math.min(iRLo, low)
+        iRHi := na(iRHi) ? high : math.max(iRHi, high)
+        int  _anc    = tTrend == 1 ? tCeilB : tTrend == -1 ? tFlorB : na
+        bool iEvt    = false
+        if mEvt
+            iTr  := 0
+            iAnc := na
+            iCe  := na
+            iCeB := na
+            iFl  := na
+            iFlB := na
+        if na(iAnc) and not na(_anc)
+            iAnc := _anc
+            if na(iCe) and array.size(qHiB) > 0
+                for _q = 0 to array.size(qHiB) - 1
+                    if array.get(qHiB, _q) > iAnc and close < array.get(qHiP, _q)
+                        iCe  := array.get(qHiP, _q)
+                        iCeB := bar_index
+                        iRLo := low
+                        break
+            if na(iFl) and array.size(qLoB) > 0
+                for _q = 0 to array.size(qLoB) - 1
+                    if array.get(qLoB, _q) > iAnc and close > array.get(qLoP, _q)
+                        iFl  := array.get(qLoP, _q)
+                        iFlB := bar_index
+                        iRHi := high
+                        break
+        if not mEvt and not na(iAnc)
+            if not na(afH) and afHb > iAnc and close < afH
+                if na(iCe) or afH == iCe
+                    iCe  := afH
+                    iCeB := bar_index
+                    iRLo := low
+            if not na(afL) and afLb > iAnc and close > afL
+                if na(iFl) or afL == iFl
+                    iFl  := afL
+                    iFlB := bar_index
+                    iRHi := high
+            if not na(iCe) and not na(iCeB) and bar_index > iCeB and close > iCe
+                iTr  := 1
+                iEvt := true
+                iFl  := iRLo
+                iFlB := bar_index
+                iRHi := high
+                iCe  := na
+                iCeB := na
+            else if not na(iFl) and not na(iFlB) and bar_index > iFlB and close < iFl
+                iTr  := -1
+                iEvt := true
+                iCe  := iRHi
+                iCeB := bar_index
+                iRLo := low
+                iFl  := na
+                iFlB := na
+        inOut := iTr
+
+        var int   nTr  = 0
+        var int   nAnc = na
+        var float nCe  = na
+        var int   nCeB = na
+        var float nFl  = na
+        var int   nFlB = na
+        var float nRLo = na
+        var float nRHi = na
+        nRLo := na(nRLo) ? low  : math.min(nRLo, low)
+        nRHi := na(nRHi) ? high : math.max(nRHi, high)
+        int _nanc = iTr == 1 ? iCeB : iTr == -1 ? iFlB : na
+        if mEvt or iEvt
+            nTr  := 0
+            nAnc := na
+            nCe  := na
+            nCeB := na
+            nFl  := na
+            nFlB := na
+        if na(nAnc) and not na(_nanc)
+            nAnc := _nanc
+            if na(nCe) and array.size(qHiB) > 0
+                for _q = 0 to array.size(qHiB) - 1
+                    if array.get(qHiB, _q) > nAnc and close < array.get(qHiP, _q)
+                        nCe  := array.get(qHiP, _q)
+                        nCeB := bar_index
+                        nRLo := low
+                        break
+            if na(nFl) and array.size(qLoB) > 0
+                for _q = 0 to array.size(qLoB) - 1
+                    if array.get(qLoB, _q) > nAnc and close > array.get(qLoP, _q)
+                        nFl  := array.get(qLoP, _q)
+                        nFlB := bar_index
+                        nRHi := high
+                        break
+        if not mEvt and not iEvt and not na(nAnc)
+            if not na(afH) and afHb > nAnc and close < afH
+                if na(nCe) or afH == nCe
+                    nCe  := afH
+                    nCeB := bar_index
+                    nRLo := low
+            if not na(afL) and afLb > nAnc and close > afL
+                if na(nFl) or afL == nFl
+                    nFl  := afL
+                    nFlB := bar_index
+                    nRHi := high
+            if not na(nCe) and not na(nCeB) and bar_index > nCeB and close > nCe
+                nTr  := 1
+                nFl  := nRLo
+                nFlB := bar_index
+                nRHi := high
+                nCe  := na
+                nCeB := na
+            else if not na(nFl) and not na(nFlB) and bar_index > nFlB and close < nFl
+                nTr  := -1
+                nCe  := nRHi
+                nCeB := bar_index
+                nRLo := low
+                nFl  := na
+                nFlB := na
+        nnOut := nTr
+
+        bool swHi = high[1] > high[2] and close[1] < high[2]
+        bool swLo = low[1]  < low[2]  and close[1] > low[2]
+
+        var float fvgBT = na
+        var float fvgBB = na
+        var float fvgST = na
+        var float fvgSB = na
+        var bool  frBullPrev = false
+        var bool  frBearPrev = false
+        bool frBullNow = not na(fvgBT) and low  <= fvgBT and close > fvgBT
+        bool frBearNow = not na(fvgSB) and high >= fvgSB and close < fvgSB
+        bool frBull = frBullNow or frBullPrev
+        bool frBear = frBearNow or frBearPrev
+        frBullPrev := frBullNow
+        frBearPrev := frBearNow
+        if low > high[2]
+            fvgBB := high[2]
+            fvgBT := low
+        if high < low[2]
+            fvgST := low[2]
+            fvgSB := high
+        if not na(fvgBB) and close < fvgBB
+            fvgBT := na
+            fvgBB := na
+        if not na(fvgST) and close > fvgST
+            fvgST := na
+            fvgSB := na
+        evOut := (swHi ? 1 : 0) + (swLo ? 2 : 0) + (frBull ? 4 : 0) + (frBear ? 8 : 0)
+    [trOut, evOut, inOut, nnOut]
+
+int _chartSec = timeframe.in_seconds(timeframe.period)
+bool _u1   = tblOn and tblMaster and tbT1   and timeframe.in_seconds("1")   >= _chartSec
+bool _u2   = tblOn and tblMaster and tbT2   and timeframe.in_seconds("2")   >= _chartSec
+bool _u3   = tblOn and tblMaster and tbT3   and timeframe.in_seconds("3")   >= _chartSec
+bool _u5   = tblOn and tblMaster and tbT5   and timeframe.in_seconds("5")   >= _chartSec
+bool _u10  = tblOn and tblMaster and tbT10  and timeframe.in_seconds("10")  >= _chartSec
+bool _u15  = tblOn and tblMaster and tbT15  and timeframe.in_seconds("15")  >= _chartSec
+bool _u30  = tblOn and tblMaster and tbT30  and timeframe.in_seconds("30")  >= _chartSec
+bool _u45  = tblOn and tblMaster and tbT45  and timeframe.in_seconds("45")  >= _chartSec
+bool _u60  = tblOn and tblMaster and tbT60  and timeframe.in_seconds("60")  >= _chartSec
+bool _u120 = tblOn and tblMaster and tbT120 and timeframe.in_seconds("120") >= _chartSec
+bool _u180 = tblOn and tblMaster and tbT180 and timeframe.in_seconds("180") >= _chartSec
+bool _u240 = tblOn and tblMaster and tbT240 and timeframe.in_seconds("240") >= _chartSec
+bool _u360 = tblOn and tblMaster and tbT360 and timeframe.in_seconds("360") >= _chartSec
+bool _u480 = tblOn and tblMaster and tbT480 and timeframe.in_seconds("480") >= _chartSec
+bool _u720 = tblOn and tblMaster and tbT720 and timeframe.in_seconds("720") >= _chartSec
+bool _uD   = tblOn and tblMaster and tbTD   and timeframe.in_seconds("1D")  >= _chartSec
+bool _uW   = tblOn and tblMaster and tbTW   and timeframe.in_seconds("1W")  >= _chartSec
+bool _uM   = tblOn and tblMaster and tbTM   and timeframe.in_seconds("1M")  >= _chartSec
+
+[_t1,   _e1  , _i1, _n1] = request.security(syminfo.tickerid, _u1   ? "1"   : timeframe.period, f_tfPack(_u1))
+[_t2,   _e2  , _i2, _n2] = request.security(syminfo.tickerid, _u2   ? "2"   : timeframe.period, f_tfPack(_u2))
+[_t3,   _e3  , _i3, _n3] = request.security(syminfo.tickerid, _u3   ? "3"   : timeframe.period, f_tfPack(_u3))
+[_t5,   _e5  , _i5, _n5] = request.security(syminfo.tickerid, _u5   ? "5"   : timeframe.period, f_tfPack(_u5))
+[_t10,  _e10 , _i10, _n10] = request.security(syminfo.tickerid, _u10  ? "10"  : timeframe.period, f_tfPack(_u10))
+[_t15,  _e15 , _i15, _n15] = request.security(syminfo.tickerid, _u15  ? "15"  : timeframe.period, f_tfPack(_u15))
+[_t30,  _e30 , _i30, _n30] = request.security(syminfo.tickerid, _u30  ? "30"  : timeframe.period, f_tfPack(_u30))
+[_t45,  _e45 , _i45, _n45] = request.security(syminfo.tickerid, _u45  ? "45"  : timeframe.period, f_tfPack(_u45))
+[_t60,  _e60 , _i60, _n60] = request.security(syminfo.tickerid, _u60  ? "60"  : timeframe.period, f_tfPack(_u60))
+[_t120, _e120, _i120, _n120] = request.security(syminfo.tickerid, _u120 ? "120" : timeframe.period, f_tfPack(_u120))
+[_t180, _e180, _i180, _n180] = request.security(syminfo.tickerid, _u180 ? "180" : timeframe.period, f_tfPack(_u180))
+[_t240, _e240, _i240, _n240] = request.security(syminfo.tickerid, _u240 ? "240" : timeframe.period, f_tfPack(_u240))
+[_t360, _e360, _i360, _n360] = request.security(syminfo.tickerid, _u360 ? "360" : timeframe.period, f_tfPack(_u360))
+[_t480, _e480, _i480, _n480] = request.security(syminfo.tickerid, _u480 ? "480" : timeframe.period, f_tfPack(_u480))
+[_t720, _e720, _i720, _n720] = request.security(syminfo.tickerid, _u720 ? "720" : timeframe.period, f_tfPack(_u720))
+[_tD,   _eD  , _iD, _nD] = request.security(syminfo.tickerid, _uD   ? "1D"  : timeframe.period, f_tfPack(_uD))
+[_tW,   _eW  , _iW, _nW] = request.security(syminfo.tickerid, _uW   ? "1W"  : timeframe.period, f_tfPack(_uW))
+[_tM,   _eM  , _iM, _nM] = request.security(syminfo.tickerid, _uM   ? "1M"  : timeframe.period, f_tfPack(_uM))
+
+almT1  = input.string("Price crosses level", "  - Slot 1 trigger", options = ["Price crosses level", "Price at N% of BOS*/CHOCH* range", "Price at N% of internal range", "BOS", "CHOCH", "iBOS", "iCHOCH", "Any structure event", "Any internal structure event", "Price at N% of inner nBOS/nCHOCH range"], group = gA, tooltip = "What arms slot 1. Slot 1's own on/off switch, price and direction are the three boxes above this one.")
+
+almOn2 = input.bool(false, "Arm slot 2", inline = "as2", group = gA)
+almT2  = input.string("Price crosses level", "", options = ["Price crosses level", "Price at N% of BOS*/CHOCH* range", "Price at N% of internal range", "BOS", "CHOCH", "iBOS", "iCHOCH", "Any structure event", "Any internal structure event", "Price at N% of inner nBOS/nCHOCH range"], inline = "as2", group = gA)
+almP2  = input.float(0.0, "price", step = 0.01, inline = "as2b", group = gA)
+almD2  = input.string("Either", "", options = ["Touches from below", "Touches from above", "Either"], inline = "as2b", group = gA)
+
+almOn3 = input.bool(false, "Arm slot 3", inline = "as3", group = gA)
+almT3  = input.string("Price crosses level", "", options = ["Price crosses level", "Price at N% of BOS*/CHOCH* range", "Price at N% of internal range", "BOS", "CHOCH", "iBOS", "iCHOCH", "Any structure event", "Any internal structure event", "Price at N% of inner nBOS/nCHOCH range"], inline = "as3", group = gA)
+almP3  = input.float(0.0, "price", step = 0.01, inline = "as3b", group = gA)
+almD3  = input.string("Either", "", options = ["Touches from below", "Touches from above", "Either"], inline = "as3b", group = gA)
+
+almOn4 = input.bool(false, "Arm slot 4", inline = "as4", group = gA)
+almT4  = input.string("Price crosses level", "", options = ["Price crosses level", "Price at N% of BOS*/CHOCH* range", "Price at N% of internal range", "BOS", "CHOCH", "iBOS", "iCHOCH", "Any structure event", "Any internal structure event", "Price at N% of inner nBOS/nCHOCH range"], inline = "as4", group = gA)
+almP4  = input.float(0.0, "price", step = 0.01, inline = "as4b", group = gA)
+almD4  = input.string("Either", "", options = ["Touches from below", "Touches from above", "Either"], inline = "as4b", group = gA)
+
+almOn5 = input.bool(false, "Arm slot 5", inline = "as5", group = gA)
+almT5  = input.string("Price crosses level", "", options = ["Price crosses level", "Price at N% of BOS*/CHOCH* range", "Price at N% of internal range", "BOS", "CHOCH", "iBOS", "iCHOCH", "Any structure event", "Any internal structure event", "Price at N% of inner nBOS/nCHOCH range"], inline = "as5", group = gA)
+almP5  = input.float(0.0, "price", step = 0.01, inline = "as5b", group = gA)
+almD5  = input.string("Either", "", options = ["Touches from below", "Touches from above", "Either"], inline = "as5b", group = gA)
+
+nnOn     = input.bool(true, "Show inner structure", group = gInt, tooltip = "A third level of the same rulebook. Internal structure lives inside the main BOS*/CHOCH* range; INNER structure lives inside the internal iBOS/iCHOCH range.\n\nANCHOR: the pivot candle the internal trend-side level stands on — the internal ceiling while the internal trend is bullish, the internal floor while it is bearish. While that side is empty, between an internal break and its refill, the inner engine stands down, exactly as internal stands down while the main trend-side line is empty.\n\nNEW RANGE: every confirmed iBOS or iCHOCH clears both inner levels and returns the inner trend to neutral, so each internal leg hunts its own first nCHOCH. An inner mark never prints on a bar that already confirmed an internal or main event.\n\nWHAT IT CAN AND CANNOT SEE: all three engines read pivots the same 3-candle rule confirmed on the CHART's timeframe. There is no finer pivot source, so inner structure is those same swings scoped to a narrower range rather than a genuinely smaller degree of trend. Inside a tight internal leg there are often only one or two qualifying pivots, so inner marks are sparse by nature. That is the honest limit of a third level built on one timeframe.")
+nnHist   = input.bool(false, "Keep previous nBOS / nCHOCH  (untick = current internal range only)", group = gInt, tooltip = "TICKED: inner history stays on the chart. UNTICKED: every confirmed internal event erases the previous inner range's marks. Display only — the engine and every classification are identical either way.")
+nnBosTxt = input.string("nBOS", "nBOS text", inline = "nn1", group = gInt)
+nnChoTxt = input.string("nCHOCH", "nCHOCH text", inline = "nn1", group = gInt)
+nnLc     = input.color(color.new(color.yellow, 0), "Line ", inline = "nn2", group = gInt)
+nnTc     = input.color(color.new(color.yellow, 0), "Text", inline = "nn2", group = gInt)
+nnLs     = input.string("Solid", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "nn3", group = gInt)
+nnW      = input.int(1, "Width", minval = 1, maxval = 5, inline = "nn3", group = gInt)
+nnTs     = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "nn4", group = gInt)
+nnShow   = input.bool(true, "Show text", inline = "nn4", group = gInt)
+nnStrOn  = input.bool(false, "Mark strong low / high after nBOS", inline = "nn5", group = gInt, tooltip = "The same rule as the main and internal stamps: on an inner nBOS the retracement swing that made the break possible is stamped, and only when that level's inducement had been taken. An nCHOCH never stamps.")
+nnStrTxt = input.string("🧨", "", inline = "nn5", group = gInt)
+nnStrSz  = input.string("Small", "", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "nn5", group = gInt)
+aNBB = input.bool(false, "Bullish nBOS alert",   inline = "nal1", group = gInt)
+aNSB = input.bool(false, "Bearish nBOS alert",   inline = "nal1", group = gInt)
+aNBC = input.bool(false, "Bullish nCHOCH alert", inline = "nal2", group = gInt)
+aNSC = input.bool(false, "Bearish nCHOCH alert", inline = "nal2", group = gInt)
+aANE = input.bool(false, "Any inner structure event alert", group = gInt)
+
+tblInnOn    = input.bool(true, "Show INNER column", group = gTbl, tooltip = "The inner (nBOS/nCHOCH) trend of each timeframe, computed by the same per-timeframe engine one level further down: anchored on that timeframe's internal trend-side level, reset by every internal break, neutral until its own first break.\n\nThe row matching the chart's own timeframe reports the chart engine's nTrend, so this column can never contradict the marks on screen.")
+tblC5       = input.string("INNER", "Column 5 title", group = gTbl)
+tblInnBullTc = input.color(color.new(color.black, 0), "INNER    bullish   text", inline = "tcw1", group = gTbl)
+tblInnBullBg = input.color(#6f737a, "back", inline = "tcw1", group = gTbl)
+tblInnBearTc = input.color(#6f737a, "INNER    bearish   text", inline = "tcw2", group = gTbl)
+tblInnBearBg = input.color(color.new(color.black, 0), "back", inline = "tcw2", group = gTbl)
+tblInnNeuTc  = input.color(color.white, "INNER    no trend text", inline = "tcw3", group = gTbl)
+tblInnNeuBg  = input.color(#1e222d, "back", inline = "tcw3", group = gTbl, tooltip = "Bullish · bearish · no trend, for the INNER column. Same three pairs the INTERNAL column has.")
+
+gArm = "Arm status readout"
+armShow  = input.bool(true, "Show the ARMED / WAITING readout", group = gArm, tooltip = "A two-cell panel reporting the state of the alert arming gate, because otherwise it has no feedback at all and silence is indistinguishable from a broken alert.\n\nNO GATE  = no arm slot is enabled, so every ticked alert fires freely.\nWAITING  = a gate is set and price has not reached it. Alerts are held back.\nARMED    = price touched the level. The latch is open for good and every ticked event now fires, every time it happens.\n\nIT ALWAYS READS WAITING ON HISTORICAL BARS. The latch can only be tripped by a bar arriving LIVE (that is the v13.6.1 fix which stopped a historical touch from pre-opening the gate), so there is nothing for it to show on history. Watch it live and it flips the moment price touches your level.\n\nReading only: it changes no rule and no alert behaviour.")
+armPos   = input.string("Bottom right", "Position", options = ["Top left", "Top center", "Top right", "Middle left", "Middle right", "Bottom left", "Bottom center", "Bottom right"], group = gArm)
+armSize  = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large"], group = gArm)
+armShowP = input.bool(true, "List what every armed slot is waiting for", group = gArm, tooltip = "Appends every ENABLED slot to the WAITING text, so you can confirm at a glance that the script is holding the values you typed.\n\nA slot on the 'Price crosses level' trigger shows its price. A slot on any other trigger shows that trigger's name: BOS, CHOCH, iBOS, iCHOCH, ANY (any structure event), iANY (any internal event), RET% or iRET%.\n\nA price slot showing '—' is ticked but has no level typed into it, so it can never fire.\n\nThe five slots are OR-ed: whichever one arrives first opens the gate for good.")
+armTitle = input.string("ARM", "Panel label", group = gArm)
+armTxtA  = input.string("ARMED", "Armed", inline = "ar1", group = gArm)
+armTxtW  = input.string("WAITING", "Waiting", inline = "ar1", group = gArm)
+armTxtN  = input.string("NO GATE", "No gate", inline = "ar1", group = gArm)
+armColA  = input.color(color.new(color.lime, 0), "Armed", inline = "ar2", group = gArm)
+armColW  = input.color(color.new(color.orange, 0), "Waiting", inline = "ar2", group = gArm)
+armColN  = input.color(color.new(color.gray, 0), "No gate", inline = "ar2", group = gArm)
+armTitTc = input.color(color.silver, "Label text", inline = "ar3", group = gArm)
+armBg    = input.color(color.new(color.black, 20), "Background", inline = "ar3", group = gArm)
+
+aNnRet   = input.bool(false, "Price at N% of inner nBOS/nCHOCH range alert", group = gA, tooltip = "The third tier of the same retracement rule, on the INNER nBOS/nCHOCH leg.\n\nFires the moment price gives back the set percentage of the leg that began at the last inner event — measured BACK FROM THAT LEG'S EXTREME, on the tick it happens rather than at the close.\n\nInner legs are the shortest of the three, so this is the most frequent and the twitchiest of the retracement alerts. It also depends on inner structure having a trend: between an internal event and the inner range's first nCHOCH there is no inner leg, and this stays silent.\n\nIt does not require 'Show inner structure' to be ticked — that switch only controls the drawing. The engine always runs.")
+
+f_tfRow(array<string> nm, array<int> tr, array<int> ev, array<int> intr, array<int> innr, bool use, string disp, string tfs, int t, int e, int n, int w) =>
+    if use
+        bool isChartTf = tfs == timeframe.period
+        array.push(nm, disp)
+        array.push(tr, isChartTf ? trendDir : t)
+        array.push(ev, e)
+        array.push(intr, isChartTf ? iTrend : n)
+        array.push(innr, isChartTf ? nTrend : w)
+
+int _tblRows = (_u1 ? 1 : 0) + (_u2 ? 1 : 0) + (_u3 ? 1 : 0) + (_u5 ? 1 : 0) + (_u10 ? 1 : 0) + (_u15 ? 1 : 0) + (_u30 ? 1 : 0) + (_u45 ? 1 : 0) + (_u60 ? 1 : 0) + (_u120 ? 1 : 0) + (_u180 ? 1 : 0) + (_u240 ? 1 : 0) + (_u360 ? 1 : 0) + (_u480 ? 1 : 0) + (_u720 ? 1 : 0) + (_uD ? 1 : 0) + (_uW ? 1 : 0) + (_uM ? 1 : 0)
+int _tblCols = 2 + (tblEvOn ? 1 : 0) + (tblInOn ? 1 : 0) + (tblInnOn ? 1 : 0)
+int _colEv   = tblEvOn ? 2 : -1
+int _colIn   = tblInOn ? (tblEvOn ? 3 : 2) : -1
+int _colInn  = tblInnOn ? (2 + (tblEvOn ? 1 : 0) + (tblInOn ? 1 : 0)) : -1
+
+var table smcTbl = na
+if barstate.islast and tblOn and tblMaster and _tblRows > 0
+    array<string> _rn = array.new<string>()
+    array<int>    _rt = array.new<int>()
+    array<int>    _re = array.new<int>()
+    array<int>    _ri = array.new<int>()
+    array<int>    _rw = array.new<int>()
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u1, "1m", "1", _t1, _e1, _i1, _n1)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u2, "2m", "2", _t2, _e2, _i2, _n2)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u3, "3m", "3", _t3, _e3, _i3, _n3)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u5, "5m", "5", _t5, _e5, _i5, _n5)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u10, "10m", "10", _t10, _e10, _i10, _n10)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u15, "15m", "15", _t15, _e15, _i15, _n15)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u30, "30m", "30", _t30, _e30, _i30, _n30)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u45, "45m", "45", _t45, _e45, _i45, _n45)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u60, "1h", "60", _t60, _e60, _i60, _n60)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u120, "2h", "120", _t120, _e120, _i120, _n120)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u180, "3h", "180", _t180, _e180, _i180, _n180)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u240, "4h", "240", _t240, _e240, _i240, _n240)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u360, "6h", "360", _t360, _e360, _i360, _n360)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u480, "8h", "480", _t480, _e480, _i480, _n480)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u720, "12h", "720", _t720, _e720, _i720, _n720)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _uD, "1D", "1D", _tD, _eD, _iD, _nD)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _uW, "1W", "1W", _tW, _eW, _iW, _nW)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _uM, "1M", "1M", _tM, _eM, _iM, _nM)
+    if na(smcTbl)
+        smcTbl := table.new(tblPos == "Top left" ? position.top_left : tblPos == "Top center" ? position.top_center : tblPos == "Top right" ? position.top_right : tblPos == "Middle left" ? position.middle_left : tblPos == "Middle right" ? position.middle_right : tblPos == "Bottom left" ? position.bottom_left : tblPos == "Bottom center" ? position.bottom_center : position.bottom_right, _tblCols, _tblRows + 1, bgcolor = tblBgAll, border_color = tblCelC, border_width = tblCelW, frame_color = tblFrmC, frame_width = tblFrmW)
+    table.cell(smcTbl, 0, 0, tblC1, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
+    table.cell(smcTbl, 1, 0, tblC2, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
+    if tblEvOn
+        table.cell(smcTbl, _colEv, 0, tblC3, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
+    if tblInOn
+        table.cell(smcTbl, _colIn, 0, tblC4, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
+    if tblInnOn
+        table.cell(smcTbl, _colInn, 0, tblC5, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
+    for i = 0 to array.size(_rn) - 1
+        int    _tv   = array.get(_rt, i)
+        int    _ev   = array.get(_re, i)
+        int    _iv   = array.get(_ri, i)
+        int    _wv   = array.get(_rw, i)
+        string _trTx = _tv == 1 ? tblBullTx : _tv == -1 ? tblBearTx : tblFlatTx
+        color  _trBg = _tv == 1 ? tblBullBg : _tv == -1 ? tblBearBg : tblTrNeuBg
+        color  _trTc = _tv == 1 ? tblBullTc : _tv == -1 ? tblBearTc : tblTrNeuTc
+        int  _r     = _ev
+        bool _eBear = _r >= 8
+        _r := _eBear ? _r - 8 : _r
+        bool _eBull = _r >= 4
+        _r := _eBull ? _r - 4 : _r
+        bool _eSwLo = _r >= 2
+        _r := _eSwLo ? _r - 2 : _r
+        bool _eSwHi = _r >= 1
+        string _evTx = ""
+        if _eSwHi
+            _evTx := tblSwHiTx
+        if _eSwLo
+            _evTx := _evTx == "" ? tblSwLoTx : _evTx + " + " + tblSwLoTx
+        if _eBull
+            _evTx := _evTx == "" ? tblFvgBTx : _evTx + " + " + tblFvgBTx
+        if _eBear
+            _evTx := _evTx == "" ? tblFvgSTx : _evTx + " + " + tblFvgSTx
+        bool _evNone = _evTx == ""
+        if _evNone
+            _evTx := tblNoneTx
+        string _inTx = _iv == 1 ? tblBullTx   : _iv == -1 ? tblBearTx   : tblFlatTx
+        color  _inBg = _iv == 1 ? tblInBullBg : _iv == -1 ? tblInBearBg : tblInNeuBg
+        color  _inTc = _iv == 1 ? tblInBullTc : _iv == -1 ? tblInBearTc : tblInNeuTc
+        string _wnTx = _wv == 1 ? tblBullTx    : _wv == -1 ? tblBearTx    : tblFlatTx
+        color  _wnBg = _wv == 1 ? tblInnBullBg : _wv == -1 ? tblInnBearBg : tblInnNeuBg
+        color  _wnTc = _wv == 1 ? tblInnBullTc : _wv == -1 ? tblInnBearTc : tblInnNeuTc
+        table.cell(smcTbl, 0, i + 1, array.get(_rn, i), text_color = tblRowTc, text_size = tsize(tblRowSz), bgcolor = tblRowBg)
+        table.cell(smcTbl, 1, i + 1, _trTx, text_color = _trTc, text_size = tsize(tblRowSz), bgcolor = _trBg)
+        if tblEvOn
+            table.cell(smcTbl, _colEv, i + 1, _evTx, text_color = _evNone ? tblEvNoneTc : tblEvTc, text_size = tsize(tblRowSz), bgcolor = _evNone ? tblEvNoneBg : tblEvBg)
+        if tblInOn
+            table.cell(smcTbl, _colIn, i + 1, _inTx, text_color = _inTc, text_size = tsize(tblRowSz), bgcolor = _inBg)
+        if tblInnOn
+            table.cell(smcTbl, _colInn, i + 1, _wnTx, text_color = _wnTc, text_size = tsize(tblRowSz), bgcolor = _wnBg)
+
+var array<line>  innLn = array.new<line>()
+var array<label> innLb = array.new<label>()
+
+f_innPrune() =>
+    while array.size(innLn) > 100
+        line.delete(array.shift(innLn))
+    while array.size(innLb) > 200
+        label.delete(array.shift(innLb))
+
+f_innClear() =>
+    while array.size(innLn) > 0
+        line.delete(array.pop(innLn))
+    while array.size(innLb) > 0
+        label.delete(array.pop(innLb))
+
+f_innMark(float p, int pb, bool isCho) =>
+    bool inWin = (last_bar_index - bar_index) <= histBars and (bar_index - pb) <= histBars
+    if nnOn and inWin
+        array.push(innLn, line.new(pb, p, bar_index, p, color = nnLc, width = nnW, style = lstyle(nnLs)))
+        if nnShow
+            array.push(innLb, label.new(int(math.avg(pb, bar_index)), p, isCho ? nnChoTxt : nnBosTxt, color = color(na), textcolor = nnTc, style = label.style_none, size = tsize(nnTs)))
+        f_innPrune()
+
+f_innStrong(int b, bool isLow) =>
+    bool inWin = (last_bar_index - bar_index) <= histBars
+    if nnOn and nnStrOn and inWin
+        array.push(innLb, label.new(b, na, nnStrTxt, yloc = isLow ? yloc.belowbar : yloc.abovebar, style = label.style_none, textcolor = color.gray, size = tsize(nnStrSz)))
+        f_innPrune()
+
+if rqClear and not nnHist
+    f_innClear()
+if not na(rqUpP)
+    f_innMark(rqUpP, rqUpB, rqUpCho)
+if not na(rqDnP)
+    f_innMark(rqDnP, rqDnB, rqDnCho)
+if not na(rqStrUp)
+    f_innStrong(rqStrUp, true)
+if not na(rqStrDn)
+    f_innStrong(rqStrDn, false)
+
+f_trigCode(string t) =>
+    t == "Price crosses level" ? 0 : t == "Price at N% of BOS*/CHOCH* range" ? 1 : t == "Price at N% of internal range" ? 2 : t == "BOS" ? 3 : t == "CHOCH" ? 4 : t == "iBOS" ? 5 : t == "iCHOCH" ? 6 : t == "Any structure event" ? 7 : t == "Any internal structure event" ? 8 : 9
+var int almK1 = f_trigCode(almT1)
+var int almK2 = f_trigCode(almT2)
+var int almK3 = f_trigCode(almT3)
+var int almK4 = f_trigCode(almT4)
+var int almK5 = f_trigCode(almT5)
+float _armPc = nz(close[1], close)
+f_armTouch(float lvl, string dir, float pc) =>
+    bool hit = false
+    if lvl > 0
+        bool fromBelow = pc <= lvl and high >= lvl
+        bool fromAbove = pc >= lvl and low  <= lvl
+        hit := dir == "Touches from below" ? fromBelow : dir == "Touches from above" ? fromAbove : (fromBelow or fromAbove)
+    hit
+f_armHit(int trig, float lvl, string dir) =>
+    switch trig
+        0 => f_armTouch(lvl, dir, _armPc)
+        1 => rtMainRet
+        2 => rtIntRet
+        3 => evBosUp or evBosDn
+        4 => evChoUp or evChoDn
+        5 => evIBosUp or evIBosDn
+        6 => evIChoUp or evIChoDn
+        7 => evBosUp or evBosDn or evChoUp or evChoDn
+        8 => evIBosUp or evIBosDn or evIChoUp or evIChoDn
+        => rtNnRet
+
+var bool almArmed = false
+bool almAnySlot = almGate or almOn2 or almOn3 or almOn4 or almOn5
+if almAnySlot and not almArmed and barstate.isrealtime
+    bool almHit = (almGate and f_armHit(almK1, almGateP, almGateD)) or (almOn2 and f_armHit(almK2, almP2, almD2)) or (almOn3 and f_armHit(almK3, almP3, almD3)) or (almOn4 and f_armHit(almK4, almP4, almD4)) or (almOn5 and f_armHit(almK5, almP5, almD5))
+    if almHit
+        almArmed := true
+bool almOk = not almAnySlot or almArmed
+
+if almOk and barstate.isrealtime
+    if rtMainRet
+        mainRetFired := true
+    if rtIntRet
+        intRetFired := true
+    if rtNnRet
+        nnRetFired := true
+
+if almOk and (evBosUp or evBosDn or evChoUp or evChoDn or evSwpHi or evSwpLo or evIBosUp or evIBosDn or evIChoUp or evIChoDn or evNBosUp or evNBosDn or evNChoUp or evNChoDn)
+    string tfTxt = syminfo.ticker + " · " + timeframe.period + " · " + str.tostring(close, format.mintick)
+    if evBosUp and aBB
+        alert("Bullish BOS — "   + tfTxt, alert.freq_once_per_bar_close)
+    if evBosDn and aSB
+        alert("Bearish BOS — "   + tfTxt, alert.freq_once_per_bar_close)
+    if evChoUp and aBC
+        alert("Bullish CHOCH — " + tfTxt, alert.freq_once_per_bar_close)
+    if evChoDn and aSC
+        alert("Bearish CHOCH — " + tfTxt, alert.freq_once_per_bar_close)
+    if (evSwpHi or evSwpLo) and aSW
+        alert("Liquidity sweep — " + tfTxt, alert.freq_once_per_bar_close)
+    if evIBosUp and aIBB
+        alert("Bullish iBOS — "   + tfTxt, alert.freq_once_per_bar_close)
+    if evIBosDn and aISB
+        alert("Bearish iBOS — "   + tfTxt, alert.freq_once_per_bar_close)
+    if evIChoUp and aIBC
+        alert("Bullish iCHOCH — " + tfTxt, alert.freq_once_per_bar_close)
+    if evIChoDn and aISC
+        alert("Bearish iCHOCH — " + tfTxt, alert.freq_once_per_bar_close)
+    if (evIBosUp or evIBosDn) and aAIB
+        alert("iBOS — " + tfTxt, alert.freq_once_per_bar_close)
+    if (evIChoUp or evIChoDn) and aAIC
+        alert("iCHOCH — " + tfTxt, alert.freq_once_per_bar_close)
+    if (evIBosUp or evIBosDn or evIChoUp or evIChoDn) and aAIE
+        alert("Internal structure event — " + tfTxt, alert.freq_once_per_bar_close)
+    if evNBosUp and aNBB
+        alert("Bullish nBOS — "   + tfTxt, alert.freq_once_per_bar_close)
+    if evNBosDn and aNSB
+        alert("Bearish nBOS — "   + tfTxt, alert.freq_once_per_bar_close)
+    if evNChoUp and aNBC
+        alert("Bullish nCHOCH — " + tfTxt, alert.freq_once_per_bar_close)
+    if evNChoDn and aNSC
+        alert("Bearish nCHOCH — " + tfTxt, alert.freq_once_per_bar_close)
+    if (evNBosUp or evNBosDn or evNChoUp or evNChoDn) and aANE
+        alert("Inner structure event — " + tfTxt, alert.freq_once_per_bar_close)
+
+if almOk and ((rtMainRet and aMainRet) or (rtIntRet and aIntRet) or (rtNnRet and aNnRet))
+    string rtTfTxt = syminfo.ticker + " · " + timeframe.period + " · " + str.tostring(close, format.mintick)
+    if rtMainRet and aMainRet
+        alert("Price at " + str.tostring(aRetPct, "#.#") + "% retracement of the BOS*/CHOCH* leg — level " + str.tostring(mLvl, format.mintick) + " — " + rtTfTxt, alert.freq_once_per_bar)
+    if rtIntRet and aIntRet
+        alert("Price at " + str.tostring(aRetPct, "#.#") + "% retracement of the iBOS/iCHOCH leg — level " + str.tostring(iLvl, format.mintick) + " — " + rtTfTxt, alert.freq_once_per_bar)
+    if rtNnRet and aNnRet
+        alert("Price at " + str.tostring(aRetPct, "#.#") + "% retracement of the nBOS/nCHOCH leg — level " + str.tostring(nLvl, format.mintick) + " — " + rtTfTxt, alert.freq_once_per_bar)
+
+alertcondition(evBosUp and almOk, "Bullish BOS",    "Bullish BOS — {{ticker}} {{interval}}")
+alertcondition(evBosDn and almOk, "Bearish BOS",    "Bearish BOS — {{ticker}} {{interval}}")
+alertcondition(evChoUp and almOk, "Bullish CHOCH",  "Bullish CHOCH — {{ticker}} {{interval}}")
+alertcondition(evChoDn and almOk, "Bearish CHOCH",  "Bearish CHOCH — {{ticker}} {{interval}}")
+alertcondition((evBosUp or evBosDn) and almOk, "Any BOS",     "BOS — {{ticker}} {{interval}}")
+alertcondition((evChoUp or evChoDn) and almOk, "Any CHOCH",   "CHOCH — {{ticker}} {{interval}}")
+alertcondition((evBosUp or evBosDn or evChoUp or evChoDn) and almOk, "Any structure event", "Structure event — {{ticker}} {{interval}}")
+alertcondition((evSwpHi or evSwpLo) and almOk, "Liquidity Sweep", "Liquidity sweep — {{ticker}} {{interval}}")
+alertcondition(evIBosUp and almOk, "Bullish iBOS",    "Bullish iBOS — {{ticker}} {{interval}}")
+alertcondition(evIBosDn and almOk, "Bearish iBOS",    "Bearish iBOS — {{ticker}} {{interval}}")
+alertcondition(evIChoUp and almOk, "Bullish iCHOCH",  "Bullish iCHOCH — {{ticker}} {{interval}}")
+alertcondition(evIChoDn and almOk, "Bearish iCHOCH",  "Bearish iCHOCH — {{ticker}} {{interval}}")
+alertcondition((evIBosUp or evIBosDn) and almOk, "Any iBOS",     "iBOS — {{ticker}} {{interval}}")
+alertcondition((evIChoUp or evIChoDn) and almOk, "Any iCHOCH",   "iCHOCH — {{ticker}} {{interval}}")
+alertcondition((evIBosUp or evIBosDn or evIChoUp or evIChoDn) and almOk, "Any internal structure event", "Internal structure event — {{ticker}} {{interval}}")
+alertcondition(rtMainRet and almOk, "Price at N% of BOS*/CHOCH* range", "Price at retracement level of BOS*/CHOCH* range — {{ticker}} {{interval}}")
+alertcondition(rtIntRet and almOk, "Price at N% of iBOS/iCHOCH range", "Price at retracement level of iBOS/iCHOCH range — {{ticker}} {{interval}}")
+alertcondition(rtNnRet and almOk, "Price at N% of inner nBOS/nCHOCH range", "Price at retracement level of nBOS/nCHOCH range — {{ticker}} {{interval}}")
+
+f_armTag(bool on, int trig, float lvl) =>
+    string t = ""
+    if on
+        t := trig == 0 ? (lvl > 0 ? str.tostring(lvl, format.mintick) : "—") : trig == 1 ? "RET%" : trig == 2 ? "iRET%" : trig == 3 ? "BOS" : trig == 4 ? "CHOCH" : trig == 5 ? "iBOS" : trig == 6 ? "iCHOCH" : trig == 7 ? "ANY" : trig == 8 ? "iANY" : "nRET%"
+    t
+
+f_armJoin(string acc, string add) =>
+    add == "" ? acc : acc == "" ? add : acc + "  ·  " + add
+
+f_armPos(string p) =>
+    p == "Top left" ? position.top_left : p == "Top center" ? position.top_center : p == "Top right" ? position.top_right : p == "Middle left" ? position.middle_left : p == "Middle right" ? position.middle_right : p == "Bottom left" ? position.bottom_left : p == "Bottom center" ? position.bottom_center : position.bottom_right
+
+var table armTbl = na
+if barstate.islast and armShow
+    if na(armTbl)
+        armTbl := table.new(f_armPos(armPos), 2, 1, bgcolor = armBg, border_width = 0)
+    string _aTx = not almAnySlot ? armTxtN : almArmed ? armTxtA : armTxtW
+    color  _aTc = not almAnySlot ? armColN : almArmed ? armColA : armColW
+    if almAnySlot and not almArmed and armShowP
+        string _lst = ""
+        _lst := f_armJoin(_lst, f_armTag(almGate, almK1, almGateP))
+        _lst := f_armJoin(_lst, f_armTag(almOn2,  almK2, almP2))
+        _lst := f_armJoin(_lst, f_armTag(almOn3,  almK3, almP3))
+        _lst := f_armJoin(_lst, f_armTag(almOn4,  almK4, almP4))
+        _lst := f_armJoin(_lst, f_armTag(almOn5,  almK5, almP5))
+        if _lst != ""
+            _aTx := _aTx + "  " + _lst
+    table.cell(armTbl, 0, 0, armTitle, text_color = armTitTc, text_size = tsize(armSize), bgcolor = armBg)
+    table.cell(armTbl, 1, 0, _aTx, text_color = _aTc, text_size = tsize(armSize), bgcolor = armBg)
+
+kzLnOn = input.bool(false, "▶ Killzone boxes — top and bottom line only", group = gTog, tooltip = "ONE switch for the look of all four killzone boxes. It overrides them; it does not overwrite anything.\n\nON  = every killzone box is drawn as just TWO SOLID HORIZONTAL LINES, one on the session high and one on the session low. The shaded fill and the left and right edges are suppressed, so the box becomes a clean pair of session levels. The ASIA / LONDON / NEW YORK / LDN CLOSE text stays exactly where you put it.\nOFF = every box goes straight back to its own Fill, Border, Border style and Border width settings in the four Killzone box groups further down. Nothing of yours is changed underneath — the switch only overrides while it is on.\n\nIt covers all four killzones together, including London Close. Which boxes are actually on the chart is still decided by MASTER B and the individual Show ... box checkboxes above.\n\nThe lines take the box geometry exactly, so they always span the same bars as the session window they came from.\n\nDRAWING BUDGET: two lines per visible box, capped at 120 lines in total. With Days of sessions to keep set to 1 that is at most 16; at 15 days the cap trims it. TradingView allows 500 drawings per script and silently deletes the oldest when a script goes over, so the cap is there to stop killzone lines from pushing your BOS/CHOCH lines off the chart.")
+kzLnC  = input.color(color.new(color.gray, 0), "  - Line colour", inline = "kzln", group = gTog)
+kzLnW  = input.int(1, "  - Line width", minval = 1, maxval = 5, inline = "kzln", group = gTog, tooltip = "Colour and thickness of the top and bottom lines drawn by the switch above. They apply to all four killzones at once; the per-killzone Border colour pickers are left untouched and come back the moment the switch is turned off.")
+kzLnTv = input.string("Above the top line", "  - Text position", options = ["Above the top line", "Under the bottom line"], group = gTog, tooltip = "Where the killzone name sits once the top-and-bottom-line switch is on.\n\nAbove the top line (default) = the name sits just above the session high line.\nUnder the bottom line = it sits just below the session low line.\n\nThis one setting drives all four killzones together. While the switch is on it replaces each killzone own Text vert. setting; turn the switch off and those come straight back.")
+kzLnTh = input.string("Center", "  - Text align", options = ["Left", "Center", "Right"], group = gTog, tooltip = "Where along the session the name sits.\n\nLeft = at the bar the session opened.\nCenter (default) = the middle of the session.\nRight = at the bar it closed.\n\nAll four killzones at once, replacing their individual Text horiz. settings while the switch is on.")
+kzLnTc = input.color(color.new(color.gray, 0), "  - Text colour", inline = "kzlt", group = gTog)
+kzLnTs = input.string("Small", "  - Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "kzlt", group = gTog, tooltip = "Text colour and size for all four killzone names in one place, so you are not editing four groups to change one look. The per-killzone Colour and Size pickers are left untouched and return the moment the top-and-bottom-line switch is turned off.\n\nThe name itself still comes from each killzone own Text field further down, so you can rename them individually — set the London Close one to LONDON CLOSE if you prefer it spelled out. Clear a Text field and that killzone simply gets no label.")
+
+var array<line> kzLnQ = array.new<line>()
+var array<label> kzLbQ = array.new<label>()
+
+f_kzEdge(array<box> q, array<label> lq, string txt) =>
+    if array.size(q) > 0
+        for _e = 0 to array.size(q) - 1
+            box _b = array.get(q, _e)
+            if not na(_b) and array.size(kzLnQ) < 120
+                box.set_bgcolor(_b, color(na))
+                box.set_border_color(_b, color(na))
+                box.set_text(_b, "")
+                int   _x1 = box.get_left(_b)
+                int   _x2 = box.get_right(_b)
+                float _tp = box.get_top(_b)
+                float _bt = box.get_bottom(_b)
+                array.push(kzLnQ, line.new(_x1, _tp, _x2, _tp, color = kzLnC, width = kzLnW, style = line.style_solid))
+                array.push(kzLnQ, line.new(_x1, _bt, _x2, _bt, color = kzLnC, width = kzLnW, style = line.style_solid))
+                if array.size(lq) > _e
+                    label _ol = array.get(lq, _e)
+                    if not na(_ol)
+                        label.set_text(_ol, "")
+                if txt != ""
+                    bool  _up = kzLnTv == "Above the top line"
+                    int   _lx = kzLnTh == "Left" ? _x1 : kzLnTh == "Right" ? _x2 : int(math.avg(_x1, _x2))
+                    float _ly = _up ? _tp : _bt
+                    array.push(kzLbQ, label.new(_lx, _ly, txt, color = color(na), textcolor = kzLnTc, style = _up ? label.style_label_down : label.style_label_up, size = tsize(kzLnTs), textalign = text.align_center))
+
+if barstate.islast
+    while array.size(kzLnQ) > 0
+        line.delete(array.pop(kzLnQ))
+    while array.size(kzLbQ) > 0
+        label.delete(array.pop(kzLbQ))
+    if kzLnOn
+        f_kzEdge(kqA, kqAl, kaT)
+        f_kzEdge(kqL, kqLl, klT)
+        f_kzEdge(kqN, kqNl, knT)
+        f_kzEdge(kqC, kqCl, kcT)
+        f_kzEdge(kqAv, kqAvl, kaT)
+        f_kzEdge(kqLv, kqLvl, klT)
+        f_kzEdge(kqNv, kqNvl, knT)
+        f_kzEdge(kqCv, kqCvl, kcT)
+
+gEma = "9. EMA — exponential moving averages"
+emaSrc = input.source(close, "Source", group = gEma, tooltip = "The series every EMA is calculated from. close is standard; hlc3 or hl2 give a slightly smoother line that reacts to wicks as well as closes.")
+e1On = input.bool(true,  "EMA 1", inline = "e1", group = gEma)
+e1Len = input.int(9,   "", minval = 1, inline = "e1", group = gEma)
+e1C = input.color(#f5c542, "", inline = "e1", group = gEma)
+e1W = input.int(1, "", minval = 1, maxval = 4, inline = "e1", group = gEma)
+e2On = input.bool(true,  "EMA 2", inline = "e2", group = gEma)
+e2Len = input.int(21,  "", minval = 1, inline = "e2", group = gEma)
+e2C = input.color(#42a5f5, "", inline = "e2", group = gEma)
+e2W = input.int(1, "", minval = 1, maxval = 4, inline = "e2", group = gEma)
+e3On = input.bool(true,  "EMA 3", inline = "e3", group = gEma)
+e3Len = input.int(50,  "", minval = 1, inline = "e3", group = gEma)
+e3C = input.color(#ab47bc, "", inline = "e3", group = gEma)
+e3W = input.int(2, "", minval = 1, maxval = 4, inline = "e3", group = gEma)
+e4On = input.bool(false, "EMA 4", inline = "e4", group = gEma)
+e4Len = input.int(100, "", minval = 1, inline = "e4", group = gEma)
+e4C = input.color(#26a69a, "", inline = "e4", group = gEma)
+e4W = input.int(2, "", minval = 1, maxval = 4, inline = "e4", group = gEma)
+e5On = input.bool(true,  "EMA 5", inline = "e5", group = gEma)
+e5Len = input.int(200, "", minval = 1, inline = "e5", group = gEma)
+e5C = input.color(#ef5350, "", inline = "e5", group = gEma)
+e5W = input.int(2, "", minval = 1, maxval = 4, inline = "e5", group = gEma, tooltip = "Five EMAs, each with its own on/off, length, colour and width on one row. The defaults are the lengths most desks actually watch: 9 and 21 for the near term, 50 for the swing, 100 (off by default) and 200 for the trend.\n\nAll five are CALCULATED whether or not they are shown, which costs nothing measurable — an EMA is one multiply and one add per bar — and it keeps the ribbon and the cross alerts correct even while a line is hidden.")
+
+emaRibOn = input.bool(true, "Ribbon fill between EMA 1 and EMA 2", group = gEma, tooltip = "Shades the band between the first two EMAs and colours it by which one is on top: the bullish colour while EMA 1 is above EMA 2, the bearish colour while it is below. It is the fastest read of short-term momentum on the chart, and it costs no extra calculation because both EMAs are already there.")
+emaRibUp = input.color(#26a69a, "Ribbon bullish", inline = "erb", group = gEma)
+emaRibDn = input.color(#ef5350, "bearish", inline = "erb", group = gEma)
+emaXOn = input.bool(false, "EMA 1 / EMA 2 cross alerts", group = gEma, tooltip = "Turns the EMA 1 x EMA 2 crossover into a real alert, delivered through the same Any alert() function call alert the structure events use, and through its own alertcondition entries.\n\nIt obeys the arming gate exactly like every other alert in this indicator: with a gate set, no cross is reported until price has reached your arm level.\n\nThe cross is evaluated on the CLOSE of the bar, not intrabar, because an EMA cross that un-crosses before the close was never a cross.")
+emaLblOn = input.bool(true, "Label each EMA on the last bar", inline = "elb", group = gEma)
+emaLblSz = input.string("Small", "", options = ["Tiny", "Small", "Normal", "Large"], inline = "elb", group = gEma)
+emaLblOff = input.int(3, "  - Label offset (bars right of the last candle)", minval = 0, maxval = 30, group = gEma, tooltip = "How far past the last candle the EMA name is written, so the labels do not sit on top of price. 0 puts them on the last bar itself.")
+
+emaShow = input.bool(false, "▶ EMA — show exponential moving averages", group = gTog, tooltip = "One switch for the whole EMA module, here at the top so it is never buried.\n\nOFF (default) = no EMA is drawn, no ribbon, no labels and no EMA cross alert can fire. The module is completely inert, whatever the boxes in group 9 say.\nON  = the EMAs come on exactly as group 9 has them set — 9, 21, 50 and 200 out of the box, with 100 available.\n\nIt is a GATE, not an override: it can silence the module but it never turns an EMA on that you unticked. Use it to clear the chart in one click and put it back in another.\n\nPine cannot hide inputs, so the EMA boxes in group 9 stay visible while this is off — they simply have no effect until it is on.")
+
+float ema1 = ta.ema(emaSrc, e1Len)
+float ema2 = ta.ema(emaSrc, e2Len)
+float ema3 = ta.ema(emaSrc, e3Len)
+float ema4 = ta.ema(emaSrc, e4Len)
+float ema5 = ta.ema(emaSrc, e5Len)
+
+pEma1 = plot(emaShow and e1On ? ema1 : na, "EMA 1", color = e1C, linewidth = e1W)
+pEma2 = plot(emaShow and e2On ? ema2 : na, "EMA 2", color = e2C, linewidth = e2W)
+plot(emaShow and e3On ? ema3 : na, "EMA 3", color = e3C, linewidth = e3W)
+plot(emaShow and e4On ? ema4 : na, "EMA 4", color = e4C, linewidth = e4W)
+plot(emaShow and e5On ? ema5 : na, "EMA 5", color = e5C, linewidth = e5W)
+fill(pEma1, pEma2, color = emaShow and emaRibOn and e1On and e2On ? (ema1 >= ema2 ? color.new(emaRibUp, 88) : color.new(emaRibDn, 88)) : na, title = "EMA ribbon")
+
+bool _emaXu = ta.crossover(ema1, ema2)
+bool _emaXd = ta.crossunder(ema1, ema2)
+bool emaXUp = emaShow and emaXOn and e1On and e2On and _emaXu
+bool emaXDn = emaShow and emaXOn and e1On and e2On and _emaXd
+
+var array<label> emaLbQ = array.new<label>()
+f_emaLbl(bool on, float v, int len, color c) =>
+    if on and not na(v)
+        array.push(emaLbQ, label.new(bar_index + emaLblOff, v, "EMA " + str.tostring(len), color = color(na), textcolor = c, style = label.style_none, size = tsize(emaLblSz)))
+
+if barstate.islast
+    while array.size(emaLbQ) > 0
+        label.delete(array.pop(emaLbQ))
+    if emaShow and emaLblOn
+        f_emaLbl(e1On, ema1, e1Len, e1C)
+        f_emaLbl(e2On, ema2, e2Len, e2C)
+        f_emaLbl(e3On, ema3, e3Len, e3C)
+        f_emaLbl(e4On, ema4, e4Len, e4C)
+        f_emaLbl(e5On, ema5, e5Len, e5C)
+
+if almOk and (emaXUp or emaXDn)
+    string emaTf = syminfo.ticker + " · " + timeframe.period + " · " + str.tostring(close, format.mintick)
+    if emaXUp
+        alert("Bullish EMA cross " + str.tostring(e1Len) + " over " + str.tostring(e2Len) + " — " + emaTf, alert.freq_once_per_bar_close)
+    if emaXDn
+        alert("Bearish EMA cross " + str.tostring(e1Len) + " under " + str.tostring(e2Len) + " — " + emaTf, alert.freq_once_per_bar_close)
+
+alertcondition(emaXUp and almOk, "Bullish EMA cross", "Bullish EMA cross — {{ticker}} {{interval}}")
+alertcondition(emaXDn and almOk, "Bearish EMA cross", "Bearish EMA cross — {{ticker}} {{interval}}")
+alertcondition((emaXUp or emaXDn) and almOk, "Any EMA cross", "EMA cross — {{ticker}} {{interval}}")
