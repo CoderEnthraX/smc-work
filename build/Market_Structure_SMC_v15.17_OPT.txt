@@ -1,120 +1,109 @@
 //@version=6
 // ═════════════════════════════════════════════════════════════════════════════
-//  SMC MARKET STRUCTURE — 3CP + EMA  ·  v1.6-opt
+//  SMC MARKET STRUCTURE — 3CP + VOLUME PROFILES  ·  v15.17-opt
 //  Optimised build. Comments stripped and dead code removed; every rule below
 //  is the live rule set. See the changelog under the banner.
 // ═════════════════════════════════════════════════════════════════════════════
-//  THREE REPORTED PROBLEMS, ALL THREE DIAGNOSED IN A NODE PORT FIRST.
+//  MARKET STRUCTURE IS UNTOUCHED. The engine that draws BOS / CHOCH, iBOS /
+//  iCHOCH and nBOS / nCHOCH is byte-for-byte the v15.15-opt engine. The
+//  v15.16 mark-anchor change is REVERTED IN FULL and nothing has replaced it
+//  yet - that work is on hold until the reported cases are settled.
+//  VERIFIED, not asserted: of the 215 lines v15.15-opt has and this build does
+//  not, 212 are the old f_tfPack body and 3 are the f_tfRow lines listed
+//  below. Every other change in this file is a pure insertion.
 //
-//  1. THE MTF TABLE CONTRADICTED THE CHART, AND THE ROW CHANGED WITH THE
-//     CHART'S OWN TIMEFRAME.
-//     REPORTED on USDCAD: the 1M row read INTERNAL bullish from a 1M chart,
-//     bearish from a 1D chart and bullish-but-with-a-bearish-TREND from 1h.
-//     The 1M reading taken ON the 1M chart was the correct one.
-//     TWO INDEPENDENT CAUSES, separated by measurement.
-//     (a) RULE DRIFT. f_tfPack - the function each of the 18 request.security
-//         calls runs - was a SECOND, OLDER implementation of the three
-//         engines. It had drifted five versions behind the chart:
-//           - an equal-price pivot still took the level (v15.5 removed that)
-//           - no sweep guard on the chart-start adopt (v15.1)
-//           - the level was anchored on the CONFIRMATION bar, not the pivot bar
-//           - the opposite side re-anchored to a running extreme instead of
-//             f_retExtInc from the pivot (v15.14)
-//           - no pivot-2 promotion at all (v15.14 / v15.15)
-//           - no IDM gate and no 'Internal pivot strength' filter
-//         The chart's own row reads the real engine and every other row read
-//         that older one, so the two could not help but disagree. Measured
-//         over 400 randomised series: they gave a different reading in 1.5%.
-//     (b) DATA WINDOW. request.security on a higher timeframe sees only as
-//         much history of that timeframe as the chart has loaded, and the
-//         engine's opening range is anchored on the extreme of whatever window
-//         it is given. The SAME engine over a short window disagrees with
-//         itself: 65% at 40 bars, 35% at 80, 17% at 150, 2.5% at 300. THIS IS
-//         THE DOMINANT CAUSE and no rule change can remove it - the data is
-//         not there to remove it with.
-//     THE FIX, both halves.
-//     (a) f_tfPack is rebuilt as a faithful transcription of the v15.15 chart
-//         engine: same Module 1, same alternating stream, same adopt guards,
-//         same sweep and pivot-2 promotion, same f_retExtInc re-anchor, same
-//         IDM and pivot-strength tests. It runs on FUNCTION-LOCAL price
-//         buffers, which is what makes this legal inside request.security -
-//         invariant 6 forbids reading the chart's global buffers there. Five
-//         new helpers (f_retExtB, rearmB, f_isSwingB, f_lastMinorB,
-//         f_armIdmB) take the buffers as arguments so the rules exist once.
-//         MEASURED: over 400 series the rebuilt table engine and the chart
-//         engine now agree EXACTLY - 0 disagreements on all three columns,
-//         with the ALTERNATE rule both off and on.
-//     (b) A WARM-UP GATE, one new input. The engine forgets where it started
-//         once enough events have gone by: measured against full-history
-//         truth, agreement is 63% after one confirmed main event, 91% after
-//         four, 98% after seven and effectively exact by eleven. So each
-//         timeframe now reports its own confirmed-event count, and until it
-//         reaches the threshold its row reads no trend rather than a
-//         confident wrong one. Default 6. Set it to 0 for the old raw
-//         behaviour. The chart's own row is never gated.
-//     IDM is computed in the per-timeframe engine only while the ALTERNATE
-//     rule is on. With it off, idmP stays na, every break gate is satisfied by
-//     na(idmP), and IDM cannot reach the trend - so this costs nothing and
-//     changes nothing. It is a deliberate saving, because 18 timeframes each
-//     now run a full three-engine simulation.
-//     IF YOU EVER SEE 'Stopped - Calculation error' ON AN ALERT, untick some
-//     timeframes in group 8. Each ticked timeframe is one more simulation.
+//  1. THE MTF TABLE NOW READS THE RANGE, AND NEVER PRINTS A DASH.
+//     THE RULE, as asked for: the possible-BOS and possible-CHOCH pair IS the
+//     direction. BOS* above and CHOCH* below is bullish; BOS* below is
+//     bearish. That is exactly what the engine's own trend already means -
+//     the ceiling is drawn as BOS* while the trend is up and as CHOCH* while
+//     it is down - so the readout and the marks can no longer disagree about
+//     which way a timeframe is pointing.
+//     THE DASH is gone. Every tier resolves through a cascade:
+//       - the tier's own trend, when it has one
+//       - otherwise the tier ABOVE it: internal falls back to main, inner
+//         falls back to internal and then to main. This is the imaginary
+//         iBOS*/iCHOCH* and nBOS*/nCHOCH* pair, held in state and never drawn
+//       - and the main tier, before its very first event, reads where price
+//         sits inside the standing range: above the midpoint is bullish,
+//         below it bearish (f_provDir)
+//     So a cell always carries a direction and it is always derived from real
+//     structure, never invented. The v15.16 warm-up gate is removed with its
+//     input, because a gate that blanks a row is the opposite of this.
+//     THE ENGINE BEHIND THE TABLE is still the rebuilt one. f_tfPack - the
+//     function each of the 18 request.security calls runs - was a SECOND,
+//     OLDER copy of the three engines, five versions behind the chart: an
+//     equal-price pivot still took the level (v15.5), no sweep guard on the
+//     chart-start adopt (v15.1), levels anchored on the confirmation bar
+//     rather than the pivot bar, the opposite side re-anchored to a running
+//     extreme instead of f_retExtInc (v15.14), and no pivot-2 promotion at
+//     all (v15.14 / v15.15). It is now a faithful transcription of the
+//     v15.15 chart engine running on FUNCTION-LOCAL price buffers, which is
+//     what makes it legal inside request.security - invariant 6 forbids
+//     reading the chart's global buffers there. Five helpers (f_retExtB,
+//     rearmB, f_isSwingB, f_lastMinorB, f_armIdmB) take the buffers as
+//     arguments. MEASURED over 400 randomised series: the rebuilt table
+//     engine and the chart engine agree EXACTLY - 0 disagreements on all
+//     three columns, with the ALTERNATE rule both off and on.
+//     WHAT THIS STILL CANNOT FIX: request.security sees only as much history
+//     of a timeframe as the chart has loaded, and the engine's opening range
+//     is anchored on the extreme of whatever window it gets. The same engine
+//     over a short window disagrees with itself 65% at 40 bars, 35% at 80,
+//     17% at 150 and 2.5% at 300. A high timeframe read from a low chart
+//     timeframe can therefore still differ from the same timeframe read on
+//     its own chart. No rule change can remove that - the data is not there.
+//     IDM is computed per-timeframe only while the ALTERNATE rule is on. With
+//     it off, idmP stays na, every break gate is satisfied by na(idmP) and IDM
+//     cannot reach the trend, so this costs nothing and changes nothing.
+//     IF AN ALERT EVER REPORTS 'Stopped - Calculation error', untick some
+//     timeframes in group 8: each ticked one is a full three-engine
+//     simulation, where before it was a lighter approximation.
 //
-//  2. nBOS / nCHOCH COULD NOT BE SELECTED IN THE ALERT DIALOG.
-//     REPORTED from the Create-alert dropdown: iBOS, iCHOCH, 'Any internal
-//     structure event' and the three retracement entries were all there, and
-//     nothing for the inner tier.
+//  2. nBOS / nCHOCH CAN NOW BE PICKED IN THE ALERT DIALOG.
 //     THE CAUSE: the inner events had alert() calls but no alertcondition()
 //     entries, and it is alertcondition that populates that dropdown. There
 //     were 21 conditions and not one of them inner.
-//     THE FIX: seven appended - Bullish nBOS, Bearish nBOS, Bullish nCHOCH,
-//     Bearish nCHOCH, Any nBOS, Any nCHOCH, Any inner structure event. They
-//     obey the arming gate exactly like every other condition. No input is
-//     added; the existing inner alert checkboxes in group 0 already control
-//     the alert() path and are untouched.
+//     SEVEN ADDED: Bullish nBOS, Bearish nBOS, Bullish nCHOCH, Bearish
+//     nCHOCH, Any nBOS, Any nCHOCH, Any inner structure event. They obey the
+//     arming gate like every other condition. No input is added - the inner
+//     alert checkboxes already in group 0 still drive the alert() path.
 //
-//  3. MARKS WERE DRAWN AT A PRICE THEIR OWN ANCHOR CANDLE NEVER TRADED.
-//     AUDITED, not guessed: 19,748 marks over 2,000 randomised series were
-//     checked against the rule that a mark's line must start on a bar that
-//     actually traded the marked price. 604 failed - 5.7% of BOS, 6.7% of
-//     iBOS, 6.9% of nBOS, and never a single CHOCH.
-//     THE CAUSE, and all 604 are the same thing: the pivot-2 promotion.
-//     v15.15 fixed a real bug by making the promotion keep the ORIGINAL anchor
-//     while taking the swept wick as the price - the anchor is what the later
-//     f_retExtInc scan measures from, so moving it forward produced a shallow
-//     opposite level. That fix is right and stands. But x1 was doing two jobs:
-//     the latched SCOPE of the range, and the bar the line is DRAWN from. So
-//     the line correctly kept its scope and was then drawn from a candle that
-//     predates the wick it sits at, with its left end hanging in open space.
-//     THE FIX: the two jobs are separated. SLine gains a drawB field; x1 stays
-//     the latched scope anchor and is never touched, and drawB is what the
-//     line and its label are drawn from. On a promotion drawB becomes the
-//     SWEEP bar - the candle that actually made that price. The internal and
-//     inner tiers get the same treatment, which is why iCeilSwpB, iFlorSwpB,
-//     nCeilSwpB and nFlorSwpB are back: they went write-only when v15.15
-//     stopped anchoring on the sweep, and drawing from it needs them again.
-//     MEASURED: the same 19,748 marks, 0 now start on a bar that never traded
-//     the price. Not one level, range, break, event or alert changes - this
-//     moves where a line begins, nothing else.
-//     ALSO FIXED HERE, same class, found by inspection: the ALTERNATE-rule
-//     sweep migration still moved x1 onto the sweep bar, which is exactly the
-//     fault v15.5 fixed for the equal-price retest and v15.15 fixed for the
-//     promotion. It now keeps the latched anchor and draws from the sweep.
-//     This one DOES change behaviour, but only while the ALTERNATE rule is on,
-//     and only by restoring invariant 2.
+//  3. NEW: A RANGE % LINE ON ALL THREE TIERS, group 10.
+//     Draws a level at a set percentage of the possible-BOS / possible-CHOCH
+//     range - the midpoint at the default 50 - for the main pair, the
+//     internal iBOS*/iCHOCH* pair and the inner nBOS*/nCHOCH* pair. The
+//     percentage is measured DOWN FROM THE UPPER LEVEL, so 0 is the upper
+//     level, 50 the middle and 100 the lower one, read the same way whichever
+//     way the range is pointing.
+//     EVERY PART IS SETTABLE: the percentage, which tiers draw, line colour,
+//     style and width, extend-right on or off, the label text, its colour,
+//     size, horizontal alignment (Left / Center / Right) and vertical
+//     position (Above / Middle / Below). Leave the label text EMPTY and it
+//     writes the percentage itself, so it tracks the setting; the internal
+//     and inner labels carry an i and n prefix so three lines can be told
+//     apart. A master switch sits at the top with the other toggles and can
+//     silence the module without disturbing which tiers you ticked.
+//     IT IS INDEPENDENT of 'Retracement % for range alerts'. That one is
+//     measured back from the leg's running extreme and drives alerts; this
+//     one is a drawn level on the standing range. Changing either leaves the
+//     other alone.
+//     A tier draws only while BOTH of its levels exist. For a short spell
+//     after a break one side is empty until the next pivot refills it, and a
+//     range with one side missing has no midpoint.
+//     DRAWING BUDGET: at most three lines and three labels at once, wiped and
+//     rebuilt on each last-bar execution, against TradingView's 500.
 //
 //  INVARIANT 4, restored to its v15.15 wording. The optimised header had
 //  shortened it to 'never adopt or seed a level price has already closed
 //  beyond', which contradicts the code it ships with: v15.14 deliberately
 //  reversed it for the pivot-2 promotion, which takes a bare swept wick.
 //
-//  ONE INPUT IS ADDED and it is APPENDED (invariant 5), so all existing
-//  inputs keep their declaration positions, saved settings carry over and no
-//  settings reset is needed. The table render block is deferred to the end of
-//  the file so it can read that appended input - the v14.0 pattern; it is a
-//  pure move, verified by a position-independent diff.
+//  ALL NEW INPUTS ARE APPENDED (invariant 5), so every existing input keeps
+//  its declaration position, saved settings carry over and NO settings reset
+//  is needed. The three f_tfRow lines are the only existing executable lines
+//  altered anywhere outside the table engine.
 //  EXISTING ALERTS MUST BE DELETED AND RECREATED to see any of this: an alert
-//  runs its own frozen copy of the code and settings from when it was made.
+//  runs its own frozen copy of the code and the settings it was made with.
 //
 //  3-CANDLE PULLBACK RULE (Module 1) — swing HIGH; lows mirror
 //   1. CANDIDATE = highest high so far; a new OR EQUAL extreme replaces it.
@@ -159,15 +148,23 @@
 //  RETRACEMENT ALERTS   measured back from the leg extreme; fire on touch,
 //  intrabar; the latch is spent only where an alert can be delivered (v15.10).
 // ═════════════════════════════════════════════════════════════════════════════
-indicator("SMC Market Structure — 3CP + EMA", "SMC 3CP+EMA", overlay = true,
-     max_lines_count = 500, max_labels_count = 500, max_boxes_count = 150, dynamic_requests = true)
+indicator("SMC Market Structure — 3CP + Volume Profiles", "SMC 3CP+VP", overlay = true,
+     max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500, dynamic_requests = true)
 
 gStr = "Structure colour"
 whiteStruct = input.bool(false, "White BOS / CHOCH lines and text", group = gStr, tooltip = "One switch for the readability of the main structure marks on a dark or light chart.\n\nON  = every BOS, CHOCH, BOS* and CHOCH* line and label is drawn WHITE, whatever the individual colour pickers say.\nOFF = each one goes straight back to its own colour picker in groups 1 to 6 below. Nothing is overwritten; the switch only overrides while it is on.\n\nIt covers the six main style groups only. iBOS / iCHOCH and nBOS / nCHOCH keep their own colours, because they are meant to be distinguishable from main structure rather than matched to it.")
 
 gTog = "0. Master Visibility Toggles"
-mstB  = input.bool(false, "▶ MASTER B — all four killzone boxes", group = gTog, tooltip = "Master switch for the four killzone BOXES: Asia, London, New York and London Close.\n\nON  = all four are shown and their individual checkboxes are IGNORED.\nOFF = the four boxes take over and work on their own.\n\nThis indicator draws killzone BOXES only — the session volume profiles live in the companion Volume Profiles + VWAP file, so nothing here can switch a profile on.\n\nPair it with the Killzone boxes - top and bottom line only switch to get the four sessions as plain high/low levels with their names on them.\n\nPine cannot hide inputs, so switches that are not in charge stay visible — they simply have no effect.")
+mstA  = input.bool(true, "▶ MASTER A — VWAP · anchored · previous-day · Asia/London/NY profiles", group = gTog, tooltip = "Master switch for the first six checkboxes below: VWAP, the current-day anchored profile, the previous-day profiles and the Asia / London / New York session profiles.\n\nON  = all six are shown, and the six individual boxes below are IGNORED — ticking one of them can no longer make the others disappear.\nOFF = the six boxes take over and work on their own, each showing only its own item.\n\nSo either the master runs the group or the individual switches do, never both at once. Pine cannot hide inputs, so the switches that are not in charge stay visible in this panel — they simply have no effect.")
+mstB  = input.bool(false, "▶ MASTER B — all four killzone boxes", group = gTog, tooltip = "Master switch for the four killzone BOXES below: Asia, London, New York and London Close.\n\nON  = all four boxes are shown and their individual checkboxes are IGNORED.\nOFF = the four boxes take over and work on their own, each showing only itself.\n\nIT DRAWS BOXES ONLY. It does not switch on any session volume profile — not even the London Close one, which it used to drag in with it before v15.7. That profile now follows its own checkbox and nothing else, so MASTER B gives you the four killzones on a clean chart.\n\nIf a session PROFILE appears while this is on, it is MASTER A doing it — MASTER A is on by default and covers the Asia / London / New York session profiles.\n\nPair this with the Killzone boxes - top and bottom line only switch above to get the four sessions as plain high/low levels with their names on them.\n\nMASTER A and MASTER B are independent. Pine cannot hide inputs, so the switches that are not in charge stay visible in this panel — they simply have no effect.")
 
+vwOnI = input.bool(false, "Show VWAP", group = gTog)
+tOnI  = input.bool(false, "Show current-day anchored profile", tooltip = "Shows a live volume profile anchored to the start of the current day. This grows continuously as the day progresses.", group = gTog)
+dOnI  = input.bool(false, "Show previous-day profiles", tooltip = "Shows static fixed-range volume profiles for completed previous days.", group = gTog)
+aOnI  = input.bool(false, "Show Asia session profile", group = gTog)
+lOnI  = input.bool(false, "Show London session profile", group = gTog)
+nOnI  = input.bool(false, "Show New York session profile", group = gTog)
+cOnI  = input.bool(false, "Show London Close session profile", group = gTog)
 kaOnI = input.bool(false, "Show Asia box", group = gTog)
 klOnI = input.bool(false, "Show London box", group = gTog)
 knOnI = input.bool(false, "Show New York box", group = gTog)
@@ -176,13 +173,26 @@ kcOnI = input.bool(false, "Show London Close box", group = gTog)
 gA = "Alerts — enable, then create ONE alert using 'Any alert() function call'"
 aBB = input.bool(true,  "Bullish BOS alert",   group = gA)
 
+vwOn = mstA or vwOnI
+tOn  = mstA or tOnI
+dOn  = mstA or dOnI
+aOn  = mstA or aOnI
+lOn  = mstA or lOnI
+nOn  = mstA or nOnI
+cOn  = cOnI
 kaOn = mstB or kaOnI
 klOn = mstB or klOnI
 knOn = mstB or knOnI
 kcOn = mstB or kcOnI
 
-gVP = "Sessions — timezone & retention"
+gVP = "Volume profiles — general"
 vpTz   = input.string("UTC", "Timezone (UTC, UTC+5:30, America/New_York …)", tooltip = "The timezone used to calculate all Killzone session times. Entering 'UTC+5:30' ensures session inputs match India Standard Time.", group = gVP)
+vpLtfMode = input.string("Auto", "Intrabar TF for volume", options = ["Auto", "Manual"], group = gVP)
+vpLtf  = input.timeframe("1", "  - Manual intrabar TF (≤ chart TF)", tooltip = "The lower timeframe used to calculate volume distribution inside the chart's candles. A smaller timeframe (like '1') gives highly accurate volume nodes, but uses more historical data. This MUST be equal to or smaller than your current chart timeframe.", group = gVP)
+vpRows = input.int(24, "Rows per profile", minval = 8, maxval = 200, tooltip = "How many horizontal price rows (bins) to divide the profile into. Higher numbers mean thinner, more granular rows.", group = gVP)
+vpVa   = input.float(70, "Value Area %", minval = 50, maxval = 95, tooltip = "The percentage of total volume that makes up the Value Area. 70% is standard.", group = gVP)
+vpWid  = input.int(40, "Histogram width (% of range)", minval = 10, maxval = 100, tooltip = "How far across the screen the longest volume bar (POC) extends, as a percentage of the profile's allotted space.", group = gVP)
+vpDays    = input.int(1, "Keep last N previous-day profiles", minval = 1, maxval = 8, tooltip = "How many complete previous days to keep on the chart. 1 means it will only show yesterday's profile.", group = gVP)
 vpSesDays = input.int(1, "Days of sessions to keep", minval = 1, maxval = 15, tooltip = "How many DAYS of session profiles/boxes to keep, counting the current day as day 1. With 1, ONLY the current day\'s sessions are visible: each session appears live while it runs today, and yesterday\'s prints are wiped at the day boundary.", group = gVP)
 vpDayTz   = input.string("Exchange", "Day boundary timezone (Exchange = auto)", tooltip = "The timezone used to determine when a new day starts for the Daily Profiles. 'Exchange' uses the chart's native exchange timezone.", group = gVP)
 
@@ -306,17 +316,131 @@ aRetPct  = input.float(50.0, "Retracement % for range alerts", minval = 1.0, max
 aMainRet = input.bool(false, "Price at N% of BOS*/CHOCH* range alert", group = gA, tooltip = "Fires when price gives back the set percentage of the MAIN leg — the move since the last BOS or CHOCH — measured back from that leg's extreme, on the tick it happens rather than at the close.\n\nIT DOES NOT WAIT FOR THE RANGE TO BE CONFIRMED. A break does not settle its range; the 3-candle pullback that confirms the next pivot does, and that is always later — those pullback candles are themselves the retracement. So the anchor is the highest point reached so far since the break (lowest in a bearish leg), and the alert is live from the break onward.\n\nIf price has not reached the level by the time the range is confirmed, the alert stays armed and fires on the first crossing afterwards.\n\nIt only fires on a move BACK from the extreme, never on a push in the trend direction, and never on the bar the level was established.")
 aIntRet  = input.bool(false, "Price at N% of internal iBOS/iCHOCH range alert", group = gA, tooltip = "The same rule on the INTERNAL leg — the move since the last iBOS or iCHOCH.\n\nThis is the tier the rule matters most for. Every internal break empties one internal level by design and it only refills when the 3-candle rule confirms the next pivot, a median of 16 bars later; the alert no longer waits for that. The anchor is the highest point reached since the internal event (lowest in a bearish leg), so an iBOS followed by a candle giving back the set percentage alerts on the touch.\n\nBetween a main BOS/CHOCH and the range's first iCHOCH there is no internal leg yet, so this stays silent until the internal trend exists.\n\nExpect more of these than the main one: internal legs are shorter and more frequent.")
 
-gPA = "Ⓐ Asia killzone — session window"
+gPA = "Ⓐ Asia killzone — volume profile"
 aSes  = input.session("0000-0400", "Asia session (in profile timezone)", group = gPA)
+aVol  = input.string("Total", "Volume", options = ["Total", "Up/Down"], group = gPA)
+aUpC  = input.color(color.new(color.teal, 72), "Up Volume", inline = "aUD", group = gPA)
+aDnC  = input.color(color.new(color.red, 72), "Down Volume", inline = "aUD", group = gPA)
+aVaUp = input.color(color.new(color.teal, 50), "VA Up", inline = "aVAc", group = gPA)
+aVaDn = input.color(color.new(color.red, 50), "VA Down", inline = "aVAc", group = gPA)
+aPo   = input.bool(true, "POC", inline = "aP", group = gPA)
+aPc   = input.color(color.orange, "", inline = "aP", group = gPA)
+aPw   = input.int(1, "W", minval = 1, maxval = 4, inline = "aP", group = gPA)
+aPs   = input.string("Solid", "", options = ["Solid", "Dashed", "Dotted"], inline = "aP", group = gPA)
+aVo   = input.bool(true, "VAH", inline = "aV", group = gPA)
+aVc   = input.color(color.teal, "", inline = "aV", group = gPA)
+aVw   = input.int(1, "W", minval = 1, maxval = 4, inline = "aV", group = gPA)
+aVs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "aV", group = gPA)
+aLo   = input.bool(true, "VAL", inline = "aL", group = gPA)
+aLc   = input.color(color.teal, "", inline = "aL", group = gPA)
+aLw   = input.int(1, "W", minval = 1, maxval = 4, inline = "aL", group = gPA)
+aLs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "aL", group = gPA)
+aExt  = input.bool(false, "Extend POC/VAH/VAL →", group = gPA)
 
-gPL = "Ⓛ London killzone — session window"
+gPL = "Ⓛ London killzone — volume profile"
 lSes  = input.session("0600-0900", "London session (in profile timezone)", group = gPL)
+lVol  = input.string("Total", "Volume", options = ["Total", "Up/Down"], group = gPL)
+lUpC  = input.color(color.new(color.blue, 72), "Up Volume", inline = "lUD", group = gPL)
+lDnC  = input.color(color.new(color.red, 72), "Down Volume", inline = "lUD", group = gPL)
+lVaUp = input.color(color.new(color.blue, 50), "VA Up", inline = "lVAc", group = gPL)
+lVaDn = input.color(color.new(color.red, 50), "VA Down", inline = "lVAc", group = gPL)
+lPo   = input.bool(true, "POC", inline = "lP", group = gPL)
+lPc   = input.color(color.orange, "", inline = "lP", group = gPL)
+lPw   = input.int(1, "W", minval = 1, maxval = 4, inline = "lP", group = gPL)
+lPs   = input.string("Solid", "", options = ["Solid", "Dashed", "Dotted"], inline = "lP", group = gPL)
+lVo   = input.bool(true, "VAH", inline = "lV", group = gPL)
+lVc   = input.color(color.blue, "", inline = "lV", group = gPL)
+lVw   = input.int(1, "W", minval = 1, maxval = 4, inline = "lV", group = gPL)
+lVs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "lV", group = gPL)
+lLo   = input.bool(true, "VAL", inline = "lL", group = gPL)
+lLc   = input.color(color.blue, "", inline = "lL", group = gPL)
+lLw   = input.int(1, "W", minval = 1, maxval = 4, inline = "lL", group = gPL)
+lLs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "lL", group = gPL)
+lExt  = input.bool(false, "Extend POC/VAH/VAL →", group = gPL)
 
-gPN = "Ⓝ New York killzone — session window"
+gPN = "Ⓝ New York killzone — volume profile"
 nSes  = input.session("1100-1400", "New York session (in profile timezone)", group = gPN)
+nVol  = input.string("Total", "Volume", options = ["Total", "Up/Down"], group = gPN)
+nUpC  = input.color(color.new(color.purple, 72), "Up Volume", inline = "nUD", group = gPN)
+nDnC  = input.color(color.new(color.red, 72), "Down Volume", inline = "nUD", group = gPN)
+nVaUp = input.color(color.new(color.purple, 50), "VA Up", inline = "nVAc", group = gPN)
+nVaDn = input.color(color.new(color.red, 50), "VA Down", inline = "nVAc", group = gPN)
+nPo   = input.bool(true, "POC", inline = "nP", group = gPN)
+nPc   = input.color(color.orange, "", inline = "nP", group = gPN)
+nPw   = input.int(1, "W", minval = 1, maxval = 4, inline = "nP", group = gPN)
+nPs   = input.string("Solid", "", options = ["Solid", "Dashed", "Dotted"], inline = "nP", group = gPN)
+nVo   = input.bool(true, "VAH", inline = "nV", group = gPN)
+nVc   = input.color(color.purple, "", inline = "nV", group = gPN)
+nVw   = input.int(1, "W", minval = 1, maxval = 4, inline = "nV", group = gPN)
+nVs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "nV", group = gPN)
+nLo   = input.bool(true, "VAL", inline = "nL", group = gPN)
+nLc   = input.color(color.purple, "", inline = "nL", group = gPN)
+nLw   = input.int(1, "W", minval = 1, maxval = 4, inline = "nL", group = gPN)
+nLs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "nL", group = gPN)
+nExt  = input.bool(false, "Extend POC/VAH/VAL →", group = gPN)
 
-gPC = "Ⓒ London Close killzone — session window"
+gPC = "Ⓒ London Close killzone — volume profile"
 cSes  = input.session("1400-1600", "London Close session (in profile timezone)", group = gPC)
+cVol  = input.string("Total", "Volume", options = ["Total", "Up/Down"], group = gPC)
+cUpC  = input.color(color.new(color.maroon, 72), "Up Volume", inline = "cUD", group = gPC)
+cDnC  = input.color(color.new(color.red, 72), "Down Volume", inline = "cUD", group = gPC)
+cVaUp = input.color(color.new(color.maroon, 50), "VA Up", inline = "cVAc", group = gPC)
+cVaDn = input.color(color.new(color.red, 50), "VA Down", inline = "cVAc", group = gPC)
+cPo   = input.bool(true, "POC", inline = "cP", group = gPC)
+cPc   = input.color(color.orange, "", inline = "cP", group = gPC)
+cPw   = input.int(1, "W", minval = 1, maxval = 4, inline = "cP", group = gPC)
+cPs   = input.string("Solid", "", options = ["Solid", "Dashed", "Dotted"], inline = "cP", group = gPC)
+cVo   = input.bool(true, "VAH", inline = "cV", group = gPC)
+cVc   = input.color(color.maroon, "", inline = "cV", group = gPC)
+cVw   = input.int(1, "W", minval = 1, maxval = 4, inline = "cV", group = gPC)
+cVs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "cV", group = gPC)
+cLo   = input.bool(true, "VAL", inline = "cL", group = gPC)
+cLc   = input.color(color.maroon, "", inline = "cL", group = gPC)
+cLw   = input.int(1, "W", minval = 1, maxval = 4, inline = "cL", group = gPC)
+cLs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "cL", group = gPC)
+cExt  = input.bool(false, "Extend POC/VAH/VAL →", group = gPC)
+
+gPD = "Ⓓ Previous days — daily volume profiles"
+dVol  = input.string("Total", "Volume", options = ["Total", "Up/Down"], group = gPD)
+dUpC  = input.color(color.new(color.gray, 72), "Up Volume", inline = "dUD", group = gPD)
+dDnC  = input.color(color.new(color.red, 72), "Down Volume", inline = "dUD", group = gPD)
+dVaUp = input.color(color.new(color.gray, 50), "VA Up", inline = "dVAc", group = gPD)
+dVaDn = input.color(color.new(color.red, 50), "VA Down", inline = "dVAc", group = gPD)
+dPo   = input.bool(true, "POC", inline = "dP", group = gPD)
+dPc   = input.color(color.orange, "", inline = "dP", group = gPD)
+dPw   = input.int(1, "W", minval = 1, maxval = 4, inline = "dP", group = gPD)
+dPs   = input.string("Solid", "", options = ["Solid", "Dashed", "Dotted"], inline = "dP", group = gPD)
+dVo   = input.bool(true, "VAH", inline = "dV", group = gPD)
+dVc   = input.color(color.gray, "", inline = "dV", group = gPD)
+dVw   = input.int(1, "W", minval = 1, maxval = 4, inline = "dV", group = gPD)
+dVs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "dV", group = gPD)
+dLo   = input.bool(true, "VAL", inline = "dL", group = gPD)
+dLc   = input.color(color.gray, "", inline = "dL", group = gPD)
+dLw   = input.int(1, "W", minval = 1, maxval = 4, inline = "dL", group = gPD)
+dLs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "dL", group = gPD)
+dExt  = input.bool(false, "Extend POC/VAH/VAL →", group = gPD)
+
+gPT = "Ⓣ Current day — anchored volume profile"
+tVol  = input.string("Total", "Volume", options = ["Total", "Up/Down"], group = gPT)
+tUpC  = input.color(color.new(color.aqua, 70), "Up Volume", inline = "tUD", group = gPT)
+tDnC  = input.color(color.new(color.red, 70), "Down Volume", inline = "tUD", group = gPT)
+tVaUp = input.color(color.new(color.aqua, 40), "VA Up", inline = "tVAc", group = gPT)
+tVaDn = input.color(color.new(color.red, 40), "VA Down", inline = "tVAc", group = gPT)
+tPo   = input.bool(true, "POC", inline = "tP", group = gPT)
+tPc   = input.color(color.orange, "", inline = "tP", group = gPT)
+tPw   = input.int(2, "W", minval = 1, maxval = 4, inline = "tP", group = gPT)
+tPs   = input.string("Solid", "", options = ["Solid", "Dashed", "Dotted"], inline = "tP", group = gPT)
+tVo   = input.bool(true, "VAH", inline = "tV", group = gPT)
+tVc   = input.color(color.aqua, "", inline = "tV", group = gPT)
+tVw   = input.int(1, "W", minval = 1, maxval = 4, inline = "tV", group = gPT)
+tVs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "tV", group = gPT)
+tLo   = input.bool(true, "VAL", inline = "tL", group = gPT)
+tLc   = input.color(color.aqua, "", inline = "tL", group = gPT)
+tLw   = input.int(1, "W", minval = 1, maxval = 4, inline = "tL", group = gPT)
+tLs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "tL", group = gPT)
+tExt  = input.bool(false, "Extend POC/VAH/VAL →", group = gPT)
+tPlc  = input.string("Left (day open)", "Placement", options = ["Left (day open)", "Right (chart edge)"], group = gPT)
+tRoff = input.int(20, "Right offset (bars from last candle)", minval = 5, maxval = 100, group = gPT)
 
 gKA = "Killzone box — Asia"
 kaF  = input.color(color.new(color.teal, 90), "Fill", inline = "ka", group = gKA)
@@ -436,7 +560,6 @@ type SLine
     float idmP
     int   idmB
     bool  idmHit
-    int   drawB
 
 hAlignOf(int sid, bool pend) =>
     if pend
@@ -452,16 +575,7 @@ method repos(SLine s, int endBar) =>
     if not na(s) and not na(s.ln) and not na(s.lb)
         string th = hAlignOf(s.sid, not s.done)
         if th != "Left"
-            s.lb.set_x(th == "Right" ? endBar : int(math.avg(s.drawB, endBar)))
-
-method setDraw(SLine s, int b) =>
-    if not na(s) and not na(b)
-        s.drawB := b
-        if not na(s.ln)
-            s.ln.set_x1(b)
-        if not na(s.lb)
-            string th = hAlignOf(s.sid, not s.done)
-            s.lb.set_x(th == "Left" ? b : th == "Right" ? bar_index : int(math.avg(b, bar_index)))
+            s.lb.set_x(th == "Right" ? endBar : int(math.avg(s.x1, endBar)))
 
 method freeze(SLine s) =>
     if not na(s) and not na(s.ln)
@@ -476,7 +590,7 @@ method freeze(SLine s) =>
             s.lb.delete()
             s.lb := na
         if showT
-            int lx = th == "Left" ? s.drawB : th == "Right" ? bar_index : int(math.avg(s.drawB, bar_index))
+            int lx = th == "Left" ? s.x1 : th == "Right" ? bar_index : int(math.avg(s.x1, bar_index))
             s.lb := label.new(lx, s.price, txt, color = color(na), textcolor = tc, style = lblStyle(tv), size = tsize(ts))
 
 method drop(SLine s) =>
@@ -494,7 +608,7 @@ mkSLine(float p, int b, int sid, bool draw) =>
     if draw and showT
         int lx = th == "Left" ? b : th == "Right" ? bar_index : int(math.avg(b, bar_index))
         lb := label.new(lx, p, txt, color = color(na), textcolor = tc, style = lblStyle(tv), size = tsize(ts))
-    SLine.new(ln, lb, b, p, sid, bar_index, false, na, na, na, na, na, false, b)
+    SLine.new(ln, lb, b, p, sid, bar_index, false, na, na, na, na, na, false)
 
 type SwingTracker
     bool  isHigh
@@ -683,6 +797,14 @@ f_armIdmB(array<int> mHiB, array<float> mHiP, array<int> mLoB, array<float> mLoP
         hit := takenPast or takenNow
     [ip, hit]
 
+f_provDir(float ce, float fl, float hi, float lo, float px) =>
+    float c = na(ce) ? hi : ce
+    float f = na(fl) ? lo : fl
+    int d = 0
+    if not na(c) and not na(f) and c >= f
+        d := px >= math.avg(c, f) ? 1 : -1
+    d
+
 f_idmMark(SLine s) =>
     bool inWin = (last_bar_index - bar_index) <= histBars
     if showIdm and inWin and not na(s.idmP) and not na(s.idmB) and (bar_index - s.idmB) <= histBars
@@ -795,8 +917,6 @@ var float iCeilP    = na
 var int   iCeilB    = na
 var int   iCeilBorn = na
 var float iCeilSwp  = na
-var int   iCeilSwpB = na
-var int   iCeilDrawB = na
 var float iCeilRef  = na
 var float iCeilIdmP   = na
 var bool  iCeilIdmHit = false
@@ -804,8 +924,6 @@ var float iFlorP    = na
 var int   iFlorB    = na
 var int   iFlorBorn = na
 var float iFlorSwp  = na
-var int   iFlorSwpB = na
-var int   iFlorDrawB = na
 var float iFlorRef  = na
 var float iFlorIdmP   = na
 var bool  iFlorIdmHit = false
@@ -816,8 +934,6 @@ var float nCeilP    = na
 var int   nCeilB    = na
 var int   nCeilBorn = na
 var float nCeilSwp  = na
-var int   nCeilSwpB = na
-var int   nCeilDrawB = na
 var float nCeilRef  = na
 var float nCeilIdmP   = na
 var bool  nCeilIdmHit = false
@@ -825,8 +941,6 @@ var float nFlorP    = na
 var int   nFlorB    = na
 var int   nFlorBorn = na
 var float nFlorSwp  = na
-var int   nFlorSwpB = na
-var int   nFlorDrawB = na
 var float nFlorRef  = na
 var float nFlorIdmP   = na
 var bool  nFlorIdmHit = false
@@ -999,12 +1113,10 @@ if not onClose or barstate.isconfirmed
                     label.new(bar_index, na, "×", yloc = yloc.abovebar, style = label.style_none, textcolor = colSweep, size = size.small)
                 if altMode and not ceilS.idmHit and not na(ceilS.idmP) and close > ceilS.price and not na(ceilS.swpP)
                     float mpC = ceilS.swpP
-                    int   mbC = ceilS.x1
-                    int   maC = ceilS.swpB
+                    int   mbC = ceilS.swpB
                     int   mdC = ceilS.sid
                     ceilS.drop()
                     ceilS := mkSLine(mpC, mbC, mdC, drawOk)
-                    ceilS.setDraw(maC)
                     ceilS.armIdm()
             if not na(ceilS.swpP) and na(ceilS.refP)
                 [refPc, refBc] = f_retExtreme(ceilS.x1, false)
@@ -1012,12 +1124,10 @@ if not onClose or barstate.isconfirmed
             if trendDir == 1 and not na(ceilS.swpP) and not na(ceilS.refP) and low < ceilS.refP
                 float spC = ceilS.swpP
                 int   sbC = ceilS.x1
-                int   dbC = ceilS.swpB
                 if not na(spC)
                     int sdC = ceilS.sid
                     ceilS.drop()
                     ceilS := mkSLine(spC, sbC, sdC, drawOk)
-                    ceilS.setDraw(dbC)
                     ceilS.armIdm()
 
     if not na(florS) and bar_index > florS.born
@@ -1046,12 +1156,10 @@ if not onClose or barstate.isconfirmed
                     label.new(bar_index, na, "×", yloc = yloc.belowbar, style = label.style_none, textcolor = colSweep, size = size.small)
                 if altMode and not florS.idmHit and not na(florS.idmP) and close < florS.price and not na(florS.swpP)
                     float mpF = florS.swpP
-                    int   mbF = florS.x1
-                    int   maF = florS.swpB
+                    int   mbF = florS.swpB
                     int   mdF = florS.sid
                     florS.drop()
                     florS := mkSLine(mpF, mbF, mdF, drawOk)
-                    florS.setDraw(maF)
                     florS.armIdm()
             if not na(florS.swpP) and na(florS.refP)
                 [refPf, refBf] = f_retExtreme(florS.x1, true)
@@ -1059,12 +1167,10 @@ if not onClose or barstate.isconfirmed
             if trendDir == -1 and not na(florS.swpP) and not na(florS.refP) and high > florS.refP
                 float spF = florS.swpP
                 int   sbF = florS.x1
-                int   dbF = florS.swpB
                 if not na(spF)
                     int sdF = florS.sid
                     florS.drop()
                     florS := mkSLine(spF, sbF, sdF, drawOk)
-                    florS.setDraw(dbF)
                     florS.armIdm()
 
     bool mainEvt = evBosUp or evBosDn or evChoUp or evChoDn
@@ -1086,19 +1192,15 @@ if not onClose or barstate.isconfirmed
         iAncB  := na
         iCeilP    := na
         iCeilB    := na
-        iCeilDrawB := na
         iCeilBorn := na
         iCeilSwp  := na
-        iCeilSwpB := na
         iCeilRef  := na
         iCeilIdmP   := na
         iCeilIdmHit := false
         iFlorP    := na
         iFlorB    := na
-        iFlorDrawB := na
         iFlorBorn := na
         iFlorSwp  := na
-        iFlorSwpB := na
         iFlorRef  := na
         iFlorIdmP   := na
         iFlorIdmHit := false
@@ -1113,7 +1215,6 @@ if not onClose or barstate.isconfirmed
                 if _sb > iAncB and close < array.get(pvHiP, _s) and (inPivK <= 1 or f_isSwing(_sb, true, inPivK))
                     iCeilP    := array.get(pvHiP, _s)
                     iCeilB    := _sb
-                    iCeilDrawB := _sb
                     iCeilBorn := bar_index
                     [_sip, _sih] = f_intArmIdm(_sb, true)
                     iCeilIdmP   := _sip
@@ -1125,7 +1226,6 @@ if not onClose or barstate.isconfirmed
                 if _sb > iAncB and close > array.get(pvLoP, _s) and (inPivK <= 1 or f_isSwing(_sb, false, inPivK))
                     iFlorP    := array.get(pvLoP, _s)
                     iFlorB    := _sb
-                    iFlorDrawB := _sb
                     iFlorBorn := bar_index
                     [_sjp, _sjh] = f_intArmIdm(_sb, false)
                     iFlorIdmP   := _sjp
@@ -1137,10 +1237,8 @@ if not onClose or barstate.isconfirmed
             if na(iCeilP)
                 iCeilP    := aPhP
                 iCeilB    := aPhB
-                iCeilDrawB := aPhB
                 iCeilBorn := bar_index
                 iCeilSwp  := na
-                iCeilSwpB := na
                 iCeilRef  := na
                 [ipCa, ihCa] = f_intArmIdm(aPhB, true)
                 iCeilIdmP   := ipCa
@@ -1149,10 +1247,8 @@ if not onClose or barstate.isconfirmed
             if na(iFlorP)
                 iFlorP    := aPlP
                 iFlorB    := aPlB
-                iFlorDrawB := aPlB
                 iFlorBorn := bar_index
                 iFlorSwp  := na
-                iFlorSwpB := na
                 iFlorRef  := na
                 [ipFa, ihFa] = f_intArmIdm(aPlB, false)
                 iFlorIdmP   := ipFa
@@ -1170,15 +1266,13 @@ if not onClose or barstate.isconfirmed
                     evIChoUp := true
                 else
                     evIBosUp := true
-                f_intMark(iCeilP, iCeilDrawB, isChoU)
+                f_intMark(iCeilP, iCeilB, isChoU)
                 [iRpU, iRbU] = f_retExtInc(iCeilB, false)
                 if not na(iRpU)
                     iFlorP    := iRpU
                     iFlorB    := iRbU
-                    iFlorDrawB := iRbU
                     iFlorBorn := bar_index
                     iFlorSwp  := na
-                    iFlorSwpB := na
                     iFlorRef  := na
                     [ipFr, ihFr] = f_intArmIdm(iRbU, false)
                     iFlorIdmP   := ipFr
@@ -1188,10 +1282,8 @@ if not onClose or barstate.isconfirmed
                 iTrend    := 1
                 iCeilP    := na
                 iCeilB    := na
-                iCeilDrawB := na
                 iCeilBorn := na
                 iCeilSwp  := na
-                iCeilSwpB := na
                 iCeilRef  := na
                 iCeilIdmP   := na
                 iCeilIdmHit := false
@@ -1202,17 +1294,14 @@ if not onClose or barstate.isconfirmed
                         iCeilRef := iRefPu
                     if na(iCeilSwp) or high > iCeilSwp
                         iCeilSwp  := high
-                        iCeilSwpB := bar_index
                 if iTrend == 1 and not na(iCeilSwp) and not na(iCeilRef) and low < iCeilRef
                     float _ipC = iCeilSwp
                     int   _ibC = iCeilB
                     if not na(_ipC)
                         iCeilP    := _ipC
                         iCeilB    := _ibC
-                        iCeilDrawB := iCeilSwpB
                         iCeilBorn := bar_index
                         iCeilSwp  := na
-                        iCeilSwpB := na
                         iCeilRef  := na
                         [ipCp, ihCp] = f_intArmIdm(_ibC, true)
                         iCeilIdmP   := ipCp
@@ -1225,15 +1314,13 @@ if not onClose or barstate.isconfirmed
                     evIChoDn := true
                 else
                     evIBosDn := true
-                f_intMark(iFlorP, iFlorDrawB, isChoD)
+                f_intMark(iFlorP, iFlorB, isChoD)
                 [iRpD, iRbD] = f_retExtInc(iFlorB, true)
                 if not na(iRpD)
                     iCeilP    := iRpD
                     iCeilB    := iRbD
-                    iCeilDrawB := iRbD
                     iCeilBorn := bar_index
                     iCeilSwp  := na
-                    iCeilSwpB := na
                     iCeilRef  := na
                     [ipCr, ihCr] = f_intArmIdm(iRbD, true)
                     iCeilIdmP   := ipCr
@@ -1243,10 +1330,8 @@ if not onClose or barstate.isconfirmed
                 iTrend    := -1
                 iFlorP    := na
                 iFlorB    := na
-                iFlorDrawB := na
                 iFlorBorn := na
                 iFlorSwp  := na
-                iFlorSwpB := na
                 iFlorRef  := na
                 iFlorIdmP   := na
                 iFlorIdmHit := false
@@ -1257,17 +1342,14 @@ if not onClose or barstate.isconfirmed
                         iFlorRef := iRefPd
                     if na(iFlorSwp) or low < iFlorSwp
                         iFlorSwp  := low
-                        iFlorSwpB := bar_index
                 if iTrend == -1 and not na(iFlorSwp) and not na(iFlorRef) and high > iFlorRef
                     float _ipF = iFlorSwp
                     int   _ibF = iFlorB
                     if not na(_ipF)
                         iFlorP    := _ipF
                         iFlorB    := _ibF
-                        iFlorDrawB := iFlorSwpB
                         iFlorBorn := bar_index
                         iFlorSwp  := na
-                        iFlorSwpB := na
                         iFlorRef  := na
                         [ipFp, ihFp] = f_intArmIdm(_ibF, false)
                         iFlorIdmP   := ipFp
@@ -1294,19 +1376,15 @@ if not onClose or barstate.isconfirmed
         nAncB  := na
         nCeilP    := na
         nCeilB    := na
-        nCeilDrawB := na
         nCeilBorn := na
         nCeilSwp  := na
-        nCeilSwpB := na
         nCeilRef  := na
         nCeilIdmP   := na
         nCeilIdmHit := false
         nFlorP    := na
         nFlorB    := na
-        nFlorDrawB := na
         nFlorBorn := na
         nFlorSwp  := na
-        nFlorSwpB := na
         nFlorRef  := na
         nFlorIdmP   := na
         nFlorIdmHit := false
@@ -1320,7 +1398,6 @@ if not onClose or barstate.isconfirmed
                 if _nb > nAncB and close < array.get(pvHiP, _n) and (inPivK <= 1 or f_isSwing(_nb, true, inPivK))
                     nCeilP    := array.get(pvHiP, _n)
                     nCeilB    := _nb
-                    nCeilDrawB := _nb
                     nCeilBorn := bar_index
                     [_nip, _nih] = f_intArmIdm(_nb, true)
                     nCeilIdmP   := _nip
@@ -1332,7 +1409,6 @@ if not onClose or barstate.isconfirmed
                 if _nb > nAncB and close > array.get(pvLoP, _n) and (inPivK <= 1 or f_isSwing(_nb, false, inPivK))
                     nFlorP    := array.get(pvLoP, _n)
                     nFlorB    := _nb
-                    nFlorDrawB := _nb
                     nFlorBorn := bar_index
                     [_njp, _njh] = f_intArmIdm(_nb, false)
                     nFlorIdmP   := _njp
@@ -1344,10 +1420,8 @@ if not onClose or barstate.isconfirmed
             if na(nCeilP)
                 nCeilP    := aPhP
                 nCeilB    := aPhB
-                nCeilDrawB := aPhB
                 nCeilBorn := bar_index
                 nCeilSwp  := na
-                nCeilSwpB := na
                 nCeilRef  := na
                 [npCa, nhCa] = f_intArmIdm(aPhB, true)
                 nCeilIdmP   := npCa
@@ -1356,10 +1430,8 @@ if not onClose or barstate.isconfirmed
             if na(nFlorP)
                 nFlorP    := aPlP
                 nFlorB    := aPlB
-                nFlorDrawB := aPlB
                 nFlorBorn := bar_index
                 nFlorSwp  := na
-                nFlorSwpB := na
                 nFlorRef  := na
                 [npFa, nhFa] = f_intArmIdm(aPlB, false)
                 nFlorIdmP   := npFa
@@ -1378,16 +1450,14 @@ if not onClose or barstate.isconfirmed
                 else
                     evNBosUp := true
                 rqUpP   := nCeilP
-                rqUpB   := nCeilDrawB
+                rqUpB   := nCeilB
                 rqUpCho := isNChoU
                 [nRpU, nRbU] = f_retExtInc(nCeilB, false)
                 if not na(nRpU)
                     nFlorP    := nRpU
                     nFlorB    := nRbU
-                    nFlorDrawB := nRbU
                     nFlorBorn := bar_index
                     nFlorSwp  := na
-                    nFlorSwpB := na
                     nFlorRef  := na
                     [npFr, nhFr] = f_intArmIdm(nRbU, false)
                     nFlorIdmP   := npFr
@@ -1397,10 +1467,8 @@ if not onClose or barstate.isconfirmed
                 nTrend    := 1
                 nCeilP    := na
                 nCeilB    := na
-                nCeilDrawB := na
                 nCeilBorn := na
                 nCeilSwp  := na
-                nCeilSwpB := na
                 nCeilRef  := na
                 nCeilIdmP   := na
                 nCeilIdmHit := false
@@ -1411,17 +1479,14 @@ if not onClose or barstate.isconfirmed
                         nCeilRef := nRefPu
                     if na(nCeilSwp) or high > nCeilSwp
                         nCeilSwp  := high
-                        nCeilSwpB := bar_index
                 if nTrend == 1 and not na(nCeilSwp) and not na(nCeilRef) and low < nCeilRef
                     float _npC = nCeilSwp
                     int   _nbC = nCeilB
                     if not na(_npC)
                         nCeilP    := _npC
                         nCeilB    := _nbC
-                        nCeilDrawB := nCeilSwpB
                         nCeilBorn := bar_index
                         nCeilSwp  := na
-                        nCeilSwpB := na
                         nCeilRef  := na
                         [npCp, nhCp] = f_intArmIdm(_nbC, true)
                         nCeilIdmP   := npCp
@@ -1435,16 +1500,14 @@ if not onClose or barstate.isconfirmed
                 else
                     evNBosDn := true
                 rqDnP   := nFlorP
-                rqDnB   := nFlorDrawB
+                rqDnB   := nFlorB
                 rqDnCho := isNChoD
                 [nRpD, nRbD] = f_retExtInc(nFlorB, true)
                 if not na(nRpD)
                     nCeilP    := nRpD
                     nCeilB    := nRbD
-                    nCeilDrawB := nRbD
                     nCeilBorn := bar_index
                     nCeilSwp  := na
-                    nCeilSwpB := na
                     nCeilRef  := na
                     [npCr, nhCr] = f_intArmIdm(nRbD, true)
                     nCeilIdmP   := npCr
@@ -1454,10 +1517,8 @@ if not onClose or barstate.isconfirmed
                 nTrend    := -1
                 nFlorP    := na
                 nFlorB    := na
-                nFlorDrawB := na
                 nFlorBorn := na
                 nFlorSwp  := na
-                nFlorSwpB := na
                 nFlorRef  := na
                 nFlorIdmP   := na
                 nFlorIdmHit := false
@@ -1468,17 +1529,14 @@ if not onClose or barstate.isconfirmed
                         nFlorRef := nRefPd
                     if na(nFlorSwp) or low < nFlorSwp
                         nFlorSwp  := low
-                        nFlorSwpB := bar_index
                 if nTrend == -1 and not na(nFlorSwp) and not na(nFlorRef) and high > nFlorRef
                     float _npF = nFlorSwp
                     int   _nbF = nFlorB
                     if not na(_npF)
                         nFlorP    := _npF
                         nFlorB    := _nbF
-                        nFlorDrawB := nFlorSwpB
                         nFlorBorn := bar_index
                         nFlorSwp  := na
-                        nFlorSwpB := na
                         nFlorRef  := na
                         [npFp, nhFp] = f_intArmIdm(_nbF, false)
                         nFlorIdmP   := npFp
@@ -1593,27 +1651,277 @@ else
         if (nTrend == 1 and low <= nLvl) or (nTrend == -1 and high >= nLvl)
             rtNnRet    := true
 
+f_autoLtf() =>
+    float cs = timeframe.in_seconds(timeframe.period)
+    string r = "1"
+    if cs <= 300
+        r := "1"
+    else if cs <= 900
+        r := "1"
+    else if cs <= 3600
+        r := "5"
+    else if cs <= 14400
+        r := "15"
+    else if cs <= 86400
+        r := "60"
+    else
+        r := "240"
+    r
+var string vpLtfUse = vpLtfMode == "Auto" ? f_autoLtf() : vpLtf
+
 float _cs = timeframe.in_seconds(timeframe.period)
 bool sesVisible = _cs <= 900
+bool dayVisible = _cs <= 3600
 var int dayNum = 0
 var int _keepSesBars = int(math.ceil((vpSesDays + 2) * 86400.0 / _cs))
+var int _keepDayBars = int(math.ceil((math.max(1, vpDays) + 2) * 86400.0 / _cs))
+
+bool _needLtf = (dayVisible and (tOn or dOn)) or (sesVisible and (aOn or lOn or nOn or cOn))
+f_ltfPull() =>
+    if _needLtf
+        request.security_lower_tf(syminfo.tickerid, vpLtfUse, [high, low, open, close, volume])
+    else
+        [array.new_float(), array.new_float(), array.new_float(), array.new_float(), array.new_float()]
+[ltfH, ltfL, ltfO, ltfC, ltfV] = f_ltfPull()
+
+type VPStyle
+    string volMode
+    color  upC
+    color  dnC
+    color  vaUpC
+    color  vaDnC
+    bool   pocOn
+    color  pocC
+    int    pocW
+    string pocS
+    bool   vahOn
+    color  vahC
+    int    vahW
+    string vahS
+    bool   valOn
+    color  valC
+    int    valW
+    string valS
+    bool   extLines
 
 type VPCol
     bool  on
     int   x1
     float hi
     float lo
+    array<float> prH
+    array<float> prL
+    array<float> vo
+    array<bool>  up
+
+type DrawQueue
+    array<box>  bq
+    array<line> lq
+    array<int>  bCnt
+    array<int>  lCnt
+    array<int>  dTag
 
 method begin(VPCol c) =>
     c.on := true
     c.x1 := bar_index
     c.hi := high
     c.lo := low
+    array.clear(c.prH)
+    array.clear(c.prL)
+    array.clear(c.vo)
+    array.clear(c.up)
 
 method feed(VPCol c) =>
     if c.on
         c.hi := math.max(c.hi, high)
         c.lo := math.min(c.lo, low)
+        int n = array.size(ltfH)
+        if n > 0
+            array.concat(c.prH, ltfH)
+            array.concat(c.prL, ltfL)
+            array.concat(c.vo,  ltfV)
+            for i = 0 to n - 1
+                array.push(c.up,  array.get(ltfC, i) >= array.get(ltfO, i))
+        else
+            array.push(c.prH, high)
+            array.push(c.prL, low)
+            array.push(c.vo,  nz(volume))
+            array.push(c.up,  close >= open)
+
+f_render(VPCol c, int x2, VPStyle st, DrawQueue dq, int maxProf, bool rightSide, int rightOff) =>
+    int n = array.size(c.prH)
+    if n > 0 and c.hi > c.lo
+        float rngAll = c.hi - c.lo
+        float tick   = syminfo.mintick
+        float tprF   = rngAll / vpRows / tick
+        int   tprA   = math.max(1, int(math.floor(tprF)))
+        int   tprB   = math.max(1, int(math.ceil(tprF)))
+        int   rowsA  = int(math.ceil(rngAll / (tprA * tick) - 1e-9))
+        int   rowsB  = int(math.ceil(rngAll / (tprB * tick) - 1e-9))
+        int   tpr    = math.abs(rowsA - vpRows) <= math.abs(rowsB - vpRows) ? tprA : tprB
+        float step   = tpr * tick
+        int   rows   = math.min(100, math.max(1, int(math.ceil(rngAll / step - 1e-9))))
+        binUp = array.new_float(rows, 0.0)
+        binDn = array.new_float(rows, 0.0)
+        float lo0  = c.lo
+        int   rMax = rows - 1
+        for i = 0 to n - 1
+            float v = nz(array.get(c.vo, i))
+            if v > 0
+                float cH  = array.get(c.prH, i)
+                float cL  = array.get(c.prL, i)
+                bool  isU = array.get(c.up, i)
+                int loBin = int(math.max(0, math.min(rMax, math.floor((cL - lo0) / step))))
+                int hiBin = int(math.max(0, math.min(rMax, math.floor((cH - lo0) / step))))
+                if hiBin < loBin
+                    hiBin := loBin
+                float rng = cH - cL
+                for b = loBin to hiBin
+                    float share = v
+                    if rng > 0
+                        float eb = lo0 + step * b
+                        float et = eb + step
+                        share := v * (math.min(cH, et) - math.max(cL, eb)) / rng
+                    if share > 0
+                        if isU
+                            array.set(binUp, b, array.get(binUp, b) + share)
+                        else
+                            array.set(binDn, b, array.get(binDn, b) + share)
+        binv = array.new_float(rows, 0.0)
+        float tot  = 0.0
+        float mx   = 0.0
+        int   pocI = 0
+        float ctr  = rMax / 2.0
+        for r = 0 to rMax
+            float vr = array.get(binUp, r) + array.get(binDn, r)
+            array.set(binv, r, vr)
+            tot += vr
+            if vr > mx
+                mx   := vr
+                pocI := r
+            else if vr == mx and math.abs(r - ctr) < math.abs(pocI - ctr)
+                pocI := r
+        if mx > 0
+            int vaU = pocI
+            int vaD = pocI
+            float remain = tot * vpVa / 100 - mx
+            bool vaGo = remain > 0
+            while vaGo and (vaU < rows - 1 or vaD > 0)
+                float vUp = vaU < rows - 1 ? array.get(binv, vaU + 1) : na
+                float vDn = vaD > 0 ? array.get(binv, vaD - 1) : na
+                bool pickUp = false
+                if na(vDn)
+                    pickUp := true
+                else if na(vUp)
+                    pickUp := false
+                else if vUp != vDn
+                    pickUp := vUp > vDn
+                else
+                    int dU = vaU + 1 - pocI
+                    int dD = pocI - (vaD - 1)
+                    pickUp := dU <= dD
+                float vSel = pickUp ? vUp : vDn
+                if vSel > remain
+                    vaGo := false
+                else
+                    remain -= vSel
+                    if pickUp
+                        vaU += 1
+                    else
+                        vaD -= 1
+            int span = math.max(1, x2 - c.x1)
+            int wMax = math.max(1, int(math.round(span * vpWid / 100.0)))
+            if rightSide
+                wMax := math.max(1, math.min(wMax, 480 - rightOff))
+            int anchor = rightSide ? x2 + rightOff + wMax : c.x1
+
+            int bPushed = 0
+            bool  upDn = st.volMode == "Up/Down"
+            color sUpC = st.upC
+            color sDnC = st.dnC
+            color sVaU = st.vaUpC
+            color sVaD = st.vaDnC
+            float hiV  = c.hi
+            for r = 0 to rMax
+                float v = array.get(binv, r)
+                if v > 0
+                    int w = math.max(1, int(math.round(wMax * v / mx)))
+                    bool inVA = r >= vaD and r <= vaU
+                    float top = math.min(hiV, lo0 + step * (r + 1))
+                    float bot = lo0 + step * r
+                    if upDn
+                        float uv = array.get(binUp, r)
+                        int uw = v > 0 ? int(math.round(w * uv / v)) : 0
+                        int dw = w - uw
+                        color ucol = inVA ? sVaU : sUpC
+                        color dcol = inVA ? sVaD : sDnC
+                        if rightSide
+                            if dw > 0
+                                array.push(dq.bq, box.new(anchor - dw, top, anchor, bot, border_color = color(na), bgcolor = dcol))
+                                bPushed += 1
+                            if uw > 0
+                                array.push(dq.bq, box.new(anchor - w, top, anchor - dw, bot, border_color = color(na), bgcolor = ucol))
+                                bPushed += 1
+                        else
+                            if uw > 0
+                                array.push(dq.bq, box.new(anchor, top, anchor + uw, bot, border_color = color(na), bgcolor = ucol))
+                                bPushed += 1
+                            if dw > 0
+                                array.push(dq.bq, box.new(anchor + uw, top, anchor + w, bot, border_color = color(na), bgcolor = dcol))
+                                bPushed += 1
+                    else
+                        color col = inVA ? sVaU : sUpC
+                        if rightSide
+                            array.push(dq.bq, box.new(anchor - w, top, anchor, bot, border_color = color(na), bgcolor = col))
+                            bPushed += 1
+                        else
+                            array.push(dq.bq, box.new(anchor, top, anchor + w, bot, border_color = color(na), bgcolor = col))
+                            bPushed += 1
+
+            int lPushed = 0
+            float pocB = lo0 + step * pocI
+            float pocP = (pocB + math.min(hiV, pocB + step)) / 2
+            float vahP = math.min(hiV, lo0 + step * (vaU + 1))
+            float valP = lo0 + step * vaD
+            int lineR = rightSide ? anchor : x2
+            if st.pocOn
+                array.push(dq.lq, line.new(c.x1, pocP, lineR, pocP, color = st.pocC, width = st.pocW, style = lstyle(st.pocS), extend = st.extLines ? extend.right : extend.none))
+                lPushed += 1
+            if st.vahOn
+                array.push(dq.lq, line.new(c.x1, vahP, lineR, vahP, color = st.vahC, width = st.vahW, style = lstyle(st.vahS), extend = st.extLines ? extend.right : extend.none))
+                lPushed += 1
+            if st.valOn
+                array.push(dq.lq, line.new(c.x1, valP, lineR, valP, color = st.valC, width = st.valW, style = lstyle(st.valS), extend = st.extLines ? extend.right : extend.none))
+                lPushed += 1
+
+            array.push(dq.bCnt, bPushed)
+            array.push(dq.lCnt, lPushed)
+            array.push(dq.dTag, dayNum)
+
+            while array.size(dq.bCnt) > maxProf
+                int remB = array.shift(dq.bCnt)
+                if array.size(dq.dTag) > 0
+                    array.shift(dq.dTag)
+                if remB > 0
+                    for i = 1 to remB
+                        if array.size(dq.bq) > 0
+                            box.delete(array.shift(dq.bq))
+
+            while array.size(dq.lCnt) > maxProf
+                int remL = array.shift(dq.lCnt)
+                if remL > 0
+                    for i = 1 to remL
+                        if array.size(dq.lq) > 0
+                            line.delete(array.shift(dq.lq))
+
+f_wipe(DrawQueue dq) =>
+    while array.size(dq.bq) > 0
+        box.delete(array.shift(dq.bq))
+    while array.size(dq.lq) > 0
+        line.delete(array.shift(dq.lq))
+    array.clear(dq.bCnt)
+    array.clear(dq.lCnt)
+    array.clear(dq.dTag)
 
 f_kzbox(VPCol c, int x2, color fillC, color brdC, string brdS, int brdW, string txt, string ts, color tc, string tHal, string tVal, array<box> q, array<label> lq, array<int> qd, int keep) =>
     hA = tHal == "Left" ? text.align_left : tHal == "Right" ? text.align_right : text.align_center
@@ -1636,7 +1944,19 @@ f_kzWipeLive(array<box> q, array<label> lq, array<int> qd) =>
         label.delete(array.pop(lq))
     array.clear(qd)
 
-f_sesPrune(array<box> kq, array<label> klq, array<int> kqd) =>
+f_sesPrune(DrawQueue dq, array<box> kq, array<label> klq, array<int> kqd) =>
+    while array.size(dq.dTag) > 0 and array.get(dq.dTag, 0) <= dayNum - vpSesDays
+        array.shift(dq.dTag)
+        int remB = array.shift(dq.bCnt)
+        if remB > 0
+            for i = 1 to remB
+                if array.size(dq.bq) > 0
+                    box.delete(array.shift(dq.bq))
+        int remL = array.shift(dq.lCnt)
+        if remL > 0
+            for i = 1 to remL
+                if array.size(dq.lq) > 0
+                    line.delete(array.shift(dq.lq))
     while array.size(kqd) > 0 and array.get(kqd, 0) <= dayNum - vpSesDays
         array.shift(kqd)
         if array.size(kq) > 0
@@ -1644,11 +1964,13 @@ f_sesPrune(array<box> kq, array<label> klq, array<int> kqd) =>
         if array.size(klq) > 0
             label.delete(array.shift(klq))
 
-f_session(VPCol c, bool inSes, bool boxOn, color bF, color bB, string bBs, int bBw, string bT, string bTs, color bTc, string bTh, string bTv, array<box> kq, array<label> klq, array<int> kqd, int keep) =>
+f_session(VPCol c, bool inSes, bool profOn, VPStyle st, DrawQueue dq, bool boxOn, color bF, color bB, string bBs, int bBw, string bT, string bTs, color bTc, string bTh, string bTv, array<box> kq, array<label> klq, array<int> kqd, int keep) =>
     if inSes and not c.on
         c.begin()
     else if not inSes and c.on
         c.on := false
+        if profOn
+            f_render(c, bar_index - 1, st, dq, keep + 1, false, 0)
         if boxOn
             f_kzbox(c, bar_index - 1, bF, bB, bBs, bBw, bT, bTs, bTc, bTh, bTv, kq, klq, kqd, keep)
     if c.on
@@ -1662,10 +1984,10 @@ string _sesA = f_sesShift(aSes, kzShift)
 string _sesL = f_sesShift(lSes, kzShift)
 string _sesN = f_sesShift(nSes, kzShift)
 string _sesC = f_sesShift(cSes, kzShift)
-bool inA = sesVisible and kaOn and not na(time(timeframe.period, _sesA, _tzA))
-bool inL = sesVisible and klOn and not na(time(timeframe.period, _sesL, _tzL))
-bool inN = sesVisible and knOn and not na(time(timeframe.period, _sesN, _tzN))
-bool inC = sesVisible and kcOn and not na(time(timeframe.period, _sesC, _tzC))
+bool inA = sesVisible and (aOn or kaOn) and not na(time(timeframe.period, _sesA, _tzA))
+bool inL = sesVisible and (lOn or klOn) and not na(time(timeframe.period, _sesL, _tzL))
+bool inN = sesVisible and (nOn or knOn) and not na(time(timeframe.period, _sesN, _tzN))
+bool inC = sesVisible and (cOn or kcOn) and not na(time(timeframe.period, _sesC, _tzC))
 string _dayTz = vpDayTz == "Exchange" ? syminfo.timezone : vpDayTz
 int _domS    = vpDayTz == "Exchange" ? 0 : dayofmonth(time, _dayTz)
 int _monS    = vpDayTz == "Exchange" ? 0 : month(time, _dayTz)
@@ -1676,10 +1998,29 @@ bool newDay = vpDayTz == "Exchange" ? _chgDay != 0 : (_chgDOMc != 0 or _chgMonc 
 if newDay
     dayNum += 1
 
-var VPCol colA = VPCol.new(false, na, na, na)
-var VPCol colL = VPCol.new(false, na, na, na)
-var VPCol colN = VPCol.new(false, na, na, na)
-var VPCol colC = VPCol.new(false, na, na, na)
+var VPCol colA = VPCol.new(false, na, na, na, array.new_float(), array.new_float(), array.new_float(), array.new_bool())
+var VPCol colL = VPCol.new(false, na, na, na, array.new_float(), array.new_float(), array.new_float(), array.new_bool())
+var VPCol colN = VPCol.new(false, na, na, na, array.new_float(), array.new_float(), array.new_float(), array.new_bool())
+var VPCol colC = VPCol.new(false, na, na, na, array.new_float(), array.new_float(), array.new_float(), array.new_bool())
+var VPCol colD = VPCol.new(false, na, na, na, array.new_float(), array.new_float(), array.new_float(), array.new_bool())
+
+var VPStyle stA = VPStyle.new(aVol, aUpC, aDnC, aVaUp, aVaDn, aPo, aPc, aPw, aPs, aVo, aVc, aVw, aVs, aLo, aLc, aLw, aLs, aExt)
+var VPStyle stL = VPStyle.new(lVol, lUpC, lDnC, lVaUp, lVaDn, lPo, lPc, lPw, lPs, lVo, lVc, lVw, lVs, lLo, lLc, lLw, lLs, lExt)
+var VPStyle stN = VPStyle.new(nVol, nUpC, nDnC, nVaUp, nVaDn, nPo, nPc, nPw, nPs, nVo, nVc, nVw, nVs, nLo, nLc, nLw, nLs, nExt)
+var VPStyle stC = VPStyle.new(cVol, cUpC, cDnC, cVaUp, cVaDn, cPo, cPc, cPw, cPs, cVo, cVc, cVw, cVs, cLo, cLc, cLw, cLs, cExt)
+var VPStyle stD = VPStyle.new(dVol, dUpC, dDnC, dVaUp, dVaDn, dPo, dPc, dPw, dPs, dVo, dVc, dVw, dVs, dLo, dLc, dLw, dLs, dExt)
+var VPStyle stT = VPStyle.new(tVol, tUpC, tDnC, tVaUp, tVaDn, tPo, tPc, tPw, tPs, tVo, tVc, tVw, tVs, tLo, tLc, tLw, tLs, tExt)
+
+var DrawQueue dqA = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
+var DrawQueue dqL = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
+var DrawQueue dqN = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
+var DrawQueue dqC = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
+var DrawQueue dqD = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
+var DrawQueue dqT = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
+var DrawQueue dqAv = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
+var DrawQueue dqLv = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
+var DrawQueue dqNv = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
+var DrawQueue dqCv = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
 
 var array<box>  kqA = array.new<box>()
 var array<box>  kqL = array.new<box>()
@@ -1709,32 +2050,102 @@ var array<int>   kqCvd = array.new<int>()
 if not onClose or barstate.isconfirmed
     if sesVisible and (last_bar_index - bar_index) <= _keepSesBars
         if newDay
-            f_sesPrune(kqA, kqAl, kqAd)
-            f_sesPrune(kqL, kqLl, kqLd)
-            f_sesPrune(kqN, kqNl, kqNd)
-            f_sesPrune(kqC, kqCl, kqCd)
-        if kaOn
-            f_session(colA, inA, kaOn, kaF, kaB, kaBs, kaBw, kaT, kaTs, kaTc, kaTh, kaTv, kqA, kqAl, kqAd, vpSesDays)
-        if klOn
-            f_session(colL, inL, klOn, klF, klB, klBs, klBw, klT, klTs, klTc, klTh, klTv, kqL, kqLl, kqLd, vpSesDays)
-        if knOn
-            f_session(colN, inN, knOn, knF, knB, knBs, knBw, knT, knTs, knTc, knTh, knTv, kqN, kqNl, kqNd, vpSesDays)
-        if kcOn
-            f_session(colC, inC, kcOn, kcF, kcB, kcBs, kcBw, kcT, kcTs, kcTc, kcTh, kcTv, kqC, kqCl, kqCd, vpSesDays)
+            f_sesPrune(dqA, kqA, kqAl, kqAd)
+            f_sesPrune(dqL, kqL, kqLl, kqLd)
+            f_sesPrune(dqN, kqN, kqNl, kqNd)
+            f_sesPrune(dqC, kqC, kqCl, kqCd)
+        if aOn or kaOn
+            f_session(colA, inA, aOn, stA, dqA, kaOn, kaF, kaB, kaBs, kaBw, kaT, kaTs, kaTc, kaTh, kaTv, kqA, kqAl, kqAd, vpSesDays)
+        if lOn or klOn
+            f_session(colL, inL, lOn, stL, dqL, klOn, klF, klB, klBs, klBw, klT, klTs, klTc, klTh, klTv, kqL, kqLl, kqLd, vpSesDays)
+        if nOn or knOn
+            f_session(colN, inN, nOn, stN, dqN, knOn, knF, knB, knBs, knBw, knT, knTs, knTc, knTh, knTv, kqN, kqNl, kqNd, vpSesDays)
+        if cOn or kcOn
+            f_session(colC, inC, cOn, stC, dqC, kcOn, kcF, kcB, kcBs, kcBw, kcT, kcTs, kcTc, kcTh, kcTv, kqC, kqCl, kqCd, vpSesDays)
+
+    if dayVisible and (tOn or dOn) and (last_bar_index - bar_index) <= _keepDayBars
+        if newDay and colD.on
+            colD.on := false
+            if dOn
+                f_render(colD, bar_index - 1, stD, dqD, vpDays, false, 0)
+        if not colD.on
+            colD.begin()
+        colD.feed()
+
+if tOn and dayVisible and barstate.islast and colD.on
+    f_wipe(dqT)
+    bool _tR = tPlc == "Right (chart edge)"
+    f_render(colD, bar_index, stT, dqT, 99, _tR, _tR ? tRoff : 0)
 
 if barstate.islast and sesVisible
+    f_wipe(dqAv)
     f_kzWipeLive(kqAv, kqAvl, kqAvd)
+    if aOn and colA.on
+        f_render(colA, bar_index, stA, dqAv, 1, false, 0)
     if kaOn and colA.on
         f_kzbox(colA, bar_index, kaF, kaB, kaBs, kaBw, kaT, kaTs, kaTc, kaTh, kaTv, kqAv, kqAvl, kqAvd, vpSesDays)
+    f_wipe(dqLv)
     f_kzWipeLive(kqLv, kqLvl, kqLvd)
+    if lOn and colL.on
+        f_render(colL, bar_index, stL, dqLv, 1, false, 0)
     if klOn and colL.on
         f_kzbox(colL, bar_index, klF, klB, klBs, klBw, klT, klTs, klTc, klTh, klTv, kqLv, kqLvl, kqLvd, vpSesDays)
+    f_wipe(dqNv)
     f_kzWipeLive(kqNv, kqNvl, kqNvd)
+    if nOn and colN.on
+        f_render(colN, bar_index, stN, dqNv, 1, false, 0)
     if knOn and colN.on
         f_kzbox(colN, bar_index, knF, knB, knBs, knBw, knT, knTs, knTc, knTh, knTv, kqNv, kqNvl, kqNvd, vpSesDays)
+    f_wipe(dqCv)
     f_kzWipeLive(kqCv, kqCvl, kqCvd)
+    if cOn and colC.on
+        f_render(colC, bar_index, stC, dqCv, 1, false, 0)
     if kcOn and colC.on
         f_kzbox(colC, bar_index, kcF, kcB, kcBs, kcBw, kcT, kcTs, kcTc, kcTh, kcTv, kqCv, kqCvl, kqCvd, vpSesDays)
+
+gVW = "7. VWAP"
+vwHide  = input.bool(true,  "Hide on 1D and above", group = gVW, tooltip = "VWAP is an intraday tool; this keeps it off daily/weekly/monthly charts even when enabled.")
+vwAnch  = input.string("Session", "Anchor period", options = ["Session", "Week", "Month", "Quarter", "Year"], group = gVW, tooltip = "Where the VWAP accumulation restarts. Session = every new trading day.")
+vwSrc   = input.source(hlc3, "Source", group = gVW)
+vwC     = input.color(#2962FF, "VWAP", inline = "vw0", group = gVW)
+vwW     = input.int(1, "Width", minval = 1, maxval = 5, inline = "vw0", group = gVW)
+vwBMode = input.string("Standard Deviation", "Bands mode", options = ["Standard Deviation", "Percentage"], group = gVW, tooltip = "Standard Deviation: bands at VWAP ± multiplier × stdev of price around VWAP. Percentage: bands at VWAP ± multiplier percent.")
+vwB1On  = input.bool(false, "Band #1", inline = "vb1", group = gVW)
+vwB1M   = input.float(1.0, "×", step = 0.5, minval = 0.1, inline = "vb1", group = gVW)
+vwB1C   = input.color(color.green, "", inline = "vb1", group = gVW)
+vwB2On  = input.bool(false, "Band #2", inline = "vb2", group = gVW)
+vwB2M   = input.float(2.0, "×", step = 0.5, minval = 0.1, inline = "vb2", group = gVW)
+vwB2C   = input.color(color.olive, "", inline = "vb2", group = gVW)
+vwB3On  = input.bool(false, "Band #3", inline = "vb3", group = gVW)
+vwB3M   = input.float(3.0, "×", step = 0.5, minval = 0.1, inline = "vb3", group = gVW)
+vwB3C   = input.color(color.teal, "", inline = "vb3", group = gVW)
+vwFill  = input.bool(true, "Fill bands", group = gVW)
+
+bool vwNew = switch vwAnch
+    "Session" => timeframe.change("1D")
+    "Week"    => timeframe.change("1W")
+    "Month"   => timeframe.change("1M")
+    "Quarter" => timeframe.change("3M")
+    => timeframe.change("12M")
+[vwVal, vwSd1u, vwSd1d] = ta.vwap(vwSrc, vwNew, 1)
+float vwSd   = vwSd1u - vwVal
+bool  vwShow = vwOn and not (vwHide and timeframe.isdwm)
+var bool vwSdMode = vwBMode == "Standard Deviation"
+f_vwBand(float m) =>
+    vwSdMode ? vwSd * m : vwVal * m / 100
+float vwB1 = f_vwBand(vwB1M)
+float vwB2 = f_vwBand(vwB2M)
+float vwB3 = f_vwBand(vwB3M)
+pVW  = plot(vwShow ? vwVal : na,                "VWAP",              color = vwC,   linewidth = vwW)
+pB1u = plot(vwShow and vwB1On ? vwVal + vwB1 : na, "VWAP band 1 upper", color = vwB1C)
+pB1d = plot(vwShow and vwB1On ? vwVal - vwB1 : na, "VWAP band 1 lower", color = vwB1C)
+pB2u = plot(vwShow and vwB2On ? vwVal + vwB2 : na, "VWAP band 2 upper", color = vwB2C)
+pB2d = plot(vwShow and vwB2On ? vwVal - vwB2 : na, "VWAP band 2 lower", color = vwB2C)
+pB3u = plot(vwShow and vwB3On ? vwVal + vwB3 : na, "VWAP band 3 upper", color = vwB3C)
+pB3d = plot(vwShow and vwB3On ? vwVal - vwB3 : na, "VWAP band 3 lower", color = vwB3C)
+fill(pB1u, pB1d, color = vwShow and vwB1On and vwFill ? color.new(vwB1C, 95) : na, title = "VWAP band 1 fill")
+fill(pB2u, pB2d, color = vwShow and vwB2On and vwFill ? color.new(vwB2C, 95) : na, title = "VWAP band 2 fill")
+fill(pB3u, pB3d, color = vwShow and vwB3On and vwFill ? color.new(vwB3C, 95) : na, title = "VWAP band 3 fill")
 
 almGate  = input.bool(false, "Arm alerts only after price crosses a level", group = gA, tooltip = "OFF (default) = the alert system behaves exactly as it always has: every enabled event fires the moment it happens.\n\nON = the indicator stays SILENT until price reaches the level below. From that moment it is armed for good and every enabled alert fires normally. Marks are still drawn on the chart the whole time — only the alerts are held back.\n\nThis is what lets ONE alert do the work of two: create a single alert on 'Any alert() function call' and it stays quiet until your price is reached, then delivers whichever structure events you ticked above.\n\nLeave the level at 0 to disable the gate even while this box is ticked.\n\nARMS ON TOUCH, NOT ON CLOSE: the test reads the bar's wick, evaluated on every tick, so the arm trips the moment price trades at your level. It never waits for the candle to close.\n\nIT MUST BE REACHED, NOT MERELY BE ON ONE SIDE (v15.6): the level has to be approached. The previous bar's close decides which side price is on, and the arm then waits for the wick to come to the level from that side — up to it if price is below, down to it if price is above. Before v15.6 the test only asked whether the level lay on one side of the bar, so a level ABOVE price satisfied 'low <= level' on the first live bar and the gate opened having touched nothing at all. A gap straight through the level still arms, exactly as an ordinary TradingView price alert would.\n\nLIVE BARS ONLY (v13.6.1): the arm can only be tripped by a bar arriving in real time, after the alert has started running. Before this, TradingView's replay of the chart's history when the alert is created would trip the arm on any historical touch of your level, leaving the gate already open and the arm doing nothing. The consequence is that the gate cannot be observed on historical bars — on a chart it stays un-armed until live bars arrive.")
 almGateP = input.float(0.0, "  - Arm price level", step = 0.01, group = gA, tooltip = "The price that arms the alerts. 0 = gate disabled, so alerts behave normally even with the box above ticked. Wicks count, exactly like an ordinary TradingView price alert.")
@@ -1821,7 +2232,6 @@ f_tfPack(bool on) =>
     int evOut = 0
     int inOut = 0
     int nnOut = 0
-    int mcOut = 0
     if on
         var array<float> _bH = array.new_float()
         var array<float> _bL = array.new_float()
@@ -1845,7 +2255,6 @@ f_tfPack(bool on) =>
         var float tAllHi = na
         var float tAllLo = na
         var int   tTrend = 0
-        var int   mCount = 0
         var float tCeP   = na
         var int   tCeX   = na
         var int   tCeBorn = na
@@ -2112,10 +2521,6 @@ f_tfPack(bool on) =>
                         tFlIdmP   := _np
                         tFlIdmHit := _nh
 
-        if mEvt
-            mCount += 1
-        trOut := tTrend
-        mcOut := mCount
 
         int iAnchor = na
         if tTrend == 1
@@ -2275,7 +2680,6 @@ f_tfPack(bool on) =>
                             [_vp, _vh] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, iFlB, false)
                             iFlIdmP   := _vp
                             iFlIdmHit := _vh
-        inOut := iTr
 
         int nAnchor = na
         if iTr == 1
@@ -2432,7 +2836,6 @@ f_tfPack(bool on) =>
                             [_d2p, _d2h] = f_armIdmB(_msHiB, _msHiP, _msLoB, _msLoP, _bH, _bL, nFlB, false)
                             nFlIdmP   := _d2p
                             nFlIdmHit := _d2h
-        nnOut := nTr
 
         bool swHi = high[1] > high[2] and close[1] < high[2]
         bool swLo = low[1]  < low[2]  and close[1] > low[2]
@@ -2462,7 +2865,11 @@ f_tfPack(bool on) =>
             fvgST := na
             fvgSB := na
         evOut := (swHi ? 1 : 0) + (swLo ? 2 : 0) + (frBull ? 4 : 0) + (frBear ? 8 : 0)
-    [trOut, evOut, inOut, nnOut, mcOut]
+        int _pv = f_provDir(tCeP, tFlP, tAllHi, tAllLo, close)
+        trOut := tTrend != 0 ? tTrend : _pv
+        inOut := iTr    != 0 ? iTr    : trOut
+        nnOut := nTr    != 0 ? nTr    : inOut
+    [trOut, evOut, inOut, nnOut]
 
 int _chartSec = timeframe.in_seconds(timeframe.period)
 bool _u1   = tblOn and tblMaster and tbT1   and timeframe.in_seconds("1")   >= _chartSec
@@ -2484,24 +2891,24 @@ bool _uD   = tblOn and tblMaster and tbTD   and timeframe.in_seconds("1D")  >= _
 bool _uW   = tblOn and tblMaster and tbTW   and timeframe.in_seconds("1W")  >= _chartSec
 bool _uM   = tblOn and tblMaster and tbTM   and timeframe.in_seconds("1M")  >= _chartSec
 
-[_t1,   _e1  , _i1, _n1, _m1] = request.security(syminfo.tickerid, _u1   ? "1"   : timeframe.period, f_tfPack(_u1))
-[_t2,   _e2  , _i2, _n2, _m2] = request.security(syminfo.tickerid, _u2   ? "2"   : timeframe.period, f_tfPack(_u2))
-[_t3,   _e3  , _i3, _n3, _m3] = request.security(syminfo.tickerid, _u3   ? "3"   : timeframe.period, f_tfPack(_u3))
-[_t5,   _e5  , _i5, _n5, _m5] = request.security(syminfo.tickerid, _u5   ? "5"   : timeframe.period, f_tfPack(_u5))
-[_t10,  _e10 , _i10, _n10, _m10] = request.security(syminfo.tickerid, _u10  ? "10"  : timeframe.period, f_tfPack(_u10))
-[_t15,  _e15 , _i15, _n15, _m15] = request.security(syminfo.tickerid, _u15  ? "15"  : timeframe.period, f_tfPack(_u15))
-[_t30,  _e30 , _i30, _n30, _m30] = request.security(syminfo.tickerid, _u30  ? "30"  : timeframe.period, f_tfPack(_u30))
-[_t45,  _e45 , _i45, _n45, _m45] = request.security(syminfo.tickerid, _u45  ? "45"  : timeframe.period, f_tfPack(_u45))
-[_t60,  _e60 , _i60, _n60, _m60] = request.security(syminfo.tickerid, _u60  ? "60"  : timeframe.period, f_tfPack(_u60))
-[_t120, _e120, _i120, _n120, _m120] = request.security(syminfo.tickerid, _u120 ? "120" : timeframe.period, f_tfPack(_u120))
-[_t180, _e180, _i180, _n180, _m180] = request.security(syminfo.tickerid, _u180 ? "180" : timeframe.period, f_tfPack(_u180))
-[_t240, _e240, _i240, _n240, _m240] = request.security(syminfo.tickerid, _u240 ? "240" : timeframe.period, f_tfPack(_u240))
-[_t360, _e360, _i360, _n360, _m360] = request.security(syminfo.tickerid, _u360 ? "360" : timeframe.period, f_tfPack(_u360))
-[_t480, _e480, _i480, _n480, _m480] = request.security(syminfo.tickerid, _u480 ? "480" : timeframe.period, f_tfPack(_u480))
-[_t720, _e720, _i720, _n720, _m720] = request.security(syminfo.tickerid, _u720 ? "720" : timeframe.period, f_tfPack(_u720))
-[_tD,   _eD  , _iD, _nD, _mD] = request.security(syminfo.tickerid, _uD   ? "1D"  : timeframe.period, f_tfPack(_uD))
-[_tW,   _eW  , _iW, _nW, _mW] = request.security(syminfo.tickerid, _uW   ? "1W"  : timeframe.period, f_tfPack(_uW))
-[_tM,   _eM  , _iM, _nM, _mM] = request.security(syminfo.tickerid, _uM   ? "1M"  : timeframe.period, f_tfPack(_uM))
+[_t1,   _e1  , _i1, _n1] = request.security(syminfo.tickerid, _u1   ? "1"   : timeframe.period, f_tfPack(_u1))
+[_t2,   _e2  , _i2, _n2] = request.security(syminfo.tickerid, _u2   ? "2"   : timeframe.period, f_tfPack(_u2))
+[_t3,   _e3  , _i3, _n3] = request.security(syminfo.tickerid, _u3   ? "3"   : timeframe.period, f_tfPack(_u3))
+[_t5,   _e5  , _i5, _n5] = request.security(syminfo.tickerid, _u5   ? "5"   : timeframe.period, f_tfPack(_u5))
+[_t10,  _e10 , _i10, _n10] = request.security(syminfo.tickerid, _u10  ? "10"  : timeframe.period, f_tfPack(_u10))
+[_t15,  _e15 , _i15, _n15] = request.security(syminfo.tickerid, _u15  ? "15"  : timeframe.period, f_tfPack(_u15))
+[_t30,  _e30 , _i30, _n30] = request.security(syminfo.tickerid, _u30  ? "30"  : timeframe.period, f_tfPack(_u30))
+[_t45,  _e45 , _i45, _n45] = request.security(syminfo.tickerid, _u45  ? "45"  : timeframe.period, f_tfPack(_u45))
+[_t60,  _e60 , _i60, _n60] = request.security(syminfo.tickerid, _u60  ? "60"  : timeframe.period, f_tfPack(_u60))
+[_t120, _e120, _i120, _n120] = request.security(syminfo.tickerid, _u120 ? "120" : timeframe.period, f_tfPack(_u120))
+[_t180, _e180, _i180, _n180] = request.security(syminfo.tickerid, _u180 ? "180" : timeframe.period, f_tfPack(_u180))
+[_t240, _e240, _i240, _n240] = request.security(syminfo.tickerid, _u240 ? "240" : timeframe.period, f_tfPack(_u240))
+[_t360, _e360, _i360, _n360] = request.security(syminfo.tickerid, _u360 ? "360" : timeframe.period, f_tfPack(_u360))
+[_t480, _e480, _i480, _n480] = request.security(syminfo.tickerid, _u480 ? "480" : timeframe.period, f_tfPack(_u480))
+[_t720, _e720, _i720, _n720] = request.security(syminfo.tickerid, _u720 ? "720" : timeframe.period, f_tfPack(_u720))
+[_tD,   _eD  , _iD, _nD] = request.security(syminfo.tickerid, _uD   ? "1D"  : timeframe.period, f_tfPack(_uD))
+[_tW,   _eW  , _iW, _nW] = request.security(syminfo.tickerid, _uW   ? "1W"  : timeframe.period, f_tfPack(_uW))
+[_tM,   _eM  , _iM, _nM] = request.security(syminfo.tickerid, _uM   ? "1M"  : timeframe.period, f_tfPack(_uM))
 
 almT1  = input.string("Price crosses level", "  - Slot 1 trigger", options = ["Price crosses level", "Price at N% of BOS*/CHOCH* range", "Price at N% of internal range", "BOS", "CHOCH", "iBOS", "iCHOCH", "Any structure event", "Any internal structure event", "Price at N% of inner nBOS/nCHOCH range"], group = gA, tooltip = "What arms slot 1. Slot 1's own on/off switch, price and direction are the three boxes above this one.")
 
@@ -2570,6 +2977,109 @@ armBg    = input.color(color.new(color.black, 20), "Background", inline = "ar3",
 
 aNnRet   = input.bool(false, "Price at N% of inner nBOS/nCHOCH range alert", group = gA, tooltip = "The third tier of the same retracement rule, on the INNER nBOS/nCHOCH leg.\n\nFires the moment price gives back the set percentage of the leg that began at the last inner event — measured BACK FROM THAT LEG'S EXTREME, on the tick it happens rather than at the close.\n\nInner legs are the shortest of the three, so this is the most frequent and the twitchiest of the retracement alerts. It also depends on inner structure having a trend: between an internal event and the inner range's first nCHOCH there is no inner leg, and this stays silent.\n\nIt does not require 'Show inner structure' to be ticked — that switch only controls the drawing. The engine always runs.")
 
+float _chCe = na
+float _chFl = na
+if not na(ceilS)
+    _chCe := ceilS.price
+if not na(florS)
+    _chFl := florS.price
+int _chPv = f_provDir(_chCe, _chFl, allHi, allLo, close)
+int _chTr = trendDir != 0 ? trendDir : _chPv
+int _chIn = iTrend   != 0 ? iTrend   : _chTr
+int _chNn = nTrend   != 0 ? nTrend   : _chIn
+
+f_tfRow(array<string> nm, array<int> tr, array<int> ev, array<int> intr, array<int> innr, bool use, string disp, string tfs, int t, int e, int n, int w) =>
+    if use
+        bool isChartTf = tfs == timeframe.period
+        array.push(nm, disp)
+        array.push(tr, isChartTf ? _chTr : t)
+        array.push(ev, e)
+        array.push(intr, isChartTf ? _chIn : n)
+        array.push(innr, isChartTf ? _chNn : w)
+
+int _tblRows = (_u1 ? 1 : 0) + (_u2 ? 1 : 0) + (_u3 ? 1 : 0) + (_u5 ? 1 : 0) + (_u10 ? 1 : 0) + (_u15 ? 1 : 0) + (_u30 ? 1 : 0) + (_u45 ? 1 : 0) + (_u60 ? 1 : 0) + (_u120 ? 1 : 0) + (_u180 ? 1 : 0) + (_u240 ? 1 : 0) + (_u360 ? 1 : 0) + (_u480 ? 1 : 0) + (_u720 ? 1 : 0) + (_uD ? 1 : 0) + (_uW ? 1 : 0) + (_uM ? 1 : 0)
+int _tblCols = 2 + (tblEvOn ? 1 : 0) + (tblInOn ? 1 : 0) + (tblInnOn ? 1 : 0)
+int _colEv   = tblEvOn ? 2 : -1
+int _colIn   = tblInOn ? (tblEvOn ? 3 : 2) : -1
+int _colInn  = tblInnOn ? (2 + (tblEvOn ? 1 : 0) + (tblInOn ? 1 : 0)) : -1
+
+var table smcTbl = na
+if barstate.islast and tblOn and tblMaster and _tblRows > 0
+    array<string> _rn = array.new<string>()
+    array<int>    _rt = array.new<int>()
+    array<int>    _re = array.new<int>()
+    array<int>    _ri = array.new<int>()
+    array<int>    _rw = array.new<int>()
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u1, "1m", "1", _t1, _e1, _i1, _n1)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u2, "2m", "2", _t2, _e2, _i2, _n2)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u3, "3m", "3", _t3, _e3, _i3, _n3)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u5, "5m", "5", _t5, _e5, _i5, _n5)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u10, "10m", "10", _t10, _e10, _i10, _n10)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u15, "15m", "15", _t15, _e15, _i15, _n15)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u30, "30m", "30", _t30, _e30, _i30, _n30)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u45, "45m", "45", _t45, _e45, _i45, _n45)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u60, "1h", "60", _t60, _e60, _i60, _n60)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u120, "2h", "120", _t120, _e120, _i120, _n120)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u180, "3h", "180", _t180, _e180, _i180, _n180)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u240, "4h", "240", _t240, _e240, _i240, _n240)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u360, "6h", "360", _t360, _e360, _i360, _n360)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u480, "8h", "480", _t480, _e480, _i480, _n480)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u720, "12h", "720", _t720, _e720, _i720, _n720)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _uD, "1D", "1D", _tD, _eD, _iD, _nD)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _uW, "1W", "1W", _tW, _eW, _iW, _nW)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _uM, "1M", "1M", _tM, _eM, _iM, _nM)
+    if na(smcTbl)
+        smcTbl := table.new(tblPos == "Top left" ? position.top_left : tblPos == "Top center" ? position.top_center : tblPos == "Top right" ? position.top_right : tblPos == "Middle left" ? position.middle_left : tblPos == "Middle right" ? position.middle_right : tblPos == "Bottom left" ? position.bottom_left : tblPos == "Bottom center" ? position.bottom_center : position.bottom_right, _tblCols, _tblRows + 1, bgcolor = tblBgAll, border_color = tblCelC, border_width = tblCelW, frame_color = tblFrmC, frame_width = tblFrmW)
+    table.cell(smcTbl, 0, 0, tblC1, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
+    table.cell(smcTbl, 1, 0, tblC2, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
+    if tblEvOn
+        table.cell(smcTbl, _colEv, 0, tblC3, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
+    if tblInOn
+        table.cell(smcTbl, _colIn, 0, tblC4, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
+    if tblInnOn
+        table.cell(smcTbl, _colInn, 0, tblC5, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
+    for i = 0 to array.size(_rn) - 1
+        int    _tv   = array.get(_rt, i)
+        int    _ev   = array.get(_re, i)
+        int    _iv   = array.get(_ri, i)
+        int    _wv   = array.get(_rw, i)
+        string _trTx = _tv == 1 ? tblBullTx : _tv == -1 ? tblBearTx : tblFlatTx
+        color  _trBg = _tv == 1 ? tblBullBg : _tv == -1 ? tblBearBg : tblTrNeuBg
+        color  _trTc = _tv == 1 ? tblBullTc : _tv == -1 ? tblBearTc : tblTrNeuTc
+        int  _r     = _ev
+        bool _eBear = _r >= 8
+        _r := _eBear ? _r - 8 : _r
+        bool _eBull = _r >= 4
+        _r := _eBull ? _r - 4 : _r
+        bool _eSwLo = _r >= 2
+        _r := _eSwLo ? _r - 2 : _r
+        bool _eSwHi = _r >= 1
+        string _evTx = ""
+        if _eSwHi
+            _evTx := tblSwHiTx
+        if _eSwLo
+            _evTx := _evTx == "" ? tblSwLoTx : _evTx + " + " + tblSwLoTx
+        if _eBull
+            _evTx := _evTx == "" ? tblFvgBTx : _evTx + " + " + tblFvgBTx
+        if _eBear
+            _evTx := _evTx == "" ? tblFvgSTx : _evTx + " + " + tblFvgSTx
+        bool _evNone = _evTx == ""
+        if _evNone
+            _evTx := tblNoneTx
+        string _inTx = _iv == 1 ? tblBullTx   : _iv == -1 ? tblBearTx   : tblFlatTx
+        color  _inBg = _iv == 1 ? tblInBullBg : _iv == -1 ? tblInBearBg : tblInNeuBg
+        color  _inTc = _iv == 1 ? tblInBullTc : _iv == -1 ? tblInBearTc : tblInNeuTc
+        string _wnTx = _wv == 1 ? tblBullTx    : _wv == -1 ? tblBearTx    : tblFlatTx
+        color  _wnBg = _wv == 1 ? tblInnBullBg : _wv == -1 ? tblInnBearBg : tblInnNeuBg
+        color  _wnTc = _wv == 1 ? tblInnBullTc : _wv == -1 ? tblInnBearTc : tblInnNeuTc
+        table.cell(smcTbl, 0, i + 1, array.get(_rn, i), text_color = tblRowTc, text_size = tsize(tblRowSz), bgcolor = tblRowBg)
+        table.cell(smcTbl, 1, i + 1, _trTx, text_color = _trTc, text_size = tsize(tblRowSz), bgcolor = _trBg)
+        if tblEvOn
+            table.cell(smcTbl, _colEv, i + 1, _evTx, text_color = _evNone ? tblEvNoneTc : tblEvTc, text_size = tsize(tblRowSz), bgcolor = _evNone ? tblEvNoneBg : tblEvBg)
+        if tblInOn
+            table.cell(smcTbl, _colIn, i + 1, _inTx, text_color = _inTc, text_size = tsize(tblRowSz), bgcolor = _inBg)
+        if tblInnOn
+            table.cell(smcTbl, _colInn, i + 1, _wnTx, text_color = _wnTc, text_size = tsize(tblRowSz), bgcolor = _wnBg)
 
 var array<line>  innLn = array.new<line>()
 var array<label> innLb = array.new<label>()
@@ -2884,98 +3394,52 @@ alertcondition(emaXUp and almOk, "Bullish EMA cross", "Bullish EMA cross — {{t
 alertcondition(emaXDn and almOk, "Bearish EMA cross", "Bearish EMA cross — {{ticker}} {{interval}}")
 alertcondition((emaXUp or emaXDn) and almOk, "Any EMA cross", "EMA cross — {{ticker}} {{interval}}")
 
-tblWarm = input.int(6, "Warm-up — confirmed events a timeframe needs before it reports", minval = 0, maxval = 20, group = gTbl, tooltip = "How many confirmed BOS / CHOCH events a timeframe's own simulation must have produced before its row is allowed to report a trend. Until then all three of its cells read as no trend.\n\nWHY IT EXISTS. Every row above the chart's own timeframe is computed by request.security, which sees only as much history of that timeframe as the chart has loaded. The engine starts from the first bar it is given and its opening range is anchored on the extreme of THAT window, so a short window can settle into a different structure from the real one. That is why the same 1M row could read BULLISH from one chart timeframe and BEARISH from another.\n\nThe engine forgets where it started once enough events have gone by. Measured over 500 randomised series against full-history truth: 63% agreement after one confirmed event, 91% after four, 98% after seven, and effectively exact by eleven. 6 is a deliberate middle — it removes almost all of the disagreement while keeping rows populated on ordinary history.\n\nRaise it if you want the table to speak only when it is certain. Set it to 0 to switch the gate off and see the raw per-timeframe reading, which is what every build before v15.16 showed.\n\nThe row for the chart's OWN timeframe is never gated: it reports the on-chart engine, which always has the full loaded history.")
+gMid = "10. Range % line — BOS* / CHOCH* · iBOS* / iCHOCH* · nBOS* / nCHOCH*"
+midPct  = input.float(50.0, "Percentage of the range", minval = 0.0, maxval = 100.0, step = 0.1, group = gMid, tooltip = "Where the line sits inside the standing range, measured DOWN FROM THE UPPER LEVEL.\n\n  0   = on the upper level itself\n  50  = the midpoint (default)\n  100 = on the lower level\n\nIt is the geometric middle of the possible-BOS / possible-CHOCH pair, so in a bullish range 50 sits halfway down from BOS* to CHOCH*, and in a bearish range halfway up from BOS* to CHOCH*. The number is read the same way on all three tiers.\n\nThis is a DRAWN LEVEL and is completely independent of the 'Retracement % for range alerts' setting in the alerts group, which is measured back from the leg's running extreme instead and drives alerts rather than a line. Changing one never affects the other.")
+midMain = input.bool(true,  "Main BOS* / CHOCH*", inline = "md1", group = gMid)
+midInt  = input.bool(true,  "Internal", inline = "md1", group = gMid)
+midInn  = input.bool(false, "Inner", inline = "md1", group = gMid, tooltip = "Which tiers get a line. Each needs BOTH of its levels to exist: for a short spell after a break one side is empty until the next pivot refills it, and while that is true the range has no midpoint and that tier's line is not drawn.")
+midLc   = input.color(color.new(color.orange, 0), "Line ", inline = "md2", group = gMid)
+midLs   = input.string("Dashed", "Style", options = ["Solid", "Dashed", "Dotted"], inline = "md2", group = gMid)
+midLw   = input.int(1, "Width", minval = 1, maxval = 5, inline = "md2", group = gMid)
+midExt  = input.bool(true, "Extend right →", group = gMid, tooltip = "Carries the line on past the last candle, the way the BOS* / CHOCH* lines themselves are drawn. Untick to end it at the current bar.")
+midTxt  = input.string("", "Label text", inline = "md3", group = gMid, tooltip = "Leave this EMPTY and the label writes the percentage itself, so it follows the setting above — set 61.8 and it reads 61.8%. Type anything here to override that with your own text. The internal and inner lines add their own prefix, i and n, so three lines can be told apart at a glance.")
+midShow = input.bool(true, "Show text", inline = "md3", group = gMid)
+midTc   = input.color(color.new(color.orange, 0), "Text", inline = "md4", group = gMid)
+midTs   = input.string("Small", "Size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "md4", group = gMid)
+midTh   = input.string("Center", "Text horiz.", options = ["Left", "Center", "Right"], inline = "md5", group = gMid)
+midTv   = input.string("Above", "Text vert.", options = ["Above", "Middle", "Below"], inline = "md5", group = gMid, tooltip = "Where the label sits along the line and relative to it. Horizontal: Left puts it at the bar the range opened, Right at the current bar, Center in between. Vertical: Above and Below hang it off the line, Middle prints it on the line itself.")
+midShowOn = input.bool(true, "▶ Range % line — BOS* / CHOCH* midpoint", group = gTog, tooltip = "One switch for the whole module, here at the top with the other masters.\n\nOFF = no line, no label, on any tier. The module is completely inert.\nON  = every tier ticked in group 10 draws a line at the set percentage of its own possible-BOS / possible-CHOCH range.\n\nIt is a GATE, not an override: it can silence the module but it will never switch on a tier you unticked in group 10.\n\nDRAWING BUDGET: at most three lines and three labels exist at once — one per tier — wiped and rebuilt on each last-bar execution. TradingView allows 500 drawings per script, so this cannot crowd out your BOS/CHOCH lines.")
 
-f_tfRow(array<string> nm, array<int> tr, array<int> ev, array<int> intr, array<int> innr, bool use, string disp, string tfs, int t, int e, int n, int w, int mc) =>
-    if use
-        bool isChartTf = tfs == timeframe.period
-        bool warm = isChartTf or tblWarm <= 0 or mc >= tblWarm
-        array.push(nm, disp)
-        array.push(tr, isChartTf ? trendDir : warm ? t : 0)
-        array.push(ev, e)
-        array.push(intr, isChartTf ? iTrend : warm ? n : 0)
-        array.push(innr, isChartTf ? nTrend : warm ? w : 0)
+var array<line>  midLnQ = array.new<line>()
+var array<label> midLbQ = array.new<label>()
 
-int _tblRows = (_u1 ? 1 : 0) + (_u2 ? 1 : 0) + (_u3 ? 1 : 0) + (_u5 ? 1 : 0) + (_u10 ? 1 : 0) + (_u15 ? 1 : 0) + (_u30 ? 1 : 0) + (_u45 ? 1 : 0) + (_u60 ? 1 : 0) + (_u120 ? 1 : 0) + (_u180 ? 1 : 0) + (_u240 ? 1 : 0) + (_u360 ? 1 : 0) + (_u480 ? 1 : 0) + (_u720 ? 1 : 0) + (_uD ? 1 : 0) + (_uW ? 1 : 0) + (_uM ? 1 : 0)
-int _tblCols = 2 + (tblEvOn ? 1 : 0) + (tblInOn ? 1 : 0) + (tblInnOn ? 1 : 0)
-int _colEv   = tblEvOn ? 2 : -1
-int _colIn   = tblInOn ? (tblEvOn ? 3 : 2) : -1
-int _colInn  = tblInnOn ? (2 + (tblEvOn ? 1 : 0) + (tblInOn ? 1 : 0)) : -1
+f_midLine(float ce, float fl, int bA, int bB, bool on, string pfx) =>
+    if on and not na(ce) and not na(fl) and ce > fl and not na(bA) and not na(bB)
+        float lv = ce - (ce - fl) * midPct / 100.0
+        int   x1 = math.min(bA, bB)
+        array.push(midLnQ, line.new(x1, lv, bar_index, lv, color = midLc, width = midLw, style = lstyle(midLs), extend = midExt ? extend.right : extend.none))
+        if midShow
+            string t = midTxt == "" ? pfx + str.tostring(midPct, "#.#") + "%" : pfx + midTxt
+            int lx = midTh == "Left" ? x1 : midTh == "Right" ? bar_index : int(math.avg(x1, bar_index))
+            array.push(midLbQ, label.new(lx, lv, t, color = color(na), textcolor = midTc, style = midTv == "Above" ? label.style_label_down : midTv == "Below" ? label.style_label_up : label.style_none, size = tsize(midTs)))
 
-var table smcTbl = na
-if barstate.islast and tblOn and tblMaster and _tblRows > 0
-    array<string> _rn = array.new<string>()
-    array<int>    _rt = array.new<int>()
-    array<int>    _re = array.new<int>()
-    array<int>    _ri = array.new<int>()
-    array<int>    _rw = array.new<int>()
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u1, "1m", "1", _t1, _e1, _i1, _n1, _m1)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u2, "2m", "2", _t2, _e2, _i2, _n2, _m2)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u3, "3m", "3", _t3, _e3, _i3, _n3, _m3)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u5, "5m", "5", _t5, _e5, _i5, _n5, _m5)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u10, "10m", "10", _t10, _e10, _i10, _n10, _m10)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u15, "15m", "15", _t15, _e15, _i15, _n15, _m15)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u30, "30m", "30", _t30, _e30, _i30, _n30, _m30)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u45, "45m", "45", _t45, _e45, _i45, _n45, _m45)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u60, "1h", "60", _t60, _e60, _i60, _n60, _m60)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u120, "2h", "120", _t120, _e120, _i120, _n120, _m120)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u180, "3h", "180", _t180, _e180, _i180, _n180, _m180)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u240, "4h", "240", _t240, _e240, _i240, _n240, _m240)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u360, "6h", "360", _t360, _e360, _i360, _n360, _m360)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u480, "8h", "480", _t480, _e480, _i480, _n480, _m480)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u720, "12h", "720", _t720, _e720, _i720, _n720, _m720)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _uD, "1D", "1D", _tD, _eD, _iD, _nD, _mD)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _uW, "1W", "1W", _tW, _eW, _iW, _nW, _mW)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _uM, "1M", "1M", _tM, _eM, _iM, _nM, _mM)
-    if na(smcTbl)
-        smcTbl := table.new(tblPos == "Top left" ? position.top_left : tblPos == "Top center" ? position.top_center : tblPos == "Top right" ? position.top_right : tblPos == "Middle left" ? position.middle_left : tblPos == "Middle right" ? position.middle_right : tblPos == "Bottom left" ? position.bottom_left : tblPos == "Bottom center" ? position.bottom_center : position.bottom_right, _tblCols, _tblRows + 1, bgcolor = tblBgAll, border_color = tblCelC, border_width = tblCelW, frame_color = tblFrmC, frame_width = tblFrmW)
-    table.cell(smcTbl, 0, 0, tblC1, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
-    table.cell(smcTbl, 1, 0, tblC2, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
-    if tblEvOn
-        table.cell(smcTbl, _colEv, 0, tblC3, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
-    if tblInOn
-        table.cell(smcTbl, _colIn, 0, tblC4, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
-    if tblInnOn
-        table.cell(smcTbl, _colInn, 0, tblC5, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
-    for i = 0 to array.size(_rn) - 1
-        int    _tv   = array.get(_rt, i)
-        int    _ev   = array.get(_re, i)
-        int    _iv   = array.get(_ri, i)
-        int    _wv   = array.get(_rw, i)
-        string _trTx = _tv == 1 ? tblBullTx : _tv == -1 ? tblBearTx : tblFlatTx
-        color  _trBg = _tv == 1 ? tblBullBg : _tv == -1 ? tblBearBg : tblTrNeuBg
-        color  _trTc = _tv == 1 ? tblBullTc : _tv == -1 ? tblBearTc : tblTrNeuTc
-        int  _r     = _ev
-        bool _eBear = _r >= 8
-        _r := _eBear ? _r - 8 : _r
-        bool _eBull = _r >= 4
-        _r := _eBull ? _r - 4 : _r
-        bool _eSwLo = _r >= 2
-        _r := _eSwLo ? _r - 2 : _r
-        bool _eSwHi = _r >= 1
-        string _evTx = ""
-        if _eSwHi
-            _evTx := tblSwHiTx
-        if _eSwLo
-            _evTx := _evTx == "" ? tblSwLoTx : _evTx + " + " + tblSwLoTx
-        if _eBull
-            _evTx := _evTx == "" ? tblFvgBTx : _evTx + " + " + tblFvgBTx
-        if _eBear
-            _evTx := _evTx == "" ? tblFvgSTx : _evTx + " + " + tblFvgSTx
-        bool _evNone = _evTx == ""
-        if _evNone
-            _evTx := tblNoneTx
-        string _inTx = _iv == 1 ? tblBullTx   : _iv == -1 ? tblBearTx   : tblFlatTx
-        color  _inBg = _iv == 1 ? tblInBullBg : _iv == -1 ? tblInBearBg : tblInNeuBg
-        color  _inTc = _iv == 1 ? tblInBullTc : _iv == -1 ? tblInBearTc : tblInNeuTc
-        string _wnTx = _wv == 1 ? tblBullTx    : _wv == -1 ? tblBearTx    : tblFlatTx
-        color  _wnBg = _wv == 1 ? tblInnBullBg : _wv == -1 ? tblInnBearBg : tblInnNeuBg
-        color  _wnTc = _wv == 1 ? tblInnBullTc : _wv == -1 ? tblInnBearTc : tblInnNeuTc
-        table.cell(smcTbl, 0, i + 1, array.get(_rn, i), text_color = tblRowTc, text_size = tsize(tblRowSz), bgcolor = tblRowBg)
-        table.cell(smcTbl, 1, i + 1, _trTx, text_color = _trTc, text_size = tsize(tblRowSz), bgcolor = _trBg)
-        if tblEvOn
-            table.cell(smcTbl, _colEv, i + 1, _evTx, text_color = _evNone ? tblEvNoneTc : tblEvTc, text_size = tsize(tblRowSz), bgcolor = _evNone ? tblEvNoneBg : tblEvBg)
-        if tblInOn
-            table.cell(smcTbl, _colIn, i + 1, _inTx, text_color = _inTc, text_size = tsize(tblRowSz), bgcolor = _inBg)
-        if tblInnOn
-            table.cell(smcTbl, _colInn, i + 1, _wnTx, text_color = _wnTc, text_size = tsize(tblRowSz), bgcolor = _wnBg)
+if barstate.islast
+    while array.size(midLnQ) > 0
+        line.delete(array.pop(midLnQ))
+    while array.size(midLbQ) > 0
+        label.delete(array.pop(midLbQ))
+    if midShowOn
+        float _mdCe = na
+        float _mdFl = na
+        int   _mdCb = na
+        int   _mdFb = na
+        if not na(ceilS)
+            _mdCe := ceilS.price
+            _mdCb := ceilS.x1
+        if not na(florS)
+            _mdFl := florS.price
+            _mdFb := florS.x1
+        f_midLine(_mdCe, _mdFl, _mdCb, _mdFb, midMain, "")
+        f_midLine(iCeilP, iFlorP, iCeilB, iFlorB, midInt, "i")
+        f_midLine(nCeilP, nFlorP, nCeilB, nFlorB, midInn, "n")

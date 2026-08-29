@@ -1,0 +1,49 @@
+gMid = "10. Range % line — BOS* / CHOCH* · iBOS* / iCHOCH* · nBOS* / nCHOCH*"
+midPct  = input.float(50.0, "Percentage of the range", minval = 0.0, maxval = 100.0, step = 0.1, group = gMid, tooltip = "Where the line sits inside the standing range, measured DOWN FROM THE UPPER LEVEL.\n\n  0   = on the upper level itself\n  50  = the midpoint (default)\n  100 = on the lower level\n\nIt is the geometric middle of the possible-BOS / possible-CHOCH pair, so in a bullish range 50 sits halfway down from BOS* to CHOCH*, and in a bearish range halfway up from BOS* to CHOCH*. The number is read the same way on all three tiers.\n\nThis is a DRAWN LEVEL and is completely independent of the 'Retracement % for range alerts' setting in the alerts group, which is measured back from the leg's running extreme instead and drives alerts rather than a line. Changing one never affects the other.")
+midMain = input.bool(true,  "Main BOS* / CHOCH*", inline = "md1", group = gMid)
+midInt  = input.bool(true,  "Internal", inline = "md1", group = gMid)
+midInn  = input.bool(false, "Inner", inline = "md1", group = gMid, tooltip = "Which tiers get a line. Each needs BOTH of its levels to exist: for a short spell after a break one side is empty until the next pivot refills it, and while that is true the range has no midpoint and that tier's line is not drawn.")
+midLc   = input.color(color.new(color.orange, 0), "Line ", inline = "md2", group = gMid)
+midLs   = input.string("Dashed", "Style", options = ["Solid", "Dashed", "Dotted"], inline = "md2", group = gMid)
+midLw   = input.int(1, "Width", minval = 1, maxval = 5, inline = "md2", group = gMid)
+midExt  = input.bool(true, "Extend right →", group = gMid, tooltip = "Carries the line on past the last candle, the way the BOS* / CHOCH* lines themselves are drawn. Untick to end it at the current bar.")
+midTxt  = input.string("", "Label text", inline = "md3", group = gMid, tooltip = "Leave this EMPTY and the label writes the percentage itself, so it follows the setting above — set 61.8 and it reads 61.8%. Type anything here to override that with your own text. The internal and inner lines add their own prefix, i and n, so three lines can be told apart at a glance.")
+midShow = input.bool(true, "Show text", inline = "md3", group = gMid)
+midTc   = input.color(color.new(color.orange, 0), "Text", inline = "md4", group = gMid)
+midTs   = input.string("Small", "Size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "md4", group = gMid)
+midTh   = input.string("Center", "Text horiz.", options = ["Left", "Center", "Right"], inline = "md5", group = gMid)
+midTv   = input.string("Above", "Text vert.", options = ["Above", "Middle", "Below"], inline = "md5", group = gMid, tooltip = "Where the label sits along the line and relative to it. Horizontal: Left puts it at the bar the range opened, Right at the current bar, Center in between. Vertical: Above and Below hang it off the line, Middle prints it on the line itself.")
+midShowOn = input.bool(true, "▶ Range % line — BOS* / CHOCH* midpoint", group = gTog, tooltip = "One switch for the whole module, here at the top with the other masters.\n\nOFF = no line, no label, on any tier. The module is completely inert.\nON  = every tier ticked in group 10 draws a line at the set percentage of its own possible-BOS / possible-CHOCH range.\n\nIt is a GATE, not an override: it can silence the module but it will never switch on a tier you unticked in group 10.\n\nDRAWING BUDGET: at most three lines and three labels exist at once — one per tier — wiped and rebuilt on each last-bar execution. TradingView allows 500 drawings per script, so this cannot crowd out your BOS/CHOCH lines.")
+
+var array<line>  midLnQ = array.new<line>()
+var array<label> midLbQ = array.new<label>()
+
+f_midLine(float ce, float fl, int bA, int bB, bool on, string pfx) =>
+    if on and not na(ce) and not na(fl) and ce > fl and not na(bA) and not na(bB)
+        float lv = ce - (ce - fl) * midPct / 100.0
+        int   x1 = math.min(bA, bB)
+        array.push(midLnQ, line.new(x1, lv, bar_index, lv, color = midLc, width = midLw, style = lstyle(midLs), extend = midExt ? extend.right : extend.none))
+        if midShow
+            string t = midTxt == "" ? pfx + str.tostring(midPct, "#.#") + "%" : pfx + midTxt
+            int lx = midTh == "Left" ? x1 : midTh == "Right" ? bar_index : int(math.avg(x1, bar_index))
+            array.push(midLbQ, label.new(lx, lv, t, color = color(na), textcolor = midTc, style = midTv == "Above" ? label.style_label_down : midTv == "Below" ? label.style_label_up : label.style_none, size = tsize(midTs)))
+
+if barstate.islast
+    while array.size(midLnQ) > 0
+        line.delete(array.pop(midLnQ))
+    while array.size(midLbQ) > 0
+        label.delete(array.pop(midLbQ))
+    if midShowOn
+        float _mdCe = na
+        float _mdFl = na
+        int   _mdCb = na
+        int   _mdFb = na
+        if not na(ceilS)
+            _mdCe := ceilS.price
+            _mdCb := ceilS.x1
+        if not na(florS)
+            _mdFl := florS.price
+            _mdFb := florS.x1
+        f_midLine(_mdCe, _mdFl, _mdCb, _mdFb, midMain, "")
+        f_midLine(iCeilP, iFlorP, iCeilB, iFlorB, midInt, "i")
+        f_midLine(nCeilP, nFlorP, nCeilB, nFlorB, midInn, "n")

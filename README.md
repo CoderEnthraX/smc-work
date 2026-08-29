@@ -35,39 +35,37 @@ The engine block of the two OPT files is byte-identical to each other.
   The lone 5-space indent it reports is the `indicator()` continuation line,
   which is valid Pine and present in the baseline too.
 
-## v15.16 — what changed and how it was proved
+## v15.17 — what changed
 
-1. **The MTF table contradicted the chart.** `f_tfPack` was a second, older
-   implementation of the three engines, five versions behind. Rebuilt as a
-   faithful transcription of the chart engine on function-local buffers.
-   Measured: 0 disagreements over 400 series on all three columns, with the
-   ALTERNATE rule off and on (was 1.5%). Plus a warm-up gate, because the
-   dominant cause is the `request.security` history window, which no rule
-   change can fix: the same engine over a short window disagrees with itself
-   65% at 40 bars and 2.5% at 300. Convergence tracks confirmed-event count
-   (63% at 1 event, 91% at 4, 98% at 7, ~100% at 11), so a row now stays blank
-   until its own simulation has 6 events. One appended input, default 6.
+**Market structure is untouched.** The engine that draws BOS/CHOCH, iBOS/iCHOCH
+and nBOS/nCHOCH is byte-for-byte v15.15-opt. The v15.16 mark-anchor change is
+reverted in full, pending the reported cases. Verified: of the 215 lines
+v15.15-opt has and this build does not, 212 are the old `f_tfPack` body and 3
+are the `f_tfRow` lines below. Everything else is a pure insertion.
 
-2. **No inner alert conditions.** Seven `alertcondition` entries added, so
-   nBOS/nCHOCH now appear in the Create-alert dropdown. 21 → 28.
+1. **Table reads the range, and never prints a dash.** BOS* above / CHOCH*
+   below = bullish, BOS* below = bearish — which is what the engine's trend
+   already means, so readout and marks cannot disagree. Every tier resolves
+   through a cascade: its own trend, else the tier above it (the imaginary
+   iBOS*/iCHOCH* and nBOS*/nCHOCH* pair, held in state, never drawn), else
+   `f_provDir` — price versus the midpoint of the standing range. Measured:
+   0 dashes across 360,000 cells. The v15.16 warm-up gate is removed with its
+   input. The per-timeframe engine is still the rebuilt one (0 disagreements
+   with the chart engine over 400 series, ALTERNATE off and on).
 
-3. **Marks drawn at a price their anchor candle never traded.** Audited 19,748
-   marks: 604 failed (5.7% of BOS, 6.7% of iBOS, 6.9% of nBOS, never a CHOCH),
-   and all 604 were pivot-2 promotions. `x1` was doing two jobs — the latched
-   scope anchor and the drawn start. Separated with a `drawB` field; scope is
-   untouched, so v15.15's fix stands. Re-audited: 0/19,748.
-   The ALT-mode sweep migration, same class, found by inspection, is fixed
-   here too — it had kept moving `x1` onto the sweep bar.
+   Still not fixable: `request.security` only sees as much history of a
+   timeframe as the chart has loaded, and the same engine over a short window
+   disagrees with itself 65% at 40 bars and 2.5% at 300.
 
-Invariant 4 restored to its v15.15 wording; the opt header had dropped the
-deliberate pivot-2 exception that the code relies on.
+2. **Inner alert conditions.** Seven added; 21 → 28.
 
-### Resource note
-Each ticked timeframe now runs a full three-engine simulation instead of a
-simplified one. Handoff §6.4 records an unexplained "Stopped — Calculation
-error" on AUDUSD 5m with the *old*, lighter engine, so that risk is real and
-is now larger. If it appears, untick timeframes in group 8. IDM is computed
-per-timeframe only while the ALTERNATE rule is on, which is the main saving.
+3. **New: range % line, group 10.** A level at a set percentage of the
+   possible-BOS/possible-CHOCH range, on all three tiers. Percentage, tier
+   selection, line colour/style/width, extend-right, label text/colour/size,
+   horizontal alignment and vertical position, plus a master toggle. Empty
+   label text auto-writes the percentage; internal and inner carry `i`/`n`
+   prefixes. Independent of the retracement *alert* percentage. 15 appended
+   inputs, so saved settings carry over.
 
 ## Verification tooling
 `validate_port.js` (9 ground-truth cases), `measure_table.js`,

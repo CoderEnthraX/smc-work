@@ -1,0 +1,100 @@
+//  MARKET STRUCTURE IS UNTOUCHED. The engine that draws BOS / CHOCH, iBOS /
+//  iCHOCH and nBOS / nCHOCH is byte-for-byte the v15.15-opt engine. The
+//  v15.16 mark-anchor change is REVERTED IN FULL and nothing has replaced it
+//  yet - that work is on hold until the reported cases are settled.
+//  VERIFIED, not asserted: of the 215 lines v15.15-opt has and this build does
+//  not, 212 are the old f_tfPack body and 3 are the f_tfRow lines listed
+//  below. Every other change in this file is a pure insertion.
+//
+//  1. THE MTF TABLE NOW READS THE RANGE, AND NEVER PRINTS A DASH.
+//     THE RULE, as asked for: the possible-BOS and possible-CHOCH pair IS the
+//     direction. BOS* above and CHOCH* below is bullish; BOS* below is
+//     bearish. That is exactly what the engine's own trend already means -
+//     the ceiling is drawn as BOS* while the trend is up and as CHOCH* while
+//     it is down - so the readout and the marks can no longer disagree about
+//     which way a timeframe is pointing.
+//     THE DASH is gone. Every tier resolves through a cascade:
+//       - the tier's own trend, when it has one
+//       - otherwise the tier ABOVE it: internal falls back to main, inner
+//         falls back to internal and then to main. This is the imaginary
+//         iBOS*/iCHOCH* and nBOS*/nCHOCH* pair, held in state and never drawn
+//       - and the main tier, before its very first event, reads where price
+//         sits inside the standing range: above the midpoint is bullish,
+//         below it bearish (f_provDir)
+//     So a cell always carries a direction and it is always derived from real
+//     structure, never invented. The v15.16 warm-up gate is removed with its
+//     input, because a gate that blanks a row is the opposite of this.
+//     THE ENGINE BEHIND THE TABLE is still the rebuilt one. f_tfPack - the
+//     function each of the 18 request.security calls runs - was a SECOND,
+//     OLDER copy of the three engines, five versions behind the chart: an
+//     equal-price pivot still took the level (v15.5), no sweep guard on the
+//     chart-start adopt (v15.1), levels anchored on the confirmation bar
+//     rather than the pivot bar, the opposite side re-anchored to a running
+//     extreme instead of f_retExtInc (v15.14), and no pivot-2 promotion at
+//     all (v15.14 / v15.15). It is now a faithful transcription of the
+//     v15.15 chart engine running on FUNCTION-LOCAL price buffers, which is
+//     what makes it legal inside request.security - invariant 6 forbids
+//     reading the chart's global buffers there. Five helpers (f_retExtB,
+//     rearmB, f_isSwingB, f_lastMinorB, f_armIdmB) take the buffers as
+//     arguments. MEASURED over 400 randomised series: the rebuilt table
+//     engine and the chart engine agree EXACTLY - 0 disagreements on all
+//     three columns, with the ALTERNATE rule both off and on.
+//     WHAT THIS STILL CANNOT FIX: request.security sees only as much history
+//     of a timeframe as the chart has loaded, and the engine's opening range
+//     is anchored on the extreme of whatever window it gets. The same engine
+//     over a short window disagrees with itself 65% at 40 bars, 35% at 80,
+//     17% at 150 and 2.5% at 300. A high timeframe read from a low chart
+//     timeframe can therefore still differ from the same timeframe read on
+//     its own chart. No rule change can remove that - the data is not there.
+//     IDM is computed per-timeframe only while the ALTERNATE rule is on. With
+//     it off, idmP stays na, every break gate is satisfied by na(idmP) and IDM
+//     cannot reach the trend, so this costs nothing and changes nothing.
+//     IF AN ALERT EVER REPORTS 'Stopped - Calculation error', untick some
+//     timeframes in group 8: each ticked one is a full three-engine
+//     simulation, where before it was a lighter approximation.
+//
+//  2. nBOS / nCHOCH CAN NOW BE PICKED IN THE ALERT DIALOG.
+//     THE CAUSE: the inner events had alert() calls but no alertcondition()
+//     entries, and it is alertcondition that populates that dropdown. There
+//     were 21 conditions and not one of them inner.
+//     SEVEN ADDED: Bullish nBOS, Bearish nBOS, Bullish nCHOCH, Bearish
+//     nCHOCH, Any nBOS, Any nCHOCH, Any inner structure event. They obey the
+//     arming gate like every other condition. No input is added - the inner
+//     alert checkboxes already in group 0 still drive the alert() path.
+//
+//  3. NEW: A RANGE % LINE ON ALL THREE TIERS, group 10.
+//     Draws a level at a set percentage of the possible-BOS / possible-CHOCH
+//     range - the midpoint at the default 50 - for the main pair, the
+//     internal iBOS*/iCHOCH* pair and the inner nBOS*/nCHOCH* pair. The
+//     percentage is measured DOWN FROM THE UPPER LEVEL, so 0 is the upper
+//     level, 50 the middle and 100 the lower one, read the same way whichever
+//     way the range is pointing.
+//     EVERY PART IS SETTABLE: the percentage, which tiers draw, line colour,
+//     style and width, extend-right on or off, the label text, its colour,
+//     size, horizontal alignment (Left / Center / Right) and vertical
+//     position (Above / Middle / Below). Leave the label text EMPTY and it
+//     writes the percentage itself, so it tracks the setting; the internal
+//     and inner labels carry an i and n prefix so three lines can be told
+//     apart. A master switch sits at the top with the other toggles and can
+//     silence the module without disturbing which tiers you ticked.
+//     IT IS INDEPENDENT of 'Retracement % for range alerts'. That one is
+//     measured back from the leg's running extreme and drives alerts; this
+//     one is a drawn level on the standing range. Changing either leaves the
+//     other alone.
+//     A tier draws only while BOTH of its levels exist. For a short spell
+//     after a break one side is empty until the next pivot refills it, and a
+//     range with one side missing has no midpoint.
+//     DRAWING BUDGET: at most three lines and three labels at once, wiped and
+//     rebuilt on each last-bar execution, against TradingView's 500.
+//
+//  INVARIANT 4, restored to its v15.15 wording. The optimised header had
+//  shortened it to 'never adopt or seed a level price has already closed
+//  beyond', which contradicts the code it ships with: v15.14 deliberately
+//  reversed it for the pivot-2 promotion, which takes a bare swept wick.
+//
+//  ALL NEW INPUTS ARE APPENDED (invariant 5), so every existing input keeps
+//  its declaration position, saved settings carry over and NO settings reset
+//  is needed. The three f_tfRow lines are the only existing executable lines
+//  altered anywhere outside the table engine.
+//  EXISTING ALERTS MUST BE DELETED AND RECREATED to see any of this: an alert
+//  runs its own frozen copy of the code and the settings it was made with.
