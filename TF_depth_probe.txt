@@ -1,0 +1,61 @@
+//@version=6
+// ═════════════════════════════════════════════════════════════════════════════
+//  MTF HISTORY DEPTH PROBE
+//  Answers one question and nothing else: how many bars of each higher
+//  timeframe does request.security() ACTUALLY get, on the chart you are
+//  currently looking at?
+//
+//  HOW TO USE IT: add it to a USDCAD chart, note the numbers, then switch the
+//  chart timeframe (1m -> 5m -> 1h -> 4h -> 1D) and note them again.
+//
+//  WHAT IT MEANS: bar_index inside a request.security() call is the bar index
+//  of the REQUESTED series, so bar_index + 1 on the last bar is exactly how
+//  many bars of that timeframe the script was able to compute on. This is the
+//  raw number the SMC table's per-timeframe engine has to work with.
+//
+//  IF THE 1M ROW READS 1 OR 2 ON A 1m CHART and a few hundred on a 4h chart,
+//  the higher-timeframe history is scaled to the chart's time coverage, and no
+//  script can compute a monthly structure from a 1m chart.
+//  IF IT READS THE SAME LARGE NUMBER ON EVERY CHART TIMEFRAME, the history is
+//  there and the fault is in the engine instead.
+// ═════════════════════════════════════════════════════════════════════════════
+indicator("MTF history depth probe", "TF DEPTH", overlay = true)
+
+f_n() => bar_index + 1
+
+int n1   = request.security(syminfo.tickerid, "1",   f_n())
+int n5   = request.security(syminfo.tickerid, "5",   f_n())
+int n15  = request.security(syminfo.tickerid, "15",  f_n())
+int n60  = request.security(syminfo.tickerid, "60",  f_n())
+int n240 = request.security(syminfo.tickerid, "240", f_n())
+int nD   = request.security(syminfo.tickerid, "1D",  f_n())
+int nW   = request.security(syminfo.tickerid, "1W",  f_n())
+int nM   = request.security(syminfo.tickerid, "1M",  f_n())
+
+f_txt(int v) => na(v) ? "na" : str.tostring(v)
+f_col(int v) => na(v) ? color.gray : v < 30 ? color.red : v < 250 ? color.orange : color.lime
+
+var table t = na
+if barstate.islast
+    if na(t)
+        t := table.new(position.middle_right, 2, 10, bgcolor = color.new(color.black, 10), border_color = color.new(color.gray, 40), border_width = 1)
+    table.cell(t, 0, 0, "TF",   text_color = color.white, bgcolor = color.new(color.blue, 55))
+    table.cell(t, 1, 0, "BARS", text_color = color.white, bgcolor = color.new(color.blue, 55))
+    table.cell(t, 0, 1, "chart " + timeframe.period, text_color = color.silver)
+    table.cell(t, 1, 1, str.tostring(bar_index + 1),  text_color = color.yellow)
+    table.cell(t, 0, 2, "1m",  text_color = color.silver)
+    table.cell(t, 1, 2, f_txt(n1),   text_color = f_col(n1))
+    table.cell(t, 0, 3, "5m",  text_color = color.silver)
+    table.cell(t, 1, 3, f_txt(n5),   text_color = f_col(n5))
+    table.cell(t, 0, 4, "15m", text_color = color.silver)
+    table.cell(t, 1, 4, f_txt(n15),  text_color = f_col(n15))
+    table.cell(t, 0, 5, "1h",  text_color = color.silver)
+    table.cell(t, 1, 5, f_txt(n60),  text_color = f_col(n60))
+    table.cell(t, 0, 6, "4h",  text_color = color.silver)
+    table.cell(t, 1, 6, f_txt(n240), text_color = f_col(n240))
+    table.cell(t, 0, 7, "1D",  text_color = color.silver)
+    table.cell(t, 1, 7, f_txt(nD),   text_color = f_col(nD))
+    table.cell(t, 0, 8, "1W",  text_color = color.silver)
+    table.cell(t, 1, 8, f_txt(nW),   text_color = f_col(nW))
+    table.cell(t, 0, 9, "1M",  text_color = color.silver)
+    table.cell(t, 1, 9, f_txt(nM),   text_color = f_col(nM))
