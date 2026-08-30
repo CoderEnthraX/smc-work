@@ -1,68 +1,56 @@
 //@version=6
 // ═════════════════════════════════════════════════════════════════════════════
-//  SMC MARKET STRUCTURE — 3-CANDLE PULLBACK ENGINE + EMA  ·  v1.8
-//  Structure half of the toolkit. Companion: SMC Volume Profiles + VWAP.
+//  SMC MARKET STRUCTURE — 3-CANDLE PULLBACK ENGINE  ·  v15.19
+//  + SESSION / DAILY / ANCHORED VOLUME PROFILES + KILLZONES + MTF TABLE
 // ═════════════════════════════════════════════════════════════════════════════
-//  Built from Market_Structure_SMC v15.9 by removing every volume-profile and
-//  VWAP module and adding an EMA module. EVERY STRUCTURE RULE IS UNCHANGED: the
-//  engine block is byte-identical to v15.9.
+//  v15.0 is v14.11 with the comments stripped, the retracement level display
+//  removed, and fourteen defaults changed. NO rule, engine or alert behaviour is
+//  different: the executable content is identical to v14.11 line for line apart
+//  from those fourteen input lines and the deleted display block.
 //
-//  v1.8  THE MTF TABLE ASKED FOR ITS DATA IN A WAY THAT GOT IT LESS DATA.
-//    Reported as the table giving a different answer for the SAME timeframe
-//    depending on which chart it was read from — the monthly row reading
-//    BEARISH from a 1h chart, BULLISH from a 15m chart, and nothing at all
-//    from 1m, while the monthly chart itself said BEARISH.
-//    MEASURED, not guessed. A throwaway probe requesting bar_index + 1 from
-//    each timeframe reported how many bars request.security actually returned.
-//    On EURUSD it came back with the FULL monthly history — 291 bars — from a
-//    3m chart, which killed the obvious theory that a low chart timeframe
-//    cannot reach high timeframe history. It can. But the same measurement on
-//    the same charts, taken from THIS script, came back with far less, and
-//    erratically: 1 bar, 10, 32, 133, 291, with no pattern in the chart
-//    timeframe.
-//    THE CAUSE. The probe asked for a CONSTANT timeframe:
-//        request.security(syminfo.tickerid, "1M", ...)
-//    while this script asked for a DYNAMIC one, so that a row below the chart
-//    timeframe would fall back to the chart itself:
-//        request.security(syminfo.tickerid, _uM ? "1M" : timeframe.period, ...)
-//    A dynamic timeframe argument cannot be resolved when the script is
-//    compiled — it is why dynamic_requests had to be turned on in the first
-//    place — and the history that comes back with it is neither as deep nor as
-//    predictable as the history behind a constant one. Every row was being
-//    computed on whatever depth happened to arrive. The engine is a state
-//    machine that replays from the first bar it can see, so a different depth
-//    is a different answer.
-//    THE FIX, in two halves, because either alone is not enough.
-//    1. ALL EIGHTEEN REQUESTS NOW NAME THEIR TIMEFRAME AS A CONSTANT. The
-//       _uX flag no longer picks the timeframe; it only gates the computation,
-//       inside f_tfPack, which already returned zeros when it was false. Same
-//       rows, same values, same everything — asked for properly.
-//    2. THE TABLE NOW KNOWS HOW MUCH DATA IT GOT AND REFUSES TO GUESS WITHOUT
-//       IT. f_tfPack returns a fifth number, the count of bars it ran on, and
-//       any row below "Minimum bars a timeframe must supply" reports the
-//       not-enough-data text instead of a trend, in all three columns. The
-//       dash goes back to meaning only what it always meant — the engine ran
-//       and has not seen a break yet.
-//       Half 1 makes the data arrive. Half 2 guarantees that when it does not,
-//       the table says so instead of inventing a trend from three candles.
-//       That is the requirement: no wrong readings, on any timeframe, in any
-//       of the three columns.
-//    THE CHART\'S OWN ROW IS UNAFFECTED and always was — it never goes through
-//    request.security, it reads the live engine, so it is never gated.
-//    A BARS COLUMN, off by default, shows the counts so the minimum can be set
-//    from evidence. On EURUSD the boundary sat at about 100: a monthly row
-//    built from 32 bars disagreed with the monthly chart, one built from 133
-//    agreed with it exactly.
-//    COST, stated plainly: a constant timeframe is fetched whether or not the
-//    row is displayed, so rows below the chart timeframe now cost data they
-//    did not cost before. Pine offers no way to skip a static request. If the
-//    script gets heavy on a very low chart timeframe, untick the timeframes
-//    you do not read — with constant requests that finally reduces the work.
-//    NOT ONE ENGINE RULE CHANGES. The chart drawings, the alerts, the three
-//    tiers and every structure classification are identical to v1.7. The six
-//    new inputs are appended at the end, so saved settings carry over.
+//  v15.19  THE MTF TABLE STOPS AT THE HIGHEST TIMEFRAME THE CHART CAN
+//  ACTUALLY FEED IT.  (v15.18 is withdrawn; this is built on v15.17.)
+//    THE PROBLEM, measured rather than assumed. A probe requesting
+//    bar_index + 1 from each timeframe reported how many bars request.security
+//    really returns. On EURUSD, from a 1m chart, the weekly series came back
+//    with NINE bars and the monthly with ONE. The per-timeframe engine is a
+//    state machine that replays every pivot and break from the first bar it can
+//    see, so one monthly candle does not make it fail — it makes it answer
+//    confidently and wrongly. That is where the monthly row reading BULLISH on
+//    a 15m chart and BEARISH on a 1h chart came from.
+//    THE RULE, which fixes it by not asking the question. A row is drawn only
+//    when its timeframe is at or above the chart AND at or below the ceiling
+//    the chart can support:
+//        chart 15m ................ ceiling 1W   (daily and weekly, no monthly)
+//        chart 1h and below ....... ceiling 1D   (daily is the top row)
+//        chart 2h and above ....... ceiling 1M   (everything, through monthly)
+//    The 61-to-119-minute band is not named by the rule, so it is grouped with
+//    1h and below, which is the conservative side.
+//    IT IS ALSO THE SECURITY-CALL OPTIMISATION. A row outside the ceiling has
+//    its _uX flag false, and a false flag already collapsed that request to
+//    timeframe.period — the chart\'s own data, already loaded, costing nothing.
+//    So on a 1m chart the weekly and monthly datasets are no longer fetched at
+//    all. Fewer real datasets per script is exactly what keeps an alert inside
+//    the server\'s budget, which is where the calculation errors came from.
+//    The requests stay DYNAMIC, as asked. The same mechanism means an alert
+//    created with the table switched off fetches no extra timeframe at all,
+//    because tblOn is part of every flag.
+//    TIDIER AND CHEAPER: each of the eighteen flag lines used to call
+//    timeframe.in_seconds on its own string, and now calls it once into a
+//    named constant that both tests read. The flags stay plain inline
+//    expressions on purpose — wrapping them in a helper function would let
+//    Pine promote them from simple to series, and a series flag would make
+//    the timeframe argument of request.security series too, which is exactly
+//    the thing being avoided here.
+//    AND ONE MICRO-OPTIMISATION in the table renderer: tsize(tblRowSz) was
+//    being recomputed six times per row on every redraw. It is hoisted to a
+//    single value.
+//    NO INPUT is added, removed or moved, so saved settings carry over and no
+//    settings reset is needed. NOT ONE ENGINE RULE CHANGES: the chart
+//    drawings, the three tiers, the alerts and every structure classification
+//    are identical to v15.17.
 //
-//  v1.7  ONE CANDLE CAN NO LONGER SUPPLY A LEVEL AND TRIGGER ITS OWN
+//  v15.17  ONE CANDLE CAN NO LONGER SUPPLY A LEVEL AND TRIGGER ITS OWN
 //  PROMOTION ON THE SAME BAR.
 //    Reported on two charts. FIRST: a single wide candle swept the ceiling AND
 //    the floor, and both pivot-2 promotions fired on that one bar, so the whole
@@ -92,7 +80,7 @@
 //    WHAT IS NOT TOUCHED, on purpose. If the trigger arrives on a LATER bar than
 //    the sweep — which is the ordinary case, and the GBPCHF sequence v15.14
 //    change 2 was written for — nothing is flagged, nothing is checked, and the
-//    promotion behaves exactly as it did in v1.6. v15.14 change 2 is intact:
+//    promotion behaves exactly as it did in v15.16. v15.14 change 2 is intact:
 //    an unconfirmed swept wick still takes the level. Only the one-candle case
 //    is gated.
 //    WHAT THE FIRST CHART NOW DOES: the ceiling is not promoted, so it stays on
@@ -108,12 +96,12 @@
 //    rule itself, the swing detector, the IDM gate, the alternation, the
 //    retracement alerts and every drawing rule are untouched.
 //
-//  v1.6  INNER ALERTS COMPLETED · TWO NEW LIVE-LINE PAIRS · 50% RANGE LINES ·
+//  v15.16  INNER ALERTS COMPLETED · TWO NEW LIVE-LINE PAIRS · 50% RANGE LINES ·
 //  A MANUAL LIMIT ON HOW MANY MARKS STAY ON THE CHART.
 //  Four additions, all requested, and every one of them appended at the end of
 //  the script so that no existing input moves. Saved settings carry over and no
 //  settings reset is needed. Not one engine rule is touched: the classification
-//  of every BOS, CHOCH, iBOS, iCHOCH, nBOS and nCHOCH is identical to v1.5,
+//  of every BOS, CHOCH, iBOS, iCHOCH, nBOS and nCHOCH is identical to v15.15,
 //  and the diff to the engine block is four lines, all of them pushing a
 //  drawing that was already being created into an array so it can be counted.
 //
@@ -180,7 +168,7 @@
 //     BOS* / CHOCH* pair and the two new live pairs are never counted or
 //     deleted by them — those are the current levels, not history.
 //
-//  v1.5  THE PIVOT-2 PROMOTION NO LONGER MOVES THE ANCHOR.
+//  v15.15  THE PIVOT-2 PROMOTION NO LONGER MOVES THE ANCHOR.
 //    Reported on BTCUSD 15m after v15.14: a main BOS and a main CHOCH printing
 //    on adjacent candles a few points apart.
 //    THE CAUSE, and it is v15.5 all over again. v15.14 promoted the level to
@@ -206,7 +194,7 @@
 //    deeper or equal in every single one. It never raises a floor.
 //    Six lines. No input added, removed or moved; no settings reset needed.
 //
-//  v1.4  TWO RULE CHANGES, BOTH REQUESTED, BOTH IN ALL THREE ENGINES.
+//  v15.14  TWO RULE CHANGES, BOTH REQUESTED, BOTH IN ALL THREE ENGINES.
 //
 //  1. THE BREAK CANDLE NOW COUNTS TOWARDS THE OPPOSITE LEVEL.
 //     Reported on GBPCAD 4h: candles 1-4 formed the pullback that confirmed a
@@ -269,7 +257,7 @@
 //  untouched. Existing alerts should be recreated only if you want them to see
 //  the new levels.
 //
-//  v1.3  EMA IS OFF BY DEFAULT AND HAS A MASTER SWITCH AT THE TOP.
+//  v15.13  EMA IS OFF BY DEFAULT AND HAS A MASTER SWITCH AT THE TOP.
 //    NEW INPUT: "▶ EMA — show exponential moving averages", off by default,
 //    drawn in group 0 Master Visibility Toggles alongside MASTER A and B.
 //    While it is off the module is completely inert: no line, no ribbon, no
@@ -289,7 +277,7 @@
 //    ta.ema still runs on every bar whatever the switch says, because a ta.*
 //    function must to keep its state correct. It is one multiply and one add.
 //
-//  v1.2  LONDON KILLZONE DEFAULT SESSION IS NOW 0600-0900.
+//  v15.12  LONDON KILLZONE DEFAULT SESSION IS NOW 0600-0900.
 //    Was 0700-1000. One default value; the input itself has not moved and no
 //    input has been added or removed, so every saved setting still lines up.
 //    It drives the London killzone BOX and the London session VOLUME PROFILE
@@ -301,53 +289,376 @@
 //    into the London session field yourself, or remove the indicator and
 //    re-add it (Defaults -> Reset settings does the same).
 //
-//  v1.1 carries the v15.10 retracement-latch fix: the "already reported"
-//  latch is burned only on a live bar with the alert gate open, so the
-//  historical replay performed when an alert is created can no longer
-//  consume a level before the alert is listening. Same three lines as the
-//  main file; nothing else differs from v1.0.
+//  v15.11  EMA MODULE ADDED TO THE COMPLETE INDICATOR.
+//    The EMA module built for the split structure file is now here too, so one
+//    file carries everything: the three structure engines, volume profiles,
+//    VWAP, killzones, the MTF table, the alert system and now EMAs.
+//      · five EMAs — 9 / 21 / 50 / 100 / 200, each with its own on-off,
+//        length, colour and width on one row (100 is off by default)
+//      · ribbon fill between EMA 1 and EMA 2, coloured by which is on top
+//      · EMA 1 / EMA 2 cross alerts, delivered through the same "Any alert()
+//        function call" alert as everything else and obeying the arming gate
+//      · last-bar labels with an offset so they sit clear of price
+//    All five EMAs are CALCULATED whether or not they are drawn. ta.* functions
+//    must run on every bar to keep their state correct, and it keeps the ribbon
+//    and the cross right while a line is hidden. An EMA is one multiply and one
+//    add per bar, so the cost is not measurable next to the rest of this script.
+//    EVERY INPUT IS APPENDED AT THE END (invariant 6). All 425 existing inputs
+//    keep their declaration positions, so saved settings carry over and NO
+//    settings reset is needed. No engine, rule, level, mark or existing alert
+//    changes. The EMA lines are ON by default — untick EMA 1/2/3/5 in group 9
+//    if you want the chart exactly as it was.
 //
-//  REMOVED, and why it is faster for it:
-//    · request.security_lower_tf — this file no longer requests intrabar data
-//      at all. That was the single heaviest call in the original.
-//    · f_render, the per-profile binning pass: for every profile it walked every
-//      intrabar bar and spread its volume across up to 100 price rows, then ran
-//      a value-area expansion loop. Gone entirely.
-//    · the VPStyle and DrawQueue types, ten drawing queues, and the four VPCol
-//      volume arrays (a VPCol now carries only x1 / hi / lo).
-//    · session, previous-day and current-day profiles; VWAP and its three bands.
-//  KEPT: the three structure engines, the 3-candle pullback rule, IDM and ALT
-//    mode, sweeps, retracement alerts, the arming gate, the MTF table, and the
-//    killzone BOXES including the top/bottom line mode with its own text.
-//  ADDED: EMA module — five EMAs, ribbon fill, cross alerts, last-bar labels.
+//  v15.10  THE RETRACEMENT LATCH WAS SPENT WHERE NO ALERT COULD FIRE.
+//    REPORTED: XAUUSD 1m, retracement alerts at 30% on BOS/CHOCH and
+//    iBOS/iCHOCH. An armed alert created 17:04:36 armed at 17:05:16 and then
+//    said nothing until 17:41:00 — a bar boundary — while an equivalent alert
+//    created at another moment reported touches mid-candle at real seconds
+//    (20:00:23, 20:58:54). Same settings, same percentage, different behaviour.
+//    THE FAULT: the "already reported" latch was set inside the touch test —
+//        if not mainRetFired and not _mNewLvl
+//            if (trendDir == 1 and low <= mLvl) or ...
+//                rtMainRet    := true
+//                mainRetFired := true      <- here
+//    which runs at global scope on EVERY bar, including every bar of the
+//    historical replay TradingView performs when an alert is created. Alerts
+//    can never fire on historical bars, so the first touch of a level was
+//    consumed by history and the level arrived at the live edge already spent.
+//    It could then only report again once the leg made a new extreme and
+//    rebuilt the level — and mRunHi / mRunLo only move at a BAR CLOSE, so the
+//    recovery landed on a bar boundary. That is the :00 timestamp, and the
+//    35 minutes of silence before it.
+//    IT WAS NEVER ABOUT THE ARMING GATE. Modelled tick by tick with Pine
+//    semantics — per-tick var rollback, the bar-close-gated extreme, the
+//    _mNewLvl guard, alert.freq_once_per_bar and a historical replay phase —
+//    the old code behaves IDENTICALLY with the gate on and off: both swallow
+//    the live touch at 17:05:30 and report at 17:07:30 instead. Whether an
+//    alert looked correct depended only on where in the leg it was created.
+//    The gate made it more visible because a gated alert is usually created
+//    deliberately, mid-leg, on a level price has already been trading around.
+//    THE FIX: the touch test now only REPORTS. The latch is burned after the
+//    gate, and only where an alert can actually be delivered:
+//        if almOk and barstate.isrealtime
+//            if rtMainRet
+//                mainRetFired := true
+//            ...
+//    History can no longer consume a level, and neither can a shut gate.
+//    MEASURED: with the fix both configurations fire at 17:05:30, on the touch,
+//    at a real second — armed and non-armed now behave identically, which is
+//    what was asked for. No alert that fires today is lost.
+//    Three lines moved. No input added, removed or moved, so saved settings
+//    carry over and NO settings reset is needed. No engine, rule, level, mark
+//    or percentage changes. Existing alerts must be DELETED AND RECREATED —
+//    they run their own frozen copy of the old code.
+//
+//  v15.9  ALL FOUR KILLZONES ON THE LINE SWITCH, AND THE LINES ARE NAMED.
+//    1. WHY LONDON CLOSE HAD NO LINES. Nothing was wrong with the line code —
+//       f_kzEdge was already called on the London Close queues. v15.7 had taken
+//       the London Close BOX out of MASTER B, so with that box off there was no
+//       box for the lines to attach to. kcOn goes back to
+//           kcOn = mstB or kcOnI
+//       so MASTER B is once again all four killzone boxes. THIS REVERSES HALF
+//       OF v15.7 and is deliberate. The other half stands: the London Close
+//       SESSION PROFILE is still NOT driven by MASTER B (cOn = cOnI), so the
+//       master still draws boxes and no volume profiles. Checked over all 64
+//       switch combinations against the new specification: 0 disagreements.
+//    2. THE LINES NOW CARRY THEIR KILLZONE NAME, with one set of controls for
+//       all four instead of four separate groups:
+//         - Text position   Above the top line (default) / Under the bottom line
+//         - Text align      Left / Center (default) / Right
+//         - Text colour     one picker for all four
+//         - Text size       one dropdown for all four
+//       The name itself is still each killzone own Text field, so they stay
+//       individually renameable and an empty field means no label for that one.
+//       While the line switch is on these four settings REPLACE each killzone
+//       Text vert. / Text horiz. / Colour / Size; switch it off and every one of
+//       those comes straight back untouched.
+//       Mechanically the box text is cleared with box.set_text and the label the
+//       box pushed into its parallel label queue is blanked, so a killzone can
+//       never print its name twice — the Outside Top / Outside Bottom setting
+//       puts the name in a LABEL rather than in the box, and both paths are
+//       handled.
+//    LIFETIME, the part that carries real risk (see v13.6 bug #4): the label
+//    queue is wiped in full alongside the line queue on every last-bar
+//    execution and shares the same 120-line cap, so at most 120 lines and 60
+//    labels exist at once against TradingView budgets of 500 each. Modelled
+//    over 300 days x 5 executions at 1, 8 and 15 days of sessions, with and
+//    without text: counts exact every time, zero orphaned lines or labels, and
+//    nothing created at all while the switch is off.
+//    FOUR INPUTS APPENDED after the three from v15.8. All 421 earlier inputs
+//    keep their declaration positions, so saved settings carry over and no
+//    settings reset is needed. No engine, rule, mark or alert is touched.
+//
+//  v15.8  KILLZONE BOXES AS TOP AND BOTTOM LINES ONLY — one switch.
+//    NEW, in the toggle list at the top of the settings:
+//      - Killzone boxes — top and bottom line only   (off by default)
+//      - Line colour  ·  Line width
+//    ON  = all four killzone boxes are drawn as two solid horizontal lines,
+//          one on the session high and one on the session low. The fill and
+//          the left/right edges are suppressed. The session text is untouched.
+//    OFF = every box returns to its own Fill / Border / Border style / Border
+//          width exactly as set per killzone. It overrides, it never
+//          overwrites, so nothing of yours is changed underneath.
+//
+//    TWO CONSTRAINTS SHAPED THE IMPLEMENTATION, both worth knowing.
+//    1. Pine boxes have no per-side border control — border_color, _width and
+//       _style apply to all four sides at once. So a top-and-bottom-only box
+//       cannot be asked for directly. The box is made fully transparent
+//       (bgcolor and border_color set to na) and two real lines are drawn on
+//       its top and bottom edges, read back from the box itself with
+//       box.get_left / _top / _right / _bottom, so the lines cannot drift from
+//       the session window they belong to.
+//    2. f_kzbox is defined 138 input declarations BEFORE the end of the file,
+//       so it cannot read an appended input. Declaring the three new inputs
+//       next to it would have shifted 138 inputs and cost a full settings
+//       reset. Instead the drawing is DEFERRED to the end of the script (the
+//       v14.0 / v14.1 pattern) where it reads the boxes back out of the
+//       kqA / kqL / kqN / kqC and kqAv / kqLv / kqNv / kqCv queues they were
+//       already stored in. Drawing objects keep whatever state they were last
+//       given, so restyling them on the last bar is all that is needed.
+//
+//    DRAWING BUDGET, because v13.6 bug #4 was exactly this class of mistake —
+//    an unbounded queue that made TradingView start deleting the oldest
+//    drawings, main BOS/CHOCH lines included. The queue is wiped in full and
+//    rebuilt on each last-bar execution and is capped at 120 lines. Modelled
+//    over 400 days x 5 executions per day at 1, 3, 8 and 15 days of sessions:
+//    the queue never exceeded the cap, held exactly two lines per visible box
+//    every time, and every line created was either still queued or deleted —
+//    zero orphans. With the switch off it creates no lines and touches no box.
+//    Worst case 120 of the 500-drawing budget; at the default 1 day it is 16.
+//
+//    THREE INPUTS, ALL APPENDED AT THE VERY END (invariant 6) and placed on
+//    screen with group = gTog, which is why they appear at the TOP of the
+//    settings: a group renders where its earliest-declared member sits. All
+//    418 existing inputs keep their exact declaration positions, so saved
+//    settings carry over and NO settings reset is needed. No engine, rule,
+//    mark or alert is touched.
+//
+//  v15.7  MASTER B IS NOW THE THREE KILLZONE BOXES AND NOTHING ELSE.
+//    MASTER B was wired to five things: the London Close SESSION PROFILE plus
+//    all four killzone boxes —
+//        cOn  = mstB or cOnI        <- the London Close volume profile
+//        kaOn = mstB or kaOnI
+//        klOn = mstB or klOnI
+//        knOn = mstB or knOnI
+//        kcOn = mstB or kcOnI       <- the London Close box
+//    so switching it on drew a full session volume profile and a fourth box
+//    that were never wanted from a box toggle.
+//    NOW: MASTER B drives the Asia, London and New York killzone BOXES only.
+//        cOn  = cOnI                <- own checkbox only
+//        kaOn = mstB or kaOnI
+//        klOn = mstB or klOnI
+//        knOn = mstB or knOnI
+//        kcOn = kcOnI               <- own checkbox only
+//    The London Close session profile and the London Close box are both still
+//    available from their own checkboxes in the toggle list; they are simply no
+//    longer forced on by the master. With MASTER B OFF nothing at all changes:
+//    verified over all 32 combinations of the five individual switches, the
+//    resolved flags are identical to v15.6.1. Over all 64 combinations the new
+//    wiring matches the requested behaviour exactly; the old wiring differed in
+//    24 of them.
+//    NOTE, because it is easy to misread on the chart: a session PROFILE
+//    appearing while MASTER B is on is MASTER A's doing. MASTER A is ON by
+//    default (v15.3) and covers VWAP, the anchored and previous-day profiles
+//    and the Asia / London / New York session profiles. MASTER B has never
+//    controlled those and still does not.
+//    Two resolution lines and one label/tooltip change. NO input is added,
+//    removed or moved, so saved settings carry over and no reset is needed.
+//    No engine, rule, mark or alert is touched.
+//
+//  v15.6.1  COMPILE FIX IN THE v15.6 TOOLTIP TEXT. No behaviour change.
+//    Error at 2177:706, Syntax error at input "Touches". Two of the sentences
+//    v15.6 added to the arm tooltips quoted an option name using RAW DOUBLE
+//    QUOTES inside a Pine string literal, so the literal ended at that quote
+//    and the parser met a bare identifier immediately afterwards.
+//    Both now use single quotes, which this file has always used safely inside
+//    double-quoted strings (see the profile tooltips). No escape sequence is
+//    relied on anywhere.
+//    Not one line of logic differs from v15.6: the arming gate, the three
+//    engines, every alert and all 418 inputs are byte-identical apart from the
+//    two tooltip strings and this header.
+//    The build now runs a string-literal lexer over the whole file, validated
+//    against v15.5 as a known-good control, so an unescaped quote cannot ship
+//    again.
+//
+//  v15.6  THE ARMING GATE OPENED WITHOUT PRICE EVER REACHING THE LEVEL.
+//    REPORTED: EURUSD 1m. "Arm alerts only after price crosses a level" ON, arm
+//    price level 1.15743, "Arms when price" = Either, slot 1 trigger "Price
+//    crosses level", only the iCHOCH box ticked, one alert created on "Any
+//    alert() function call". Price never traded above 1.15660 all day, yet the
+//    iCHOCH alerts arrived from the start and the ARM panel read ARMED.
+//    THE FAULT — one line, the price trigger inside f_armHit:
+//        0 => lvl > 0 and (dir == "Touches from below" ? high >= lvl
+//                        : dir == "Touches from above" ? low  <= lvl
+//                        : (high >= lvl or low <= lvl))
+//    "Either" is "high >= lvl or low <= lvl". Price sitting BELOW the level
+//    satisfies "low <= lvl" on its own, so the gate opened on the FIRST LIVE
+//    BAR having touched nothing. The same trivially-true test broke the other
+//    two options whenever price was already on the far side: "Touches from
+//    above" armed instantly while price was below it, "Touches from below"
+//    armed instantly while price was above it. The test asked "is the level on
+//    one side of this bar?" when it had to ask "did price REACH the level?".
+//    WHY IT SURVIVED SO LONG: v13.6.1's barstate.isrealtime guard stopped
+//    history from pre-arming the latch, so the readout correctly showed WAITING
+//    across all of history and then flipped to ARMED on the first live bar —
+//    which is indistinguishable from an arm that works.
+//    THE FIX: a touch now requires the APPROACH SIDE. The previous bar's close
+//    fixes which side of the level price is on, and the level must be reached
+//    from that side:
+//        from below = close[1] <= lvl and high >= lvl
+//        from above = close[1] >= lvl and low  <= lvl
+//        Either     = whichever of the two applies to where price actually is
+//    Everything else about the gate is untouched: still a WICK test, never a
+//    close; still evaluated at global scope on every tick, so it trips intrabar;
+//    still live bars only; still one permanent latch; still five OR-ed slots,
+//    first to fire opens it for good. A gap straight through the level still
+//    arms, exactly as an ordinary TradingView price alert would.
+//    MEASURED IN NODE against an independent ground truth — the level lying
+//    inside a live bar's traded range, never either implementation's own
+//    output. Over 3,000 random series: the old "Either" armed in 2,224 of the
+//    2,224 series where price NEVER reached the level (100% false) and armed
+//    EARLY in 694 of the 776 where it did. The new test produced 0 false arms
+//    and armed on the exact touch bar in all 776. Across 2,331 arm events it
+//    never once armed without price trading at, or gapping through, the level.
+//    Old "Touches from above" false-armed 1,518 times and "from below" 706;
+//    both are now 0. On the reported setup the old gate delivered all eight
+//    seeded iCHOCH alerts before any touch, the new one delivered none.
+//    NO INPUT IS ADDED, REMOVED OR MOVED. Two tooltips are reworded, which is
+//    cosmetic, so saved settings carry over and NO settings reset is needed.
+//    Nothing else changes: not the 3-candle rule, not any of the three engines,
+//    not the retracement alerts, not which events each checkbox reports.
+//    Also corrected in that same tooltip: a double-encoded em dash that has
+//    been sitting there since at least v14.7 is now a plain em dash.
+//
+//  v15.5  AN EQUAL-PRICE PIVOT NO LONGER MOVES THE PIVOT. All three engines.
+//    THE FAULT: "EQUAL-LEVEL RETEST — a pivot at exactly the standing price keeps
+//    the level and re-anchors the line to the most recent touch." The PRICE was
+//    kept, but the ANCHOR BAR jumped forward to the later touch, and that anchor
+//    is what the opposite side re-anchors from on a break:
+//        f_retExtreme(ceilS.x1, false) = the lowest low between the pivot and the
+//        break bar.
+//    Move x1 forward and that window shrinks, so the new CHOCH* floor lands on a
+//    shallow low inside the real leg instead of the leg's actual extreme. Reported
+//    on a 3m BTCUSD chart where two highs touched 64538.23 exactly: the retest
+//    moved the anchor from P1 to P2, and the CHOCH* floor came out at P3 (64250)
+//    instead of P4 (63830). The range was nested inside the true one.
+//    It also silently reset that level's born bar, its armed sweep and its opposite
+//    reference, so a sweep in progress was forgotten.
+//    THE RULE, as it should be: an equal high is the SAME pivot being retested, not
+//    a new one. The first touch owns the level. Only a genuinely higher high (or a
+//    lower low) may take it, and only into an empty slot.
+//    THE FIX: the equal-price retest is removed from all three engines.
+//      MAIN     "adoptC or retestC" -> "adoptC", and the chart-start branch now
+//               also refuses a pivot equal to the standing level (_cEq / _fEq), so
+//               the rule holds while the trend is still neutral too.
+//      INTERNAL "if na(iCeilP) or aPhP == iCeilP" -> "if na(iCeilP)"
+//      INNER    "if na(nCeilP) or aPhP == nCeilP" -> "if na(nCeilP)"
+//    Nothing else changes: not the 3-candle rule, the sweep test, the pivot-2
+//    promotion, the opposite-side re-anchor, the retracement alerts or any input.
+//
+//  v15.4  "Show inner structure" is ON by default. One input default, nothing
+//    else. The inner engine has always RUN regardless of this switch — it only
+//    ever gated the drawing — so no rule, level, alert or event changes; the
+//    nBOS / nCHOCH marks simply appear now instead of being computed silently.
+//    Inner marks are sparse by nature: the inner range is neutral until its own
+//    first nCHOCH, so expect long stretches with nothing drawn.
+//
+//  v15.3  NEW DEFAULTS + A MASTER "WHITE STRUCTURE" SWITCH.
+//    NEW INPUT, declared FIRST so its group renders above the Master Visibility
+//    Toggles: "White BOS / CHOCH lines and text". ON turns all twelve main
+//    BOS / CHOCH / BOS* / CHOCH* line and text colours white; OFF returns every
+//    one of them to whatever its own colour picker says. It overrides, it does not
+//    overwrite — your per-event colours are untouched underneath.
+//    It does NOT touch iBOS / iCHOCH or nBOS / nCHOCH, which have their own colours.
+//    *** THIS SHIFTS EVERY INPUT BY ONE DECLARATION PLACE. TradingView matches
+//    saved settings by declaration order, so reset the settings once after loading
+//    (remove the indicator and re-add it, or Defaults -> Reset settings). You have
+//    to do that anyway for the eleven new defaults below to appear, so it is the
+//    same single reset, not an extra one.
+//    NEW DEFAULTS: MASTER A on · rows per profile 24 · max history to draw 5000 ·
+//    iBOS/iCHOCH line and text blue · keep previous iBOS/iCHOCH off · keep previous
+//    nBOS/nCHOCH off · strong internal mark 💎 · strong inner mark 🧨 · EVENT
+//    column off · VWAP band #1 off (#2 and #3 were already off).
+//    NOTE: there is no "keep previous" switch for the MAIN engine — it never had
+//    one. Main BOS/CHOCH history is bounded by "Max history to draw" alone, now
+//    5000 bars. Only internal and inner have that checkbox, and both are now off.
+//    No rule, no engine and no alert behaviour changes.
+//
+//  v15.2  THE PIVOT SHIFT RULE — the main engine used the wrong reference.
+//    THE RULE: P1 sweeps P0's high. P1 becomes the new main pivot ONLY IF price
+//    then sweeps or closes below P0's PULLBACK EXTREME LOW (without that being a
+//    CHOCH). If P1's pullback never reaches that low, P0 KEEPS the level, a close
+//    above P0 is the BOS, and a close below P0's pullback extreme is the CHOCH.
+//    THE FAULT: the main engine armed the promotion against f_firstConf — the
+//    FIRST CONFIRMED counter-swing after the pivot — not the pullback extreme.
+//    The first confirmed low is always at or above the extreme, so the shift could
+//    fire on a pullback far shallower than the rule allows, handing the level to
+//    P1's sweep wick. The BOS was then measured against a high price had never
+//    closed above, printed late, and its line was anchored on the sweep bar.
+//    Measured over 320,000 bars: the two references differ on 29% of sweeps, and
+//    f_retExtreme was never once higher than f_firstConf.
+//    THE FIX: the reference is now f_retExtreme — the extreme wick strictly between
+//    the pivot candle and the sweep — which is EXACTLY what the internal and inner
+//    engines have always used for the same test. The three engines now agree.
+//    Mirrored on the floor: the highest high between the floor pivot and the sweep.
+//    HONEST NOTE ON SIDE EFFECTS. Structure is a feedback loop, so removing a
+//    premature shift changes what happens afterwards. Over the same 320,000 bars
+//    98.0% of main BOS/CHOCH events are completely unchanged; 83 disappeared and
+//    62 appeared out of 4,219. Those are the legs that were being measured from a
+//    sweep wick. There is no version of this fix that leaves them alone.
+//    f_firstConf had no other caller and has been removed.
+//
+//  v15.1  A SWEEP MUST NOT MOVE THE LEVEL (main engine).
+//    While the trend is still NEUTRAL the main adopt was
+//        adoptC = trendDir == 0 ? phP >= allHi : na(ceilS)
+//    with no reference to the standing ceiling's sweep state. So a bar that wicked
+//    ABOVE the ceiling and closed back INSIDE — a sweep, not a break — became the
+//    new all-time extreme, and two bars later, when the 3-candle rule confirmed it
+//    as a pivot, "phP >= allHi" adopted it outright and overwrote the real level.
+//    The sweep was recorded and then bypassed: Module 2 says a wick through with
+//    the body closing back inside is a SWEEP, and Module 3 says the sweep only
+//    ARMS the pivot-2 promotion. This branch ignored both.
+//    Effect on the chart: the ceiling jumped onto the sweep wick, so the BOS was
+//    measured against a level price had never closed above, printed late, and its
+//    line was anchored on the sweep bar instead of the true pivot.
+//    FIX: the chart-start adopt is blocked while the standing level carries an
+//    armed sweep. The swept pivot keeps the level; a body close beyond it is the
+//    BOS, and a body close beyond the opposite side is the CHOCH — which is what
+//    the rules always said. Mirrored on the floor.
+//    INTERNAL and INNER were checked and need no change: they adopt only into an
+//    EMPTY slot ("na(iCeilP) or aPhP == iCeilP"), so a swept level can never be
+//    overwritten there. Adding the same guard would have been dead code.
+//    Nothing else moves: not the 3-candle rule, the pivot-2 promotion, the
+//    opposite-side re-anchor, the retracement alerts, or any input.
 //
 //  THE 3-CANDLE PULLBACK RULE (Module 1) — swing HIGH; lows mirror
 //    1. CANDIDATE = highest high so far; a new OR EQUAL extreme replaces it.
 //    2. Three BEARISH pullback candles: c1 = first bearish candle at/after the
-//       candidate (its LOW locks); c2 must CLOSE below c1 low; c3 must CLOSE
-//       below c2 low -> CONFIRMED.
+//       candidate (its LOW locks); c2 must CLOSE below c1's low; c3 must CLOSE
+//       below c2's low -> CONFIRMED.
 //    3. Always body-close beyond the previous locked WICK. Never body-to-body.
 //    4. Noise PAUSES, never resets. The three need not be consecutive.
 //    5. A new OR EQUAL extreme RESTARTS everything.
-//    6. Reported on the confirmation bar, ANCHORED at the candidate bar.
+//    6. Reported on the confirmation bar, ANCHORED at the candidate's bar.
 //
 //  TWO PIVOT STREAMS — never mix them up
 //    MAIN      hiT / loT   free-running.  Read by BOS / CHOCH only.
 //    INTERNAL  aHiT / aLoT alternating.   Read by iBOS / iCHOCH and nBOS / nCHOCH.
 //
 //  THREE NESTED ENGINES
-//    MAIN     BOS / CHOCH    · anchored on the absolute extreme at chart start
-//    INTERNAL iBOS / iCHOCH  · anchored on the main trend-side line pivot
+//    MAIN     BOS / CHOCH    · range anchored on the absolute extreme at start
+//    INTERNAL iBOS / iCHOCH  · anchored on the main trend-side line's pivot
 //    INNER    nBOS / nCHOCH  · anchored on the internal trend-side level
-//  Each: adopt into an EMPTY slot — an equal-price pivot never takes the level
-//  (v15.5) · first break of a range = CHOCH · then with-trend = BOS, against =
-//  CHOCH + flip · broken side empties and refills · opposite side re-anchors to
-//  the retracement extreme · sweeps arm a pivot-2 promotion.
+//  Each: adopt into an empty slot · equal price re-anchors to the later touch ·
+//  first break of a range = CHOCH (trend starts neutral) · then with-trend = BOS,
+//  against = CHOCH + flip · broken side empties and refills · opposite side
+//  re-anchors to the retracement extreme · sweeps arm a pivot-2 promotion.
 //
 //  INVARIANTS — break these and old bugs come back
 //    1. Only a confirmed MAIN event starts a new internal range; only a confirmed
 //       INTERNAL event starts a new inner range.
-//    2. The range anchor is LATCHED for the life of the range.
+//    2. The range anchor is LATCHED for the life of the range. Re-creating the
+//       trend-side line inside a range must NOT re-scope or delete levels.
 //    3. Main = free-running pivots. Internal and inner = alternating.
 //    4. A structure level is a CONFIRMED PIVOT, with ONE deliberate exception
 //       (v15.14): a pivot-2 promotion takes the SWEPT WICK. There the sweep of
@@ -356,27 +667,41 @@
 //    5. Never adopt or seed a level price has already closed beyond.
 //    6. NEW INPUTS MUST BE APPENDED AT THE END — TradingView matches saved
 //       settings by declaration ORDER. Use group = to place them on screen.
-//    7. rearm() reads the chart price buffers, so it must never be called inside
+//    7. rearm() reads the chart's price buffers, so it must never be called inside
 //       request.security(). armHere() is buffer-free and safe in both.
 //    8. No variable-offset history references — use bufHi / bufLo / bufDir.
 //    9. Pine has no bitwise operators; the EVENT bitmask is unpacked by
 //       subtraction. Pine cannot show, hide or disable an input conditionally.
-//   10. ANY COMPARISON INVOLVING na YIELDS na, AND if TREATS na AS FALSE, so
-//       "x != na" is FALSE. Guard every such test with na(x) first.
+//   10. ANY COMPARISON INVOLVING na YIELDS na, AND if TREATS na AS FALSE. So
+//       "x != na" is FALSE, not true. Guard every such test with na(x) first.
+//       This one silently disabled the retracement alert from v14.4 to v14.10.
 //
-//  ARMING GATE (v15.6): a price slot arms only when price REACHES the level from
-//  the side it is actually on — close[1] fixes the side, then the wick must come
-//  to the level. Live bars only; one permanent latch; five OR-ed slots.
+//  RETRACEMENT ALERTS — main / internal / inner, one shared percentage
+//    The percentage is measured BACK FROM THE EXTREME of the leg: 20 = a shallow
+//    pullback near the high, 50 = midpoint, 79 = deep. The anchor is the leg's
+//    running extreme since that tier's last event, so the alert does not wait for
+//    the 3-candle pullback to confirm the range; if price has not reached the
+//    level by confirmation it stays armed and fires afterwards. Fires on TOUCH,
+//    intrabar (alert.freq_once_per_bar), only on a move BACK from the extreme,
+//    and never on the bar the level was established.
 // ═════════════════════════════════════════════════════════════════════════════
-indicator("SMC Market Structure — 3CP + EMA", "SMC 3CP+EMA", overlay = true,
-     max_lines_count = 500, max_labels_count = 500, max_boxes_count = 150, dynamic_requests = true)
+indicator("SMC Market Structure — 3CP + Volume Profiles", "SMC 3CP+VP", overlay = true,
+     max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500, dynamic_requests = true)
 
 gStr = "Structure colour"
 whiteStruct = input.bool(false, "White BOS / CHOCH lines and text", group = gStr, tooltip = "One switch for the readability of the main structure marks on a dark or light chart.\n\nON  = every BOS, CHOCH, BOS* and CHOCH* line and label is drawn WHITE, whatever the individual colour pickers say.\nOFF = each one goes straight back to its own colour picker in groups 1 to 6 below. Nothing is overwritten; the switch only overrides while it is on.\n\nIt covers the six main style groups only. iBOS / iCHOCH and nBOS / nCHOCH keep their own colours, because they are meant to be distinguishable from main structure rather than matched to it.")
 
 gTog = "0. Master Visibility Toggles"
-mstB  = input.bool(false, "▶ MASTER B — all four killzone boxes", group = gTog, tooltip = "Master switch for the four killzone BOXES: Asia, London, New York and London Close.\n\nON  = all four are shown and their individual checkboxes are IGNORED.\nOFF = the four boxes take over and work on their own.\n\nThis indicator draws killzone BOXES only — the session volume profiles live in the companion Volume Profiles + VWAP file, so nothing here can switch a profile on.\n\nPair it with the Killzone boxes - top and bottom line only switch to get the four sessions as plain high/low levels with their names on them.\n\nPine cannot hide inputs, so switches that are not in charge stay visible — they simply have no effect.")
+mstA  = input.bool(true, "▶ MASTER A — VWAP · anchored · previous-day · Asia/London/NY profiles", group = gTog, tooltip = "Master switch for the first six checkboxes below: VWAP, the current-day anchored profile, the previous-day profiles and the Asia / London / New York session profiles.\n\nON  = all six are shown, and the six individual boxes below are IGNORED — ticking one of them can no longer make the others disappear.\nOFF = the six boxes take over and work on their own, each showing only its own item.\n\nSo either the master runs the group or the individual switches do, never both at once. Pine cannot hide inputs, so the switches that are not in charge stay visible in this panel — they simply have no effect.")
+mstB  = input.bool(false, "▶ MASTER B — all four killzone boxes", group = gTog, tooltip = "Master switch for the four killzone BOXES below: Asia, London, New York and London Close.\n\nON  = all four boxes are shown and their individual checkboxes are IGNORED.\nOFF = the four boxes take over and work on their own, each showing only itself.\n\nIT DRAWS BOXES ONLY. It does not switch on any session volume profile — not even the London Close one, which it used to drag in with it before v15.7. That profile now follows its own checkbox and nothing else, so MASTER B gives you the four killzones on a clean chart.\n\nIf a session PROFILE appears while this is on, it is MASTER A doing it — MASTER A is on by default and covers the Asia / London / New York session profiles.\n\nPair this with the Killzone boxes - top and bottom line only switch above to get the four sessions as plain high/low levels with their names on them.\n\nMASTER A and MASTER B are independent. Pine cannot hide inputs, so the switches that are not in charge stay visible in this panel — they simply have no effect.")
 
+vwOnI = input.bool(false, "Show VWAP", group = gTog)
+tOnI  = input.bool(false, "Show current-day anchored profile", tooltip = "Shows a live volume profile anchored to the start of the current day. This grows continuously as the day progresses.", group = gTog)
+dOnI  = input.bool(false, "Show previous-day profiles", tooltip = "Shows static fixed-range volume profiles for completed previous days.", group = gTog)
+aOnI  = input.bool(false, "Show Asia session profile", group = gTog)
+lOnI  = input.bool(false, "Show London session profile", group = gTog)
+nOnI  = input.bool(false, "Show New York session profile", group = gTog)
+cOnI  = input.bool(false, "Show London Close session profile", group = gTog)
 kaOnI = input.bool(false, "Show Asia box", group = gTog)
 klOnI = input.bool(false, "Show London box", group = gTog)
 knOnI = input.bool(false, "Show New York box", group = gTog)
@@ -385,13 +710,26 @@ kcOnI = input.bool(false, "Show London Close box", group = gTog)
 gA = "Alerts — enable, then create ONE alert using 'Any alert() function call'"
 aBB = input.bool(true,  "Bullish BOS alert",   group = gA)
 
+vwOn = mstA or vwOnI
+tOn  = mstA or tOnI
+dOn  = mstA or dOnI
+aOn  = mstA or aOnI
+lOn  = mstA or lOnI
+nOn  = mstA or nOnI
+cOn  = cOnI
 kaOn = mstB or kaOnI
 klOn = mstB or klOnI
 knOn = mstB or knOnI
 kcOn = mstB or kcOnI
 
-gVP = "Sessions — timezone & retention"
+gVP = "Volume profiles — general"
 vpTz   = input.string("UTC", "Timezone (UTC, UTC+5:30, America/New_York …)", tooltip = "The timezone used to calculate all Killzone session times. Entering 'UTC+5:30' ensures session inputs match India Standard Time.", group = gVP)
+vpLtfMode = input.string("Auto", "Intrabar TF for volume", options = ["Auto", "Manual"], group = gVP)
+vpLtf  = input.timeframe("1", "  - Manual intrabar TF (≤ chart TF)", tooltip = "The lower timeframe used to calculate volume distribution inside the chart's candles. A smaller timeframe (like '1') gives highly accurate volume nodes, but uses more historical data. This MUST be equal to or smaller than your current chart timeframe.", group = gVP)
+vpRows = input.int(24, "Rows per profile", minval = 8, maxval = 200, tooltip = "How many horizontal price rows (bins) to divide the profile into. Higher numbers mean thinner, more granular rows.", group = gVP)
+vpVa   = input.float(70, "Value Area %", minval = 50, maxval = 95, tooltip = "The percentage of total volume that makes up the Value Area. 70% is standard.", group = gVP)
+vpWid  = input.int(40, "Histogram width (% of range)", minval = 10, maxval = 100, tooltip = "How far across the screen the longest volume bar (POC) extends, as a percentage of the profile's allotted space.", group = gVP)
+vpDays    = input.int(1, "Keep last N previous-day profiles", minval = 1, maxval = 8, tooltip = "How many complete previous days to keep on the chart. 1 means it will only show yesterday's profile.", group = gVP)
 vpSesDays = input.int(1, "Days of sessions to keep", minval = 1, maxval = 15, tooltip = "How many DAYS of session profiles/boxes to keep, counting the current day as day 1. With 1, ONLY the current day\'s sessions are visible: each session appears live while it runs today, and yesterday\'s prints are wiped at the day boundary.", group = gVP)
 vpDayTz   = input.string("Exchange", "Day boundary timezone (Exchange = auto)", tooltip = "The timezone used to determine when a new day starts for the Daily Profiles. 'Exchange' uses the chart's native exchange timezone.", group = gVP)
 
@@ -515,19 +853,131 @@ aRetPct  = input.float(50.0, "Retracement % for range alerts", minval = 1.0, max
 aMainRet = input.bool(false, "Price at N% of BOS*/CHOCH* range alert", group = gA, tooltip = "Fires when price gives back the set percentage of the MAIN leg — the move since the last BOS or CHOCH — measured back from that leg's extreme, on the tick it happens rather than at the close.\n\nIT DOES NOT WAIT FOR THE RANGE TO BE CONFIRMED. A break does not settle its range; the 3-candle pullback that confirms the next pivot does, and that is always later — those pullback candles are themselves the retracement. So the anchor is the highest point reached so far since the break (lowest in a bearish leg), and the alert is live from the break onward.\n\nIf price has not reached the level by the time the range is confirmed, the alert stays armed and fires on the first crossing afterwards.\n\nIt only fires on a move BACK from the extreme, never on a push in the trend direction, and never on the bar the level was established.")
 aIntRet  = input.bool(false, "Price at N% of internal iBOS/iCHOCH range alert", group = gA, tooltip = "The same rule on the INTERNAL leg — the move since the last iBOS or iCHOCH.\n\nThis is the tier the rule matters most for. Every internal break empties one internal level by design and it only refills when the 3-candle rule confirms the next pivot, a median of 16 bars later; the alert no longer waits for that. The anchor is the highest point reached since the internal event (lowest in a bearish leg), so an iBOS followed by a candle giving back the set percentage alerts on the touch.\n\nBetween a main BOS/CHOCH and the range's first iCHOCH there is no internal leg yet, so this stays silent until the internal trend exists.\n\nExpect more of these than the main one: internal legs are shorter and more frequent.")
 
-gPA = "Ⓐ Asia killzone — session window"
+gPA = "Ⓐ Asia killzone — volume profile"
 aSes  = input.session("0000-0400", "Asia session (in profile timezone)", group = gPA)
+aVol  = input.string("Total", "Volume", options = ["Total", "Up/Down"], group = gPA)
+aUpC  = input.color(color.new(color.teal, 72), "Up Volume", inline = "aUD", group = gPA)
+aDnC  = input.color(color.new(color.red, 72), "Down Volume", inline = "aUD", group = gPA)
+aVaUp = input.color(color.new(color.teal, 50), "VA Up", inline = "aVAc", group = gPA)
+aVaDn = input.color(color.new(color.red, 50), "VA Down", inline = "aVAc", group = gPA)
+aPo   = input.bool(true, "POC", inline = "aP", group = gPA)
+aPc   = input.color(color.orange, "", inline = "aP", group = gPA)
+aPw   = input.int(1, "W", minval = 1, maxval = 4, inline = "aP", group = gPA)
+aPs   = input.string("Solid", "", options = ["Solid", "Dashed", "Dotted"], inline = "aP", group = gPA)
+aVo   = input.bool(true, "VAH", inline = "aV", group = gPA)
+aVc   = input.color(color.teal, "", inline = "aV", group = gPA)
+aVw   = input.int(1, "W", minval = 1, maxval = 4, inline = "aV", group = gPA)
+aVs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "aV", group = gPA)
+aLo   = input.bool(true, "VAL", inline = "aL", group = gPA)
+aLc   = input.color(color.teal, "", inline = "aL", group = gPA)
+aLw   = input.int(1, "W", minval = 1, maxval = 4, inline = "aL", group = gPA)
+aLs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "aL", group = gPA)
+aExt  = input.bool(false, "Extend POC/VAH/VAL →", group = gPA)
 
-gPL = "Ⓛ London killzone — session window"
+gPL = "Ⓛ London killzone — volume profile"
 lSes  = input.session("0600-0900", "London session (in profile timezone)", group = gPL)
+lVol  = input.string("Total", "Volume", options = ["Total", "Up/Down"], group = gPL)
+lUpC  = input.color(color.new(color.blue, 72), "Up Volume", inline = "lUD", group = gPL)
+lDnC  = input.color(color.new(color.red, 72), "Down Volume", inline = "lUD", group = gPL)
+lVaUp = input.color(color.new(color.blue, 50), "VA Up", inline = "lVAc", group = gPL)
+lVaDn = input.color(color.new(color.red, 50), "VA Down", inline = "lVAc", group = gPL)
+lPo   = input.bool(true, "POC", inline = "lP", group = gPL)
+lPc   = input.color(color.orange, "", inline = "lP", group = gPL)
+lPw   = input.int(1, "W", minval = 1, maxval = 4, inline = "lP", group = gPL)
+lPs   = input.string("Solid", "", options = ["Solid", "Dashed", "Dotted"], inline = "lP", group = gPL)
+lVo   = input.bool(true, "VAH", inline = "lV", group = gPL)
+lVc   = input.color(color.blue, "", inline = "lV", group = gPL)
+lVw   = input.int(1, "W", minval = 1, maxval = 4, inline = "lV", group = gPL)
+lVs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "lV", group = gPL)
+lLo   = input.bool(true, "VAL", inline = "lL", group = gPL)
+lLc   = input.color(color.blue, "", inline = "lL", group = gPL)
+lLw   = input.int(1, "W", minval = 1, maxval = 4, inline = "lL", group = gPL)
+lLs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "lL", group = gPL)
+lExt  = input.bool(false, "Extend POC/VAH/VAL →", group = gPL)
 
-gPN = "Ⓝ New York killzone — session window"
+gPN = "Ⓝ New York killzone — volume profile"
 nSes  = input.session("1100-1400", "New York session (in profile timezone)", group = gPN)
+nVol  = input.string("Total", "Volume", options = ["Total", "Up/Down"], group = gPN)
+nUpC  = input.color(color.new(color.purple, 72), "Up Volume", inline = "nUD", group = gPN)
+nDnC  = input.color(color.new(color.red, 72), "Down Volume", inline = "nUD", group = gPN)
+nVaUp = input.color(color.new(color.purple, 50), "VA Up", inline = "nVAc", group = gPN)
+nVaDn = input.color(color.new(color.red, 50), "VA Down", inline = "nVAc", group = gPN)
+nPo   = input.bool(true, "POC", inline = "nP", group = gPN)
+nPc   = input.color(color.orange, "", inline = "nP", group = gPN)
+nPw   = input.int(1, "W", minval = 1, maxval = 4, inline = "nP", group = gPN)
+nPs   = input.string("Solid", "", options = ["Solid", "Dashed", "Dotted"], inline = "nP", group = gPN)
+nVo   = input.bool(true, "VAH", inline = "nV", group = gPN)
+nVc   = input.color(color.purple, "", inline = "nV", group = gPN)
+nVw   = input.int(1, "W", minval = 1, maxval = 4, inline = "nV", group = gPN)
+nVs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "nV", group = gPN)
+nLo   = input.bool(true, "VAL", inline = "nL", group = gPN)
+nLc   = input.color(color.purple, "", inline = "nL", group = gPN)
+nLw   = input.int(1, "W", minval = 1, maxval = 4, inline = "nL", group = gPN)
+nLs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "nL", group = gPN)
+nExt  = input.bool(false, "Extend POC/VAH/VAL →", group = gPN)
 
-gPC = "Ⓒ London Close killzone — session window"
+gPC = "Ⓒ London Close killzone — volume profile"
 cSes  = input.session("1400-1600", "London Close session (in profile timezone)", group = gPC)
+cVol  = input.string("Total", "Volume", options = ["Total", "Up/Down"], group = gPC)
+cUpC  = input.color(color.new(color.maroon, 72), "Up Volume", inline = "cUD", group = gPC)
+cDnC  = input.color(color.new(color.red, 72), "Down Volume", inline = "cUD", group = gPC)
+cVaUp = input.color(color.new(color.maroon, 50), "VA Up", inline = "cVAc", group = gPC)
+cVaDn = input.color(color.new(color.red, 50), "VA Down", inline = "cVAc", group = gPC)
+cPo   = input.bool(true, "POC", inline = "cP", group = gPC)
+cPc   = input.color(color.orange, "", inline = "cP", group = gPC)
+cPw   = input.int(1, "W", minval = 1, maxval = 4, inline = "cP", group = gPC)
+cPs   = input.string("Solid", "", options = ["Solid", "Dashed", "Dotted"], inline = "cP", group = gPC)
+cVo   = input.bool(true, "VAH", inline = "cV", group = gPC)
+cVc   = input.color(color.maroon, "", inline = "cV", group = gPC)
+cVw   = input.int(1, "W", minval = 1, maxval = 4, inline = "cV", group = gPC)
+cVs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "cV", group = gPC)
+cLo   = input.bool(true, "VAL", inline = "cL", group = gPC)
+cLc   = input.color(color.maroon, "", inline = "cL", group = gPC)
+cLw   = input.int(1, "W", minval = 1, maxval = 4, inline = "cL", group = gPC)
+cLs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "cL", group = gPC)
+cExt  = input.bool(false, "Extend POC/VAH/VAL →", group = gPC)
 
+gPD = "Ⓓ Previous days — daily volume profiles"
+dVol  = input.string("Total", "Volume", options = ["Total", "Up/Down"], group = gPD)
+dUpC  = input.color(color.new(color.gray, 72), "Up Volume", inline = "dUD", group = gPD)
+dDnC  = input.color(color.new(color.red, 72), "Down Volume", inline = "dUD", group = gPD)
+dVaUp = input.color(color.new(color.gray, 50), "VA Up", inline = "dVAc", group = gPD)
+dVaDn = input.color(color.new(color.red, 50), "VA Down", inline = "dVAc", group = gPD)
+dPo   = input.bool(true, "POC", inline = "dP", group = gPD)
+dPc   = input.color(color.orange, "", inline = "dP", group = gPD)
+dPw   = input.int(1, "W", minval = 1, maxval = 4, inline = "dP", group = gPD)
+dPs   = input.string("Solid", "", options = ["Solid", "Dashed", "Dotted"], inline = "dP", group = gPD)
+dVo   = input.bool(true, "VAH", inline = "dV", group = gPD)
+dVc   = input.color(color.gray, "", inline = "dV", group = gPD)
+dVw   = input.int(1, "W", minval = 1, maxval = 4, inline = "dV", group = gPD)
+dVs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "dV", group = gPD)
+dLo   = input.bool(true, "VAL", inline = "dL", group = gPD)
+dLc   = input.color(color.gray, "", inline = "dL", group = gPD)
+dLw   = input.int(1, "W", minval = 1, maxval = 4, inline = "dL", group = gPD)
+dLs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "dL", group = gPD)
+dExt  = input.bool(false, "Extend POC/VAH/VAL →", group = gPD)
 
+gPT = "Ⓣ Current day — anchored volume profile"
+tVol  = input.string("Total", "Volume", options = ["Total", "Up/Down"], group = gPT)
+tUpC  = input.color(color.new(color.aqua, 70), "Up Volume", inline = "tUD", group = gPT)
+tDnC  = input.color(color.new(color.red, 70), "Down Volume", inline = "tUD", group = gPT)
+tVaUp = input.color(color.new(color.aqua, 40), "VA Up", inline = "tVAc", group = gPT)
+tVaDn = input.color(color.new(color.red, 40), "VA Down", inline = "tVAc", group = gPT)
+tPo   = input.bool(true, "POC", inline = "tP", group = gPT)
+tPc   = input.color(color.orange, "", inline = "tP", group = gPT)
+tPw   = input.int(2, "W", minval = 1, maxval = 4, inline = "tP", group = gPT)
+tPs   = input.string("Solid", "", options = ["Solid", "Dashed", "Dotted"], inline = "tP", group = gPT)
+tVo   = input.bool(true, "VAH", inline = "tV", group = gPT)
+tVc   = input.color(color.aqua, "", inline = "tV", group = gPT)
+tVw   = input.int(1, "W", minval = 1, maxval = 4, inline = "tV", group = gPT)
+tVs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "tV", group = gPT)
+tLo   = input.bool(true, "VAL", inline = "tL", group = gPT)
+tLc   = input.color(color.aqua, "", inline = "tL", group = gPT)
+tLw   = input.int(1, "W", minval = 1, maxval = 4, inline = "tL", group = gPT)
+tLs   = input.string("Dashed", "", options = ["Solid", "Dashed", "Dotted"], inline = "tL", group = gPT)
+tExt  = input.bool(false, "Extend POC/VAH/VAL →", group = gPT)
+tPlc  = input.string("Left (day open)", "Placement", options = ["Left (day open)", "Right (chart edge)"], group = gPT)
+tRoff = input.int(20, "Right offset (bars from last candle)", minval = 5, maxval = 100, group = gPT)
 
 gKA = "Killzone box — Asia"
 kaF  = input.color(color.new(color.teal, 90), "Fill", inline = "ka", group = gKA)
@@ -1763,33 +2213,277 @@ else
         if (nTrend == 1 and low <= nLvl) or (nTrend == -1 and high >= nLvl)
             rtNnRet    := true
 
+f_autoLtf() =>
+    float cs = timeframe.in_seconds(timeframe.period)
+    string r = "1"
+    if cs <= 300
+        r := "1"
+    else if cs <= 900
+        r := "1"
+    else if cs <= 3600
+        r := "5"
+    else if cs <= 14400
+        r := "15"
+    else if cs <= 86400
+        r := "60"
+    else
+        r := "240"
+    r
+var string vpLtfUse = vpLtfMode == "Auto" ? f_autoLtf() : vpLtf
 
 float _cs = timeframe.in_seconds(timeframe.period)
 bool sesVisible = _cs <= 900
+bool dayVisible = _cs <= 3600
 var int dayNum = 0
 var int _keepSesBars = int(math.ceil((vpSesDays + 2) * 86400.0 / _cs))
+var int _keepDayBars = int(math.ceil((math.max(1, vpDays) + 2) * 86400.0 / _cs))
 
+bool _needLtf = (dayVisible and (tOn or dOn)) or (sesVisible and (aOn or lOn or nOn or cOn))
+f_ltfPull() =>
+    if _needLtf
+        request.security_lower_tf(syminfo.tickerid, vpLtfUse, [high, low, open, close, volume])
+    else
+        [array.new_float(), array.new_float(), array.new_float(), array.new_float(), array.new_float()]
+[ltfH, ltfL, ltfO, ltfC, ltfV] = f_ltfPull()
 
+type VPStyle
+    string volMode
+    color  upC
+    color  dnC
+    color  vaUpC
+    color  vaDnC
+    bool   pocOn
+    color  pocC
+    int    pocW
+    string pocS
+    bool   vahOn
+    color  vahC
+    int    vahW
+    string vahS
+    bool   valOn
+    color  valC
+    int    valW
+    string valS
+    bool   extLines
 
 type VPCol
     bool  on
     int   x1
     float hi
     float lo
+    array<float> prH
+    array<float> prL
+    array<float> vo
+    array<bool>  up
 
+type DrawQueue
+    array<box>  bq
+    array<line> lq
+    array<int>  bCnt
+    array<int>  lCnt
+    array<int>  dTag
 
 method begin(VPCol c) =>
     c.on := true
     c.x1 := bar_index
     c.hi := high
     c.lo := low
+    array.clear(c.prH)
+    array.clear(c.prL)
+    array.clear(c.vo)
+    array.clear(c.up)
 
 method feed(VPCol c) =>
     if c.on
         c.hi := math.max(c.hi, high)
         c.lo := math.min(c.lo, low)
+        int n = array.size(ltfH)
+        if n > 0
+            array.concat(c.prH, ltfH)
+            array.concat(c.prL, ltfL)
+            array.concat(c.vo,  ltfV)
+            for i = 0 to n - 1
+                array.push(c.up,  array.get(ltfC, i) >= array.get(ltfO, i))
+        else
+            array.push(c.prH, high)
+            array.push(c.prL, low)
+            array.push(c.vo,  nz(volume))
+            array.push(c.up,  close >= open)
 
+f_render(VPCol c, int x2, VPStyle st, DrawQueue dq, int maxProf, bool rightSide, int rightOff) =>
+    int n = array.size(c.prH)
+    if n > 0 and c.hi > c.lo
+        float rngAll = c.hi - c.lo
+        float tick   = syminfo.mintick
+        float tprF   = rngAll / vpRows / tick
+        int   tprA   = math.max(1, int(math.floor(tprF)))
+        int   tprB   = math.max(1, int(math.ceil(tprF)))
+        int   rowsA  = int(math.ceil(rngAll / (tprA * tick) - 1e-9))
+        int   rowsB  = int(math.ceil(rngAll / (tprB * tick) - 1e-9))
+        int   tpr    = math.abs(rowsA - vpRows) <= math.abs(rowsB - vpRows) ? tprA : tprB
+        float step   = tpr * tick
+        int   rows   = math.min(100, math.max(1, int(math.ceil(rngAll / step - 1e-9))))
+        binUp = array.new_float(rows, 0.0)
+        binDn = array.new_float(rows, 0.0)
+        float lo0  = c.lo
+        int   rMax = rows - 1
+        for i = 0 to n - 1
+            float v = nz(array.get(c.vo, i))
+            if v > 0
+                float cH  = array.get(c.prH, i)
+                float cL  = array.get(c.prL, i)
+                bool  isU = array.get(c.up, i)
+                int loBin = int(math.max(0, math.min(rMax, math.floor((cL - lo0) / step))))
+                int hiBin = int(math.max(0, math.min(rMax, math.floor((cH - lo0) / step))))
+                if hiBin < loBin
+                    hiBin := loBin
+                float rng = cH - cL
+                for b = loBin to hiBin
+                    float share = v
+                    if rng > 0
+                        float eb = lo0 + step * b
+                        float et = eb + step
+                        share := v * (math.min(cH, et) - math.max(cL, eb)) / rng
+                    if share > 0
+                        if isU
+                            array.set(binUp, b, array.get(binUp, b) + share)
+                        else
+                            array.set(binDn, b, array.get(binDn, b) + share)
+        binv = array.new_float(rows, 0.0)
+        float tot  = 0.0
+        float mx   = 0.0
+        int   pocI = 0
+        float ctr  = rMax / 2.0
+        for r = 0 to rMax
+            float vr = array.get(binUp, r) + array.get(binDn, r)
+            array.set(binv, r, vr)
+            tot += vr
+            if vr > mx
+                mx   := vr
+                pocI := r
+            else if vr == mx and math.abs(r - ctr) < math.abs(pocI - ctr)
+                pocI := r
+        if mx > 0
+            int vaU = pocI
+            int vaD = pocI
+            float remain = tot * vpVa / 100 - mx
+            bool vaGo = remain > 0
+            while vaGo and (vaU < rows - 1 or vaD > 0)
+                float vUp = vaU < rows - 1 ? array.get(binv, vaU + 1) : na
+                float vDn = vaD > 0 ? array.get(binv, vaD - 1) : na
+                bool pickUp = false
+                if na(vDn)
+                    pickUp := true
+                else if na(vUp)
+                    pickUp := false
+                else if vUp != vDn
+                    pickUp := vUp > vDn
+                else
+                    int dU = vaU + 1 - pocI
+                    int dD = pocI - (vaD - 1)
+                    pickUp := dU <= dD
+                float vSel = pickUp ? vUp : vDn
+                if vSel > remain
+                    vaGo := false
+                else
+                    remain -= vSel
+                    if pickUp
+                        vaU += 1
+                    else
+                        vaD -= 1
+            int span = math.max(1, x2 - c.x1)
+            int wMax = math.max(1, int(math.round(span * vpWid / 100.0)))
+            if rightSide
+                wMax := math.max(1, math.min(wMax, 480 - rightOff))
+            int anchor = rightSide ? x2 + rightOff + wMax : c.x1
 
+            int bPushed = 0
+            bool  upDn = st.volMode == "Up/Down"
+            color sUpC = st.upC
+            color sDnC = st.dnC
+            color sVaU = st.vaUpC
+            color sVaD = st.vaDnC
+            float hiV  = c.hi
+            for r = 0 to rMax
+                float v = array.get(binv, r)
+                if v > 0
+                    int w = math.max(1, int(math.round(wMax * v / mx)))
+                    bool inVA = r >= vaD and r <= vaU
+                    float top = math.min(hiV, lo0 + step * (r + 1))
+                    float bot = lo0 + step * r
+                    if upDn
+                        float uv = array.get(binUp, r)
+                        int uw = v > 0 ? int(math.round(w * uv / v)) : 0
+                        int dw = w - uw
+                        color ucol = inVA ? sVaU : sUpC
+                        color dcol = inVA ? sVaD : sDnC
+                        if rightSide
+                            if dw > 0
+                                array.push(dq.bq, box.new(anchor - dw, top, anchor, bot, border_color = color(na), bgcolor = dcol))
+                                bPushed += 1
+                            if uw > 0
+                                array.push(dq.bq, box.new(anchor - w, top, anchor - dw, bot, border_color = color(na), bgcolor = ucol))
+                                bPushed += 1
+                        else
+                            if uw > 0
+                                array.push(dq.bq, box.new(anchor, top, anchor + uw, bot, border_color = color(na), bgcolor = ucol))
+                                bPushed += 1
+                            if dw > 0
+                                array.push(dq.bq, box.new(anchor + uw, top, anchor + w, bot, border_color = color(na), bgcolor = dcol))
+                                bPushed += 1
+                    else
+                        color col = inVA ? sVaU : sUpC
+                        if rightSide
+                            array.push(dq.bq, box.new(anchor - w, top, anchor, bot, border_color = color(na), bgcolor = col))
+                            bPushed += 1
+                        else
+                            array.push(dq.bq, box.new(anchor, top, anchor + w, bot, border_color = color(na), bgcolor = col))
+                            bPushed += 1
+
+            int lPushed = 0
+            float pocB = lo0 + step * pocI
+            float pocP = (pocB + math.min(hiV, pocB + step)) / 2
+            float vahP = math.min(hiV, lo0 + step * (vaU + 1))
+            float valP = lo0 + step * vaD
+            int lineR = rightSide ? anchor : x2
+            if st.pocOn
+                array.push(dq.lq, line.new(c.x1, pocP, lineR, pocP, color = st.pocC, width = st.pocW, style = lstyle(st.pocS), extend = st.extLines ? extend.right : extend.none))
+                lPushed += 1
+            if st.vahOn
+                array.push(dq.lq, line.new(c.x1, vahP, lineR, vahP, color = st.vahC, width = st.vahW, style = lstyle(st.vahS), extend = st.extLines ? extend.right : extend.none))
+                lPushed += 1
+            if st.valOn
+                array.push(dq.lq, line.new(c.x1, valP, lineR, valP, color = st.valC, width = st.valW, style = lstyle(st.valS), extend = st.extLines ? extend.right : extend.none))
+                lPushed += 1
+
+            array.push(dq.bCnt, bPushed)
+            array.push(dq.lCnt, lPushed)
+            array.push(dq.dTag, dayNum)
+
+            while array.size(dq.bCnt) > maxProf
+                int remB = array.shift(dq.bCnt)
+                if array.size(dq.dTag) > 0
+                    array.shift(dq.dTag)
+                if remB > 0
+                    for i = 1 to remB
+                        if array.size(dq.bq) > 0
+                            box.delete(array.shift(dq.bq))
+
+            while array.size(dq.lCnt) > maxProf
+                int remL = array.shift(dq.lCnt)
+                if remL > 0
+                    for i = 1 to remL
+                        if array.size(dq.lq) > 0
+                            line.delete(array.shift(dq.lq))
+
+f_wipe(DrawQueue dq) =>
+    while array.size(dq.bq) > 0
+        box.delete(array.shift(dq.bq))
+    while array.size(dq.lq) > 0
+        line.delete(array.shift(dq.lq))
+    array.clear(dq.bCnt)
+    array.clear(dq.lCnt)
+    array.clear(dq.dTag)
 
 f_kzbox(VPCol c, int x2, color fillC, color brdC, string brdS, int brdW, string txt, string ts, color tc, string tHal, string tVal, array<box> q, array<label> lq, array<int> qd, int keep) =>
     hA = tHal == "Left" ? text.align_left : tHal == "Right" ? text.align_right : text.align_center
@@ -1812,7 +2506,19 @@ f_kzWipeLive(array<box> q, array<label> lq, array<int> qd) =>
         label.delete(array.pop(lq))
     array.clear(qd)
 
-f_sesPrune(array<box> kq, array<label> klq, array<int> kqd) =>
+f_sesPrune(DrawQueue dq, array<box> kq, array<label> klq, array<int> kqd) =>
+    while array.size(dq.dTag) > 0 and array.get(dq.dTag, 0) <= dayNum - vpSesDays
+        array.shift(dq.dTag)
+        int remB = array.shift(dq.bCnt)
+        if remB > 0
+            for i = 1 to remB
+                if array.size(dq.bq) > 0
+                    box.delete(array.shift(dq.bq))
+        int remL = array.shift(dq.lCnt)
+        if remL > 0
+            for i = 1 to remL
+                if array.size(dq.lq) > 0
+                    line.delete(array.shift(dq.lq))
     while array.size(kqd) > 0 and array.get(kqd, 0) <= dayNum - vpSesDays
         array.shift(kqd)
         if array.size(kq) > 0
@@ -1820,11 +2526,13 @@ f_sesPrune(array<box> kq, array<label> klq, array<int> kqd) =>
         if array.size(klq) > 0
             label.delete(array.shift(klq))
 
-f_session(VPCol c, bool inSes, bool boxOn, color bF, color bB, string bBs, int bBw, string bT, string bTs, color bTc, string bTh, string bTv, array<box> kq, array<label> klq, array<int> kqd, int keep) =>
+f_session(VPCol c, bool inSes, bool profOn, VPStyle st, DrawQueue dq, bool boxOn, color bF, color bB, string bBs, int bBw, string bT, string bTs, color bTc, string bTh, string bTv, array<box> kq, array<label> klq, array<int> kqd, int keep) =>
     if inSes and not c.on
         c.begin()
     else if not inSes and c.on
         c.on := false
+        if profOn
+            f_render(c, bar_index - 1, st, dq, keep + 1, false, 0)
         if boxOn
             f_kzbox(c, bar_index - 1, bF, bB, bBs, bBw, bT, bTs, bTc, bTh, bTv, kq, klq, kqd, keep)
     if c.on
@@ -1838,10 +2546,10 @@ string _sesA = f_sesShift(aSes, kzShift)
 string _sesL = f_sesShift(lSes, kzShift)
 string _sesN = f_sesShift(nSes, kzShift)
 string _sesC = f_sesShift(cSes, kzShift)
-bool inA = sesVisible and kaOn and not na(time(timeframe.period, _sesA, _tzA))
-bool inL = sesVisible and klOn and not na(time(timeframe.period, _sesL, _tzL))
-bool inN = sesVisible and knOn and not na(time(timeframe.period, _sesN, _tzN))
-bool inC = sesVisible and kcOn and not na(time(timeframe.period, _sesC, _tzC))
+bool inA = sesVisible and (aOn or kaOn) and not na(time(timeframe.period, _sesA, _tzA))
+bool inL = sesVisible and (lOn or klOn) and not na(time(timeframe.period, _sesL, _tzL))
+bool inN = sesVisible and (nOn or knOn) and not na(time(timeframe.period, _sesN, _tzN))
+bool inC = sesVisible and (cOn or kcOn) and not na(time(timeframe.period, _sesC, _tzC))
 string _dayTz = vpDayTz == "Exchange" ? syminfo.timezone : vpDayTz
 int _domS    = vpDayTz == "Exchange" ? 0 : dayofmonth(time, _dayTz)
 int _monS    = vpDayTz == "Exchange" ? 0 : month(time, _dayTz)
@@ -1852,12 +2560,29 @@ bool newDay = vpDayTz == "Exchange" ? _chgDay != 0 : (_chgDOMc != 0 or _chgMonc 
 if newDay
     dayNum += 1
 
-var VPCol colA = VPCol.new(false, na, na, na)
-var VPCol colL = VPCol.new(false, na, na, na)
-var VPCol colN = VPCol.new(false, na, na, na)
-var VPCol colC = VPCol.new(false, na, na, na)
+var VPCol colA = VPCol.new(false, na, na, na, array.new_float(), array.new_float(), array.new_float(), array.new_bool())
+var VPCol colL = VPCol.new(false, na, na, na, array.new_float(), array.new_float(), array.new_float(), array.new_bool())
+var VPCol colN = VPCol.new(false, na, na, na, array.new_float(), array.new_float(), array.new_float(), array.new_bool())
+var VPCol colC = VPCol.new(false, na, na, na, array.new_float(), array.new_float(), array.new_float(), array.new_bool())
+var VPCol colD = VPCol.new(false, na, na, na, array.new_float(), array.new_float(), array.new_float(), array.new_bool())
 
+var VPStyle stA = VPStyle.new(aVol, aUpC, aDnC, aVaUp, aVaDn, aPo, aPc, aPw, aPs, aVo, aVc, aVw, aVs, aLo, aLc, aLw, aLs, aExt)
+var VPStyle stL = VPStyle.new(lVol, lUpC, lDnC, lVaUp, lVaDn, lPo, lPc, lPw, lPs, lVo, lVc, lVw, lVs, lLo, lLc, lLw, lLs, lExt)
+var VPStyle stN = VPStyle.new(nVol, nUpC, nDnC, nVaUp, nVaDn, nPo, nPc, nPw, nPs, nVo, nVc, nVw, nVs, nLo, nLc, nLw, nLs, nExt)
+var VPStyle stC = VPStyle.new(cVol, cUpC, cDnC, cVaUp, cVaDn, cPo, cPc, cPw, cPs, cVo, cVc, cVw, cVs, cLo, cLc, cLw, cLs, cExt)
+var VPStyle stD = VPStyle.new(dVol, dUpC, dDnC, dVaUp, dVaDn, dPo, dPc, dPw, dPs, dVo, dVc, dVw, dVs, dLo, dLc, dLw, dLs, dExt)
+var VPStyle stT = VPStyle.new(tVol, tUpC, tDnC, tVaUp, tVaDn, tPo, tPc, tPw, tPs, tVo, tVc, tVw, tVs, tLo, tLc, tLw, tLs, tExt)
 
+var DrawQueue dqA = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
+var DrawQueue dqL = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
+var DrawQueue dqN = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
+var DrawQueue dqC = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
+var DrawQueue dqD = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
+var DrawQueue dqT = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
+var DrawQueue dqAv = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
+var DrawQueue dqLv = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
+var DrawQueue dqNv = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
+var DrawQueue dqCv = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
 
 var array<box>  kqA = array.new<box>()
 var array<box>  kqL = array.new<box>()
@@ -1887,34 +2612,102 @@ var array<int>   kqCvd = array.new<int>()
 if not onClose or barstate.isconfirmed
     if sesVisible and (last_bar_index - bar_index) <= _keepSesBars
         if newDay
-            f_sesPrune(kqA, kqAl, kqAd)
-            f_sesPrune(kqL, kqLl, kqLd)
-            f_sesPrune(kqN, kqNl, kqNd)
-            f_sesPrune(kqC, kqCl, kqCd)
-        if kaOn
-            f_session(colA, inA, kaOn, kaF, kaB, kaBs, kaBw, kaT, kaTs, kaTc, kaTh, kaTv, kqA, kqAl, kqAd, vpSesDays)
-        if klOn
-            f_session(colL, inL, klOn, klF, klB, klBs, klBw, klT, klTs, klTc, klTh, klTv, kqL, kqLl, kqLd, vpSesDays)
-        if knOn
-            f_session(colN, inN, knOn, knF, knB, knBs, knBw, knT, knTs, knTc, knTh, knTv, kqN, kqNl, kqNd, vpSesDays)
-        if kcOn
-            f_session(colC, inC, kcOn, kcF, kcB, kcBs, kcBw, kcT, kcTs, kcTc, kcTh, kcTv, kqC, kqCl, kqCd, vpSesDays)
+            f_sesPrune(dqA, kqA, kqAl, kqAd)
+            f_sesPrune(dqL, kqL, kqLl, kqLd)
+            f_sesPrune(dqN, kqN, kqNl, kqNd)
+            f_sesPrune(dqC, kqC, kqCl, kqCd)
+        if aOn or kaOn
+            f_session(colA, inA, aOn, stA, dqA, kaOn, kaF, kaB, kaBs, kaBw, kaT, kaTs, kaTc, kaTh, kaTv, kqA, kqAl, kqAd, vpSesDays)
+        if lOn or klOn
+            f_session(colL, inL, lOn, stL, dqL, klOn, klF, klB, klBs, klBw, klT, klTs, klTc, klTh, klTv, kqL, kqLl, kqLd, vpSesDays)
+        if nOn or knOn
+            f_session(colN, inN, nOn, stN, dqN, knOn, knF, knB, knBs, knBw, knT, knTs, knTc, knTh, knTv, kqN, kqNl, kqNd, vpSesDays)
+        if cOn or kcOn
+            f_session(colC, inC, cOn, stC, dqC, kcOn, kcF, kcB, kcBs, kcBw, kcT, kcTs, kcTc, kcTh, kcTv, kqC, kqCl, kqCd, vpSesDays)
 
+    if dayVisible and (tOn or dOn) and (last_bar_index - bar_index) <= _keepDayBars
+        if newDay and colD.on
+            colD.on := false
+            if dOn
+                f_render(colD, bar_index - 1, stD, dqD, vpDays, false, 0)
+        if not colD.on
+            colD.begin()
+        colD.feed()
+
+if tOn and dayVisible and barstate.islast and colD.on
+    f_wipe(dqT)
+    bool _tR = tPlc == "Right (chart edge)"
+    f_render(colD, bar_index, stT, dqT, 99, _tR, _tR ? tRoff : 0)
 
 if barstate.islast and sesVisible
+    f_wipe(dqAv)
     f_kzWipeLive(kqAv, kqAvl, kqAvd)
+    if aOn and colA.on
+        f_render(colA, bar_index, stA, dqAv, 1, false, 0)
     if kaOn and colA.on
         f_kzbox(colA, bar_index, kaF, kaB, kaBs, kaBw, kaT, kaTs, kaTc, kaTh, kaTv, kqAv, kqAvl, kqAvd, vpSesDays)
+    f_wipe(dqLv)
     f_kzWipeLive(kqLv, kqLvl, kqLvd)
+    if lOn and colL.on
+        f_render(colL, bar_index, stL, dqLv, 1, false, 0)
     if klOn and colL.on
         f_kzbox(colL, bar_index, klF, klB, klBs, klBw, klT, klTs, klTc, klTh, klTv, kqLv, kqLvl, kqLvd, vpSesDays)
+    f_wipe(dqNv)
     f_kzWipeLive(kqNv, kqNvl, kqNvd)
+    if nOn and colN.on
+        f_render(colN, bar_index, stN, dqNv, 1, false, 0)
     if knOn and colN.on
         f_kzbox(colN, bar_index, knF, knB, knBs, knBw, knT, knTs, knTc, knTh, knTv, kqNv, kqNvl, kqNvd, vpSesDays)
+    f_wipe(dqCv)
     f_kzWipeLive(kqCv, kqCvl, kqCvd)
+    if cOn and colC.on
+        f_render(colC, bar_index, stC, dqCv, 1, false, 0)
     if kcOn and colC.on
         f_kzbox(colC, bar_index, kcF, kcB, kcBs, kcBw, kcT, kcTs, kcTc, kcTh, kcTv, kqCv, kqCvl, kqCvd, vpSesDays)
 
+gVW = "7. VWAP"
+vwHide  = input.bool(true,  "Hide on 1D and above", group = gVW, tooltip = "VWAP is an intraday tool; this keeps it off daily/weekly/monthly charts even when enabled.")
+vwAnch  = input.string("Session", "Anchor period", options = ["Session", "Week", "Month", "Quarter", "Year"], group = gVW, tooltip = "Where the VWAP accumulation restarts. Session = every new trading day.")
+vwSrc   = input.source(hlc3, "Source", group = gVW)
+vwC     = input.color(#2962FF, "VWAP", inline = "vw0", group = gVW)
+vwW     = input.int(1, "Width", minval = 1, maxval = 5, inline = "vw0", group = gVW)
+vwBMode = input.string("Standard Deviation", "Bands mode", options = ["Standard Deviation", "Percentage"], group = gVW, tooltip = "Standard Deviation: bands at VWAP ± multiplier × stdev of price around VWAP. Percentage: bands at VWAP ± multiplier percent.")
+vwB1On  = input.bool(false, "Band #1", inline = "vb1", group = gVW)
+vwB1M   = input.float(1.0, "×", step = 0.5, minval = 0.1, inline = "vb1", group = gVW)
+vwB1C   = input.color(color.green, "", inline = "vb1", group = gVW)
+vwB2On  = input.bool(false, "Band #2", inline = "vb2", group = gVW)
+vwB2M   = input.float(2.0, "×", step = 0.5, minval = 0.1, inline = "vb2", group = gVW)
+vwB2C   = input.color(color.olive, "", inline = "vb2", group = gVW)
+vwB3On  = input.bool(false, "Band #3", inline = "vb3", group = gVW)
+vwB3M   = input.float(3.0, "×", step = 0.5, minval = 0.1, inline = "vb3", group = gVW)
+vwB3C   = input.color(color.teal, "", inline = "vb3", group = gVW)
+vwFill  = input.bool(true, "Fill bands", group = gVW)
+
+bool vwNew = switch vwAnch
+    "Session" => timeframe.change("1D")
+    "Week"    => timeframe.change("1W")
+    "Month"   => timeframe.change("1M")
+    "Quarter" => timeframe.change("3M")
+    => timeframe.change("12M")
+[vwVal, vwSd1u, vwSd1d] = ta.vwap(vwSrc, vwNew, 1)
+float vwSd   = vwSd1u - vwVal
+bool  vwShow = vwOn and not (vwHide and timeframe.isdwm)
+var bool vwSdMode = vwBMode == "Standard Deviation"
+f_vwBand(float m) =>
+    vwSdMode ? vwSd * m : vwVal * m / 100
+float vwB1 = f_vwBand(vwB1M)
+float vwB2 = f_vwBand(vwB2M)
+float vwB3 = f_vwBand(vwB3M)
+pVW  = plot(vwShow ? vwVal : na,                "VWAP",              color = vwC,   linewidth = vwW)
+pB1u = plot(vwShow and vwB1On ? vwVal + vwB1 : na, "VWAP band 1 upper", color = vwB1C)
+pB1d = plot(vwShow and vwB1On ? vwVal - vwB1 : na, "VWAP band 1 lower", color = vwB1C)
+pB2u = plot(vwShow and vwB2On ? vwVal + vwB2 : na, "VWAP band 2 upper", color = vwB2C)
+pB2d = plot(vwShow and vwB2On ? vwVal - vwB2 : na, "VWAP band 2 lower", color = vwB2C)
+pB3u = plot(vwShow and vwB3On ? vwVal + vwB3 : na, "VWAP band 3 upper", color = vwB3C)
+pB3d = plot(vwShow and vwB3On ? vwVal - vwB3 : na, "VWAP band 3 lower", color = vwB3C)
+fill(pB1u, pB1d, color = vwShow and vwB1On and vwFill ? color.new(vwB1C, 95) : na, title = "VWAP band 1 fill")
+fill(pB2u, pB2d, color = vwShow and vwB2On and vwFill ? color.new(vwB2C, 95) : na, title = "VWAP band 2 fill")
+fill(pB3u, pB3d, color = vwShow and vwB3On and vwFill ? color.new(vwB3C, 95) : na, title = "VWAP band 3 fill")
 
 almGate  = input.bool(false, "Arm alerts only after price crosses a level", group = gA, tooltip = "OFF (default) = the alert system behaves exactly as it always has: every enabled event fires the moment it happens.\n\nON = the indicator stays SILENT until price reaches the level below. From that moment it is armed for good and every enabled alert fires normally. Marks are still drawn on the chart the whole time — only the alerts are held back.\n\nThis is what lets ONE alert do the work of two: create a single alert on 'Any alert() function call' and it stays quiet until your price is reached, then delivers whichever structure events you ticked above.\n\nLeave the level at 0 to disable the gate even while this box is ticked.\n\nARMS ON TOUCH, NOT ON CLOSE: the test reads the bar's wick, evaluated on every tick, so the arm trips the moment price trades at your level. It never waits for the candle to close.\n\nIT MUST BE REACHED, NOT MERELY BE ON ONE SIDE (v15.6): the level has to be approached. The previous bar's close decides which side price is on, and the arm then waits for the wick to come to the level from that side — up to it if price is below, down to it if price is above. Before v15.6 the test only asked whether the level lay on one side of the bar, so a level ABOVE price satisfied 'low <= level' on the first live bar and the gate opened having touched nothing at all. A gap straight through the level still arms, exactly as an ordinary TradingView price alert would.\n\nLIVE BARS ONLY (v13.6.1): the arm can only be tripped by a bar arriving in real time, after the alert has started running. Before this, TradingView's replay of the chart's history when the alert is created would trip the arm on any historical touch of your level, leaving the gate already open and the arm doing nothing. The consequence is that the gate cannot be observed on historical bars — on a chart it stays un-armed until live bars arrive.")
 almGateP = input.float(0.0, "  - Arm price level", step = 0.01, group = gA, tooltip = "The price that arms the alerts. 0 = gate disabled, so alerts behave normally even with the box above ticked. Wicks count, exactly like an ordinary TradingView price alert.")
@@ -2001,7 +2794,6 @@ f_tfPack(bool on) =>
     int evOut = 0
     int inOut = 0
     int nnOut = 0
-    int bcOut = 0
     if on
         var SwingTracker tkHi = SwingTracker.new(true,  na, na, 0, na)
         var SwingTracker tkLo = SwingTracker.new(false, na, na, 0, na)
@@ -2290,47 +3082,66 @@ f_tfPack(bool on) =>
             fvgST := na
             fvgSB := na
         evOut := (swHi ? 1 : 0) + (swLo ? 2 : 0) + (frBull ? 4 : 0) + (frBear ? 8 : 0)
-        bcOut := bar_index + 1
-    [trOut, evOut, inOut, nnOut, bcOut]
+    [trOut, evOut, inOut, nnOut]
 
 int _chartSec = timeframe.in_seconds(timeframe.period)
-bool _u1   = tblOn and tblMaster and tbT1   and timeframe.in_seconds("1")   >= _chartSec
-bool _u2   = tblOn and tblMaster and tbT2   and timeframe.in_seconds("2")   >= _chartSec
-bool _u3   = tblOn and tblMaster and tbT3   and timeframe.in_seconds("3")   >= _chartSec
-bool _u5   = tblOn and tblMaster and tbT5   and timeframe.in_seconds("5")   >= _chartSec
-bool _u10  = tblOn and tblMaster and tbT10  and timeframe.in_seconds("10")  >= _chartSec
-bool _u15  = tblOn and tblMaster and tbT15  and timeframe.in_seconds("15")  >= _chartSec
-bool _u30  = tblOn and tblMaster and tbT30  and timeframe.in_seconds("30")  >= _chartSec
-bool _u45  = tblOn and tblMaster and tbT45  and timeframe.in_seconds("45")  >= _chartSec
-bool _u60  = tblOn and tblMaster and tbT60  and timeframe.in_seconds("60")  >= _chartSec
-bool _u120 = tblOn and tblMaster and tbT120 and timeframe.in_seconds("120") >= _chartSec
-bool _u180 = tblOn and tblMaster and tbT180 and timeframe.in_seconds("180") >= _chartSec
-bool _u240 = tblOn and tblMaster and tbT240 and timeframe.in_seconds("240") >= _chartSec
-bool _u360 = tblOn and tblMaster and tbT360 and timeframe.in_seconds("360") >= _chartSec
-bool _u480 = tblOn and tblMaster and tbT480 and timeframe.in_seconds("480") >= _chartSec
-bool _u720 = tblOn and tblMaster and tbT720 and timeframe.in_seconds("720") >= _chartSec
-bool _uD   = tblOn and tblMaster and tbTD   and timeframe.in_seconds("1D")  >= _chartSec
-bool _uW   = tblOn and tblMaster and tbTW   and timeframe.in_seconds("1W")  >= _chartSec
-bool _uM   = tblOn and tblMaster and tbTM   and timeframe.in_seconds("1M")  >= _chartSec
+int _capSec   = _chartSec >= 7200 ? timeframe.in_seconds("1M") : _chartSec == 900 ? timeframe.in_seconds("1W") : timeframe.in_seconds("1D")
+int _s1   = timeframe.in_seconds("1")
+int _s2   = timeframe.in_seconds("2")
+int _s3   = timeframe.in_seconds("3")
+int _s5   = timeframe.in_seconds("5")
+int _s10  = timeframe.in_seconds("10")
+int _s15  = timeframe.in_seconds("15")
+int _s30  = timeframe.in_seconds("30")
+int _s45  = timeframe.in_seconds("45")
+int _s60  = timeframe.in_seconds("60")
+int _s120 = timeframe.in_seconds("120")
+int _s180 = timeframe.in_seconds("180")
+int _s240 = timeframe.in_seconds("240")
+int _s360 = timeframe.in_seconds("360")
+int _s480 = timeframe.in_seconds("480")
+int _s720 = timeframe.in_seconds("720")
+int _sD   = timeframe.in_seconds("1D")
+int _sW   = timeframe.in_seconds("1W")
+int _sM   = timeframe.in_seconds("1M")
 
-[_t1,   _e1  , _i1, _n1, _b1] = request.security(syminfo.tickerid, "1", f_tfPack(_u1))
-[_t2,   _e2  , _i2, _n2, _b2] = request.security(syminfo.tickerid, "2", f_tfPack(_u2))
-[_t3,   _e3  , _i3, _n3, _b3] = request.security(syminfo.tickerid, "3", f_tfPack(_u3))
-[_t5,   _e5  , _i5, _n5, _b5] = request.security(syminfo.tickerid, "5", f_tfPack(_u5))
-[_t10,  _e10 , _i10, _n10, _b10] = request.security(syminfo.tickerid, "10", f_tfPack(_u10))
-[_t15,  _e15 , _i15, _n15, _b15] = request.security(syminfo.tickerid, "15", f_tfPack(_u15))
-[_t30,  _e30 , _i30, _n30, _b30] = request.security(syminfo.tickerid, "30", f_tfPack(_u30))
-[_t45,  _e45 , _i45, _n45, _b45] = request.security(syminfo.tickerid, "45", f_tfPack(_u45))
-[_t60,  _e60 , _i60, _n60, _b60] = request.security(syminfo.tickerid, "60", f_tfPack(_u60))
-[_t120, _e120, _i120, _n120, _b120] = request.security(syminfo.tickerid, "120", f_tfPack(_u120))
-[_t180, _e180, _i180, _n180, _b180] = request.security(syminfo.tickerid, "180", f_tfPack(_u180))
-[_t240, _e240, _i240, _n240, _b240] = request.security(syminfo.tickerid, "240", f_tfPack(_u240))
-[_t360, _e360, _i360, _n360, _b360] = request.security(syminfo.tickerid, "360", f_tfPack(_u360))
-[_t480, _e480, _i480, _n480, _b480] = request.security(syminfo.tickerid, "480", f_tfPack(_u480))
-[_t720, _e720, _i720, _n720, _b720] = request.security(syminfo.tickerid, "720", f_tfPack(_u720))
-[_tD,   _eD  , _iD, _nD, _bD] = request.security(syminfo.tickerid, "1D", f_tfPack(_uD))
-[_tW,   _eW  , _iW, _nW, _bW] = request.security(syminfo.tickerid, "1W", f_tfPack(_uW))
-[_tM,   _eM  , _iM, _nM, _bM] = request.security(syminfo.tickerid, "1M", f_tfPack(_uM))
+bool _u1   = tblOn and tblMaster and tbT1   and _s1   >= _chartSec and _s1   <= _capSec
+bool _u2   = tblOn and tblMaster and tbT2   and _s2   >= _chartSec and _s2   <= _capSec
+bool _u3   = tblOn and tblMaster and tbT3   and _s3   >= _chartSec and _s3   <= _capSec
+bool _u5   = tblOn and tblMaster and tbT5   and _s5   >= _chartSec and _s5   <= _capSec
+bool _u10  = tblOn and tblMaster and tbT10  and _s10  >= _chartSec and _s10  <= _capSec
+bool _u15  = tblOn and tblMaster and tbT15  and _s15  >= _chartSec and _s15  <= _capSec
+bool _u30  = tblOn and tblMaster and tbT30  and _s30  >= _chartSec and _s30  <= _capSec
+bool _u45  = tblOn and tblMaster and tbT45  and _s45  >= _chartSec and _s45  <= _capSec
+bool _u60  = tblOn and tblMaster and tbT60  and _s60  >= _chartSec and _s60  <= _capSec
+bool _u120 = tblOn and tblMaster and tbT120 and _s120 >= _chartSec and _s120 <= _capSec
+bool _u180 = tblOn and tblMaster and tbT180 and _s180 >= _chartSec and _s180 <= _capSec
+bool _u240 = tblOn and tblMaster and tbT240 and _s240 >= _chartSec and _s240 <= _capSec
+bool _u360 = tblOn and tblMaster and tbT360 and _s360 >= _chartSec and _s360 <= _capSec
+bool _u480 = tblOn and tblMaster and tbT480 and _s480 >= _chartSec and _s480 <= _capSec
+bool _u720 = tblOn and tblMaster and tbT720 and _s720 >= _chartSec and _s720 <= _capSec
+bool _uD   = tblOn and tblMaster and tbTD   and _sD   >= _chartSec and _sD   <= _capSec
+bool _uW   = tblOn and tblMaster and tbTW   and _sW   >= _chartSec and _sW   <= _capSec
+bool _uM   = tblOn and tblMaster and tbTM   and _sM   >= _chartSec and _sM   <= _capSec
+
+[_t1,   _e1  , _i1, _n1] = request.security(syminfo.tickerid, _u1   ? "1"   : timeframe.period, f_tfPack(_u1))
+[_t2,   _e2  , _i2, _n2] = request.security(syminfo.tickerid, _u2   ? "2"   : timeframe.period, f_tfPack(_u2))
+[_t3,   _e3  , _i3, _n3] = request.security(syminfo.tickerid, _u3   ? "3"   : timeframe.period, f_tfPack(_u3))
+[_t5,   _e5  , _i5, _n5] = request.security(syminfo.tickerid, _u5   ? "5"   : timeframe.period, f_tfPack(_u5))
+[_t10,  _e10 , _i10, _n10] = request.security(syminfo.tickerid, _u10  ? "10"  : timeframe.period, f_tfPack(_u10))
+[_t15,  _e15 , _i15, _n15] = request.security(syminfo.tickerid, _u15  ? "15"  : timeframe.period, f_tfPack(_u15))
+[_t30,  _e30 , _i30, _n30] = request.security(syminfo.tickerid, _u30  ? "30"  : timeframe.period, f_tfPack(_u30))
+[_t45,  _e45 , _i45, _n45] = request.security(syminfo.tickerid, _u45  ? "45"  : timeframe.period, f_tfPack(_u45))
+[_t60,  _e60 , _i60, _n60] = request.security(syminfo.tickerid, _u60  ? "60"  : timeframe.period, f_tfPack(_u60))
+[_t120, _e120, _i120, _n120] = request.security(syminfo.tickerid, _u120 ? "120" : timeframe.period, f_tfPack(_u120))
+[_t180, _e180, _i180, _n180] = request.security(syminfo.tickerid, _u180 ? "180" : timeframe.period, f_tfPack(_u180))
+[_t240, _e240, _i240, _n240] = request.security(syminfo.tickerid, _u240 ? "240" : timeframe.period, f_tfPack(_u240))
+[_t360, _e360, _i360, _n360] = request.security(syminfo.tickerid, _u360 ? "360" : timeframe.period, f_tfPack(_u360))
+[_t480, _e480, _i480, _n480] = request.security(syminfo.tickerid, _u480 ? "480" : timeframe.period, f_tfPack(_u480))
+[_t720, _e720, _i720, _n720] = request.security(syminfo.tickerid, _u720 ? "720" : timeframe.period, f_tfPack(_u720))
+[_tD,   _eD  , _iD, _nD] = request.security(syminfo.tickerid, _uD   ? "1D"  : timeframe.period, f_tfPack(_uD))
+[_tW,   _eW  , _iW, _nW] = request.security(syminfo.tickerid, _uW   ? "1W"  : timeframe.period, f_tfPack(_uW))
+[_tM,   _eM  , _iM, _nM] = request.security(syminfo.tickerid, _uM   ? "1M"  : timeframe.period, f_tfPack(_uM))
 
 almT1  = input.string("Price crosses level", "  - Slot 1 trigger", options = ["Price crosses level", "Price at N% of BOS*/CHOCH* range", "Price at N% of internal range", "BOS", "CHOCH", "iBOS", "iCHOCH", "Any structure event", "Any internal structure event", "Price at N% of inner nBOS/nCHOCH range", "nBOS", "nCHOCH", "Any inner structure event"], group = gA, tooltip = "What arms slot 1. Slot 1's own on/off switch, price and direction are the three boxes above this one.")
 
@@ -2399,7 +3210,7 @@ armBg    = input.color(color.new(color.black, 20), "Background", inline = "ar3",
 
 aNnRet   = input.bool(false, "Price at N% of inner nBOS/nCHOCH range alert", group = gA, tooltip = "The third tier of the same retracement rule, on the INNER nBOS/nCHOCH leg.\n\nFires the moment price gives back the set percentage of the leg that began at the last inner event — measured BACK FROM THAT LEG'S EXTREME, on the tick it happens rather than at the close.\n\nInner legs are the shortest of the three, so this is the most frequent and the twitchiest of the retracement alerts. It also depends on inner structure having a trend: between an internal event and the inner range's first nCHOCH there is no inner leg, and this stays silent.\n\nIt does not require 'Show inner structure' to be ticked — that switch only controls the drawing. The engine always runs.")
 
-f_tfRow(array<string> nm, array<int> tr, array<int> ev, array<int> intr, array<int> innr, array<int> bc, bool use, string disp, string tfs, int t, int e, int n, int w, int b) =>
+f_tfRow(array<string> nm, array<int> tr, array<int> ev, array<int> intr, array<int> innr, bool use, string disp, string tfs, int t, int e, int n, int w) =>
     if use
         bool isChartTf = tfs == timeframe.period
         array.push(nm, disp)
@@ -2407,7 +3218,91 @@ f_tfRow(array<string> nm, array<int> tr, array<int> ev, array<int> intr, array<i
         array.push(ev, e)
         array.push(intr, isChartTf ? iTrend : n)
         array.push(innr, isChartTf ? nTrend : w)
-        array.push(bc, isChartTf ? bar_index + 1 : b)
+
+int _tblRows = (_u1 ? 1 : 0) + (_u2 ? 1 : 0) + (_u3 ? 1 : 0) + (_u5 ? 1 : 0) + (_u10 ? 1 : 0) + (_u15 ? 1 : 0) + (_u30 ? 1 : 0) + (_u45 ? 1 : 0) + (_u60 ? 1 : 0) + (_u120 ? 1 : 0) + (_u180 ? 1 : 0) + (_u240 ? 1 : 0) + (_u360 ? 1 : 0) + (_u480 ? 1 : 0) + (_u720 ? 1 : 0) + (_uD ? 1 : 0) + (_uW ? 1 : 0) + (_uM ? 1 : 0)
+int _tblCols = 2 + (tblEvOn ? 1 : 0) + (tblInOn ? 1 : 0) + (tblInnOn ? 1 : 0)
+int _colEv   = tblEvOn ? 2 : -1
+int _colIn   = tblInOn ? (tblEvOn ? 3 : 2) : -1
+int _colInn  = tblInnOn ? (2 + (tblEvOn ? 1 : 0) + (tblInOn ? 1 : 0)) : -1
+
+string _rowSz = tsize(tblRowSz)
+var table smcTbl = na
+if barstate.islast and tblOn and tblMaster and _tblRows > 0
+    array<string> _rn = array.new<string>()
+    array<int>    _rt = array.new<int>()
+    array<int>    _re = array.new<int>()
+    array<int>    _ri = array.new<int>()
+    array<int>    _rw = array.new<int>()
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u1, "1m", "1", _t1, _e1, _i1, _n1)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u2, "2m", "2", _t2, _e2, _i2, _n2)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u3, "3m", "3", _t3, _e3, _i3, _n3)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u5, "5m", "5", _t5, _e5, _i5, _n5)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u10, "10m", "10", _t10, _e10, _i10, _n10)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u15, "15m", "15", _t15, _e15, _i15, _n15)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u30, "30m", "30", _t30, _e30, _i30, _n30)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u45, "45m", "45", _t45, _e45, _i45, _n45)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u60, "1h", "60", _t60, _e60, _i60, _n60)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u120, "2h", "120", _t120, _e120, _i120, _n120)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u180, "3h", "180", _t180, _e180, _i180, _n180)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u240, "4h", "240", _t240, _e240, _i240, _n240)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u360, "6h", "360", _t360, _e360, _i360, _n360)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u480, "8h", "480", _t480, _e480, _i480, _n480)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u720, "12h", "720", _t720, _e720, _i720, _n720)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _uD, "1D", "1D", _tD, _eD, _iD, _nD)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _uW, "1W", "1W", _tW, _eW, _iW, _nW)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _uM, "1M", "1M", _tM, _eM, _iM, _nM)
+    if na(smcTbl)
+        smcTbl := table.new(tblPos == "Top left" ? position.top_left : tblPos == "Top center" ? position.top_center : tblPos == "Top right" ? position.top_right : tblPos == "Middle left" ? position.middle_left : tblPos == "Middle right" ? position.middle_right : tblPos == "Bottom left" ? position.bottom_left : tblPos == "Bottom center" ? position.bottom_center : position.bottom_right, _tblCols, _tblRows + 1, bgcolor = tblBgAll, border_color = tblCelC, border_width = tblCelW, frame_color = tblFrmC, frame_width = tblFrmW)
+    table.cell(smcTbl, 0, 0, tblC1, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
+    table.cell(smcTbl, 1, 0, tblC2, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
+    if tblEvOn
+        table.cell(smcTbl, _colEv, 0, tblC3, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
+    if tblInOn
+        table.cell(smcTbl, _colIn, 0, tblC4, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
+    if tblInnOn
+        table.cell(smcTbl, _colInn, 0, tblC5, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
+    for i = 0 to array.size(_rn) - 1
+        int    _tv   = array.get(_rt, i)
+        int    _ev   = array.get(_re, i)
+        int    _iv   = array.get(_ri, i)
+        int    _wv   = array.get(_rw, i)
+        string _trTx = _tv == 1 ? tblBullTx : _tv == -1 ? tblBearTx : tblFlatTx
+        color  _trBg = _tv == 1 ? tblBullBg : _tv == -1 ? tblBearBg : tblTrNeuBg
+        color  _trTc = _tv == 1 ? tblBullTc : _tv == -1 ? tblBearTc : tblTrNeuTc
+        int  _r     = _ev
+        bool _eBear = _r >= 8
+        _r := _eBear ? _r - 8 : _r
+        bool _eBull = _r >= 4
+        _r := _eBull ? _r - 4 : _r
+        bool _eSwLo = _r >= 2
+        _r := _eSwLo ? _r - 2 : _r
+        bool _eSwHi = _r >= 1
+        string _evTx = ""
+        if _eSwHi
+            _evTx := tblSwHiTx
+        if _eSwLo
+            _evTx := _evTx == "" ? tblSwLoTx : _evTx + " + " + tblSwLoTx
+        if _eBull
+            _evTx := _evTx == "" ? tblFvgBTx : _evTx + " + " + tblFvgBTx
+        if _eBear
+            _evTx := _evTx == "" ? tblFvgSTx : _evTx + " + " + tblFvgSTx
+        bool _evNone = _evTx == ""
+        if _evNone
+            _evTx := tblNoneTx
+        string _inTx = _iv == 1 ? tblBullTx   : _iv == -1 ? tblBearTx   : tblFlatTx
+        color  _inBg = _iv == 1 ? tblInBullBg : _iv == -1 ? tblInBearBg : tblInNeuBg
+        color  _inTc = _iv == 1 ? tblInBullTc : _iv == -1 ? tblInBearTc : tblInNeuTc
+        string _wnTx = _wv == 1 ? tblBullTx    : _wv == -1 ? tblBearTx    : tblFlatTx
+        color  _wnBg = _wv == 1 ? tblInnBullBg : _wv == -1 ? tblInnBearBg : tblInnNeuBg
+        color  _wnTc = _wv == 1 ? tblInnBullTc : _wv == -1 ? tblInnBearTc : tblInnNeuTc
+        table.cell(smcTbl, 0, i + 1, array.get(_rn, i), text_color = tblRowTc, text_size = _rowSz, bgcolor = tblRowBg)
+        table.cell(smcTbl, 1, i + 1, _trTx, text_color = _trTc, text_size = _rowSz, bgcolor = _trBg)
+        if tblEvOn
+            table.cell(smcTbl, _colEv, i + 1, _evTx, text_color = _evNone ? tblEvNoneTc : tblEvTc, text_size = _rowSz, bgcolor = _evNone ? tblEvNoneBg : tblEvBg)
+        if tblInOn
+            table.cell(smcTbl, _colIn, i + 1, _inTx, text_color = _inTc, text_size = _rowSz, bgcolor = _inBg)
+        if tblInnOn
+            table.cell(smcTbl, _colInn, i + 1, _wnTx, text_color = _wnTc, text_size = _rowSz, bgcolor = _wnBg)
 
 var array<line>  innLn = array.new<line>()
 var array<label> innLb = array.new<label>()
@@ -2719,7 +3614,7 @@ alertcondition(emaXDn and almOk, "Bearish EMA cross", "Bearish EMA cross — {{t
 alertcondition((emaXUp or emaXDn) and almOk, "Any EMA cross", "EMA cross — {{ticker}} {{interval}}")
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  v1.6 ADDITIONS — ONE APPENDED BLOCK.
+//  v15.16 ADDITIONS — ONE APPENDED BLOCK.
 //  Every input below is declared AFTER all earlier inputs, so no existing input
 //  moves and saved settings carry over untouched (invariant 6). Groups render
 //  where their earliest-declared member sits, so the three new "max marks to
@@ -3018,103 +3913,3 @@ alertcondition(evNChoDn and almOk, "Bearish nCHOCH", "Bearish nCHOCH — {{ticke
 alertcondition((evNBosUp or evNBosDn) and almOk, "Any nBOS",   "nBOS — {{ticker}} {{interval}}")
 alertcondition((evNChoUp or evNChoDn) and almOk, "Any nCHOCH", "nCHOCH — {{ticker}} {{interval}}")
 alertcondition((evNBosUp or evNBosDn or evNChoUp or evNChoDn) and almOk, "Any inner structure event", "Inner structure event — {{ticker}} {{interval}}")
-
-tblMinBars = input.int(100, "Minimum bars a timeframe must supply before it is reported", minval = 0, maxval = 5000, group = gTbl, tooltip = "THE GUARD THAT STOPS THE TABLE GUESSING.\n\nEach row is computed by running the whole structure engine over the bars TradingView hands back for that timeframe. That engine is a state machine — it replays every pivot and every break from the first bar it can see — so the answer depends on HOW MANY bars it got. Hand it two monthly candles and it will still print something, and that something is meaningless.\n\nA row that received fewer bars than this reports the not-enough-data text below instead of a trend, in all three columns. 0 disables the guard and you are back to trusting whatever arrives.\n\n100 is the default because measurement on EURUSD put the boundary there: a monthly row built from 32 bars disagreed with the monthly chart, one built from 133 agreed with it exactly, as did every row with the full 291.\n\nThe row for the CHART\'s OWN timeframe is never gated — it does not go through request.security at all, it reads the same engine that draws on your screen, so it always has the chart\'s full history.\n\nTurn on the BARS column below to see the real numbers for your symbol and set this from evidence rather than from my default.")
-tblNaTx = input.string("n/a", "Not-enough-data text", inline = "na1", group = gTbl, tooltip = "Shown in place of a trend when a row is below the minimum above. Keep it visibly different from the neutral text — the two mean opposite things. Neutral (the dash) means the engine ran and found no break yet; this one means the engine could not run properly at all.")
-tblNaTc = input.color(color.new(#6f737a, 0), "Text", inline = "na1", group = gTbl)
-tblNaBg = input.color(#1e222d, "back", inline = "na1", group = gTbl)
-tblBarsOn = input.bool(false, "Show BARS column", inline = "na2", group = gTbl, tooltip = "Appends a column showing how many bars of each timeframe the script actually received. Off by default because it is a diagnostic, not a signal.\n\nTurn it on once, look at the numbers on the chart timeframes you trade, then set the minimum above just under the lowest number you are willing to trust, and turn it off again.\n\nIt is also the fastest way to see whether a symbol simply lacks the history: a pair listed two years ago cannot have 100 monthly candles and never will.")
-tblC6 = input.string("BARS", "Column 6 title", inline = "na2", group = gTbl)
-
-int _tblRows = (_u1 ? 1 : 0) + (_u2 ? 1 : 0) + (_u3 ? 1 : 0) + (_u5 ? 1 : 0) + (_u10 ? 1 : 0) + (_u15 ? 1 : 0) + (_u30 ? 1 : 0) + (_u45 ? 1 : 0) + (_u60 ? 1 : 0) + (_u120 ? 1 : 0) + (_u180 ? 1 : 0) + (_u240 ? 1 : 0) + (_u360 ? 1 : 0) + (_u480 ? 1 : 0) + (_u720 ? 1 : 0) + (_uD ? 1 : 0) + (_uW ? 1 : 0) + (_uM ? 1 : 0)
-int _tblCols = 2 + (tblEvOn ? 1 : 0) + (tblInOn ? 1 : 0) + (tblInnOn ? 1 : 0) + (tblBarsOn ? 1 : 0)
-int _colEv   = tblEvOn ? 2 : -1
-int _colIn   = tblInOn ? (tblEvOn ? 3 : 2) : -1
-int _colInn  = tblInnOn ? (2 + (tblEvOn ? 1 : 0) + (tblInOn ? 1 : 0)) : -1
-int _colBar  = tblBarsOn ? (2 + (tblEvOn ? 1 : 0) + (tblInOn ? 1 : 0) + (tblInnOn ? 1 : 0)) : -1
-
-string _rowSz = tsize(tblRowSz)
-var table smcTbl = na
-if barstate.islast and tblOn and tblMaster and _tblRows > 0
-    array<string> _rn = array.new<string>()
-    array<int>    _rt = array.new<int>()
-    array<int>    _re = array.new<int>()
-    array<int>    _ri = array.new<int>()
-    array<int>    _rw = array.new<int>()
-    array<int>    _rb = array.new<int>()
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _rb, _u1, "1m", "1", _t1, _e1, _i1, _n1, _b1)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _rb, _u2, "2m", "2", _t2, _e2, _i2, _n2, _b2)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _rb, _u3, "3m", "3", _t3, _e3, _i3, _n3, _b3)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _rb, _u5, "5m", "5", _t5, _e5, _i5, _n5, _b5)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _rb, _u10, "10m", "10", _t10, _e10, _i10, _n10, _b10)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _rb, _u15, "15m", "15", _t15, _e15, _i15, _n15, _b15)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _rb, _u30, "30m", "30", _t30, _e30, _i30, _n30, _b30)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _rb, _u45, "45m", "45", _t45, _e45, _i45, _n45, _b45)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _rb, _u60, "1h", "60", _t60, _e60, _i60, _n60, _b60)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _rb, _u120, "2h", "120", _t120, _e120, _i120, _n120, _b120)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _rb, _u180, "3h", "180", _t180, _e180, _i180, _n180, _b180)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _rb, _u240, "4h", "240", _t240, _e240, _i240, _n240, _b240)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _rb, _u360, "6h", "360", _t360, _e360, _i360, _n360, _b360)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _rb, _u480, "8h", "480", _t480, _e480, _i480, _n480, _b480)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _rb, _u720, "12h", "720", _t720, _e720, _i720, _n720, _b720)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _rb, _uD, "1D", "1D", _tD, _eD, _iD, _nD, _bD)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _rb, _uW, "1W", "1W", _tW, _eW, _iW, _nW, _bW)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _rb, _uM, "1M", "1M", _tM, _eM, _iM, _nM, _bM)
-    if na(smcTbl)
-        smcTbl := table.new(tblPos == "Top left" ? position.top_left : tblPos == "Top center" ? position.top_center : tblPos == "Top right" ? position.top_right : tblPos == "Middle left" ? position.middle_left : tblPos == "Middle right" ? position.middle_right : tblPos == "Bottom left" ? position.bottom_left : tblPos == "Bottom center" ? position.bottom_center : position.bottom_right, _tblCols, _tblRows + 1, bgcolor = tblBgAll, border_color = tblCelC, border_width = tblCelW, frame_color = tblFrmC, frame_width = tblFrmW)
-    table.cell(smcTbl, 0, 0, tblC1, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
-    table.cell(smcTbl, 1, 0, tblC2, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
-    if tblEvOn
-        table.cell(smcTbl, _colEv, 0, tblC3, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
-    if tblInOn
-        table.cell(smcTbl, _colIn, 0, tblC4, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
-    if tblInnOn
-        table.cell(smcTbl, _colInn, 0, tblC5, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
-    if tblBarsOn
-        table.cell(smcTbl, _colBar, 0, tblC6, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
-    for i = 0 to array.size(_rn) - 1
-        int    _bv   = array.get(_rb, i)
-        bool   _thin = tblMinBars > 0 and _bv < tblMinBars
-        int    _tv   = array.get(_rt, i)
-        int    _ev   = array.get(_re, i)
-        int    _iv   = array.get(_ri, i)
-        int    _wv   = array.get(_rw, i)
-        string _trTx = _thin ? tblNaTx : _tv == 1 ? tblBullTx : _tv == -1 ? tblBearTx : tblFlatTx
-        color  _trBg = _thin ? tblNaBg : _tv == 1 ? tblBullBg : _tv == -1 ? tblBearBg : tblTrNeuBg
-        color  _trTc = _thin ? tblNaTc : _tv == 1 ? tblBullTc : _tv == -1 ? tblBearTc : tblTrNeuTc
-        int  _r     = _ev
-        bool _eBear = _r >= 8
-        _r := _eBear ? _r - 8 : _r
-        bool _eBull = _r >= 4
-        _r := _eBull ? _r - 4 : _r
-        bool _eSwLo = _r >= 2
-        _r := _eSwLo ? _r - 2 : _r
-        bool _eSwHi = _r >= 1
-        string _evTx = ""
-        if _eSwHi
-            _evTx := tblSwHiTx
-        if _eSwLo
-            _evTx := _evTx == "" ? tblSwLoTx : _evTx + " + " + tblSwLoTx
-        if _eBull
-            _evTx := _evTx == "" ? tblFvgBTx : _evTx + " + " + tblFvgBTx
-        if _eBear
-            _evTx := _evTx == "" ? tblFvgSTx : _evTx + " + " + tblFvgSTx
-        bool _evNone = _evTx == ""
-        if _evNone
-            _evTx := tblNoneTx
-        string _inTx = _thin ? tblNaTx : _iv == 1 ? tblBullTx   : _iv == -1 ? tblBearTx   : tblFlatTx
-        color  _inBg = _thin ? tblNaBg : _iv == 1 ? tblInBullBg : _iv == -1 ? tblInBearBg : tblInNeuBg
-        color  _inTc = _thin ? tblNaTc : _iv == 1 ? tblInBullTc : _iv == -1 ? tblInBearTc : tblInNeuTc
-        string _wnTx = _thin ? tblNaTx : _wv == 1 ? tblBullTx    : _wv == -1 ? tblBearTx    : tblFlatTx
-        color  _wnBg = _thin ? tblNaBg : _wv == 1 ? tblInnBullBg : _wv == -1 ? tblInnBearBg : tblInnNeuBg
-        color  _wnTc = _thin ? tblNaTc : _wv == 1 ? tblInnBullTc : _wv == -1 ? tblInnBearTc : tblInnNeuTc
-        table.cell(smcTbl, 0, i + 1, array.get(_rn, i), text_color = tblRowTc, text_size = _rowSz, bgcolor = tblRowBg)
-        table.cell(smcTbl, 1, i + 1, _trTx, text_color = _trTc, text_size = _rowSz, bgcolor = _trBg)
-        if tblEvOn
-            table.cell(smcTbl, _colEv, i + 1, _evTx, text_color = _evNone ? tblEvNoneTc : tblEvTc, text_size = _rowSz, bgcolor = _evNone ? tblEvNoneBg : tblEvBg)
-        if tblInOn
-            table.cell(smcTbl, _colIn, i + 1, _inTx, text_color = _inTc, text_size = _rowSz, bgcolor = _inBg)
-        if tblInnOn
-            table.cell(smcTbl, _colInn, i + 1, _wnTx, text_color = _wnTc, text_size = _rowSz, bgcolor = _wnBg)
-        if tblBarsOn
-            table.cell(smcTbl, _colBar, i + 1, str.tostring(_bv), text_color = _thin ? tblNaTc : tblRowTc, text_size = _rowSz, bgcolor = _thin ? tblNaBg : tblRowBg)
