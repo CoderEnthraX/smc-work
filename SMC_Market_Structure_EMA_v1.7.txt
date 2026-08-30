@@ -1,11 +1,57 @@
 //@version=6
 // ═════════════════════════════════════════════════════════════════════════════
-//  SMC MARKET STRUCTURE — 3-CANDLE PULLBACK ENGINE + EMA  ·  v1.6
+//  SMC MARKET STRUCTURE — 3-CANDLE PULLBACK ENGINE + EMA  ·  v1.7
 //  Structure half of the toolkit. Companion: SMC Volume Profiles + VWAP.
 // ═════════════════════════════════════════════════════════════════════════════
 //  Built from Market_Structure_SMC v15.9 by removing every volume-profile and
 //  VWAP module and adding an EMA module. EVERY STRUCTURE RULE IS UNCHANGED: the
 //  engine block is byte-identical to v15.9.
+//
+//  v1.7  ONE CANDLE CAN NO LONGER SUPPLY A LEVEL AND TRIGGER ITS OWN
+//  PROMOTION ON THE SAME BAR.
+//    Reported on two charts. FIRST: a single wide candle swept the ceiling AND
+//    the floor, and both pivot-2 promotions fired on that one bar, so the whole
+//    range collapsed onto that candle — its high became the possible BOS and its
+//    low the possible CHOCH, neither of them a pivot anything had confirmed.
+//    SECOND: a BOS line anchored back at its original pivot but drawn at the low
+//    of a much later candle, because that candle wicked below the floor, closed
+//    back above it, and its own high cleared the opposite reference — sweep and
+//    trigger on one bar again, so the floor was promoted down to the wick of the
+//    very candle that made it.
+//    THE CAUSE, and it is the same one both times. The promotion asks two
+//    questions: was the level swept, and has price since taken out the opposite
+//    reference. Nothing stops BOTH from being answered by the SAME candle. A
+//    wide bar wicks through the level and, in the same range, trades past the
+//    reference on the other side — so the sweep is recorded and the trigger
+//    fires before the bar has even closed, and the level moves to a wick that
+//    is one bar old and has been confirmed by nothing.
+//    THE FIX, and it is deliberately the narrowest one that works. When the
+//    trigger is satisfied ON THE BAR THAT MADE THE SWEPT EXTREME, that sweep is
+//    flagged, and while it carries the flag the promotion additionally requires
+//    the swept wick to have been confirmed as a pivot by the 3-CANDLE PULLBACK
+//    RULE. A wick made on the current bar can never be confirmed on its own bar,
+//    so the collapse cannot happen; if the pullback arrives later, the promotion
+//    fires then, exactly as before. THE FLAG IS PER SWEEP: recording a new,
+//    deeper swept extreme clears it, and a level re-created by any route starts
+//    clean.
+//    WHAT IS NOT TOUCHED, on purpose. If the trigger arrives on a LATER bar than
+//    the sweep — which is the ordinary case, and the GBPCHF sequence v15.14
+//    change 2 was written for — nothing is flagged, nothing is checked, and the
+//    promotion behaves exactly as it did in v1.6. v15.14 change 2 is intact:
+//    an unconfirmed swept wick still takes the level. Only the one-candle case
+//    is gated.
+//    WHAT THE FIRST CHART NOW DOES: the ceiling is not promoted, so it stays on
+//    the original pivot and the break is measured there. The candle then closes
+//    through it and the opposite side re-anchors with f_retExtInc, whose window
+//    includes the break candle (v15.14 change 1) — so the new floor lands on
+//    that candle's low, the deepest point of the leg. The original pivot keeps
+//    the BOS, the newest low becomes the CHOCH*, which is the outcome asked for.
+//    ALL SIX PROMOTION SITES: main, internal and inner, up-break and down-break.
+//    ONE FIELD is added to the SLine type and one bool to each of the four
+//    internal and inner sweep records. NO INPUT is added, removed or moved, so
+//    saved settings carry over and no settings reset is needed. The 3-candle
+//    rule itself, the swing detector, the IDM gate, the alternation, the
+//    retracement alerts and every drawing rule are untouched.
 //
 //  v1.6  INNER ALERTS COMPLETED · TWO NEW LIVE-LINE PAIRS · 50% RANGE LINES ·
 //  A MANUAL LIMIT ON HOW MANY MARKS STAY ON THE CHART.
@@ -549,6 +595,7 @@ type SLine
     float idmP
     int   idmB
     bool  idmHit
+    bool  swpT
 
 hAlignOf(int sid, bool pend) =>
     if pend
@@ -600,7 +647,7 @@ mkSLine(float p, int b, int sid, bool draw) =>
     if draw and showT
         int lx = th == "Left" ? b : th == "Right" ? bar_index : int(math.avg(b, bar_index))
         lb := label.new(lx, p, txt, color = color(na), textcolor = tc, style = lblStyle(tv), size = tsize(ts))
-    SLine.new(ln, lb, b, p, sid, bar_index, false, na, na, na, na, na, false)
+    SLine.new(ln, lb, b, p, sid, bar_index, false, na, na, na, na, na, false, false)
 
 type SwingTracker
     bool  isHigh
@@ -728,6 +775,19 @@ f_confExt(array<int> arrB, array<float> arrP, bool wantLow, int afterBar, float 
                 b := cb
     [p, b]
 
+
+f_swpConf(array<int> arrB, int swpB) =>
+    bool ok = false
+    int  n  = array.size(arrB)
+    if not na(swpB) and n > 0
+        for i = n - 1 to 0
+            int cb = array.get(arrB, i)
+            if cb == swpB
+                ok := true
+                break
+            if cb < swpB
+                break
+    ok
 
 f_lastMinor(bool wantLow, int beforeBar) =>
     arrB = wantLow ? msLoB : msHiB
@@ -859,6 +919,7 @@ var int   iCeilB    = na
 var int   iCeilBorn = na
 var float iCeilSwp  = na
 var int   iCeilSwpB = na
+var bool  iCeilSwpT = false
 var float iCeilRef  = na
 var float iCeilIdmP   = na
 var bool  iCeilIdmHit = false
@@ -867,6 +928,7 @@ var int   iFlorB    = na
 var int   iFlorBorn = na
 var float iFlorSwp  = na
 var int   iFlorSwpB = na
+var bool  iFlorSwpT = false
 var float iFlorRef  = na
 var float iFlorIdmP   = na
 var bool  iFlorIdmHit = false
@@ -878,6 +940,7 @@ var int   nCeilB    = na
 var int   nCeilBorn = na
 var float nCeilSwp  = na
 var int   nCeilSwpB = na
+var bool  nCeilSwpT = false
 var float nCeilRef  = na
 var float nCeilIdmP   = na
 var bool  nCeilIdmHit = false
@@ -886,6 +949,7 @@ var int   nFlorB    = na
 var int   nFlorBorn = na
 var float nFlorSwp  = na
 var int   nFlorSwpB = na
+var bool  nFlorSwpT = false
 var float nFlorRef  = na
 var float nFlorIdmP   = na
 var bool  nFlorIdmHit = false
@@ -1054,6 +1118,7 @@ if not onClose or barstate.isconfirmed
                 if na(ceilS.swpP) or high > ceilS.swpP
                     ceilS.swpP := high
                     ceilS.swpB := bar_index
+                    ceilS.swpT := false
                 if showSweep and drawOk
                     label.new(bar_index, na, "×", yloc = yloc.abovebar, style = label.style_none, textcolor = colSweep, size = size.small)
                 if altMode and not ceilS.idmHit and not na(ceilS.idmP) and close > ceilS.price and not na(ceilS.swpP)
@@ -1066,7 +1131,9 @@ if not onClose or barstate.isconfirmed
             if not na(ceilS.swpP) and na(ceilS.refP)
                 [refPc, refBc] = f_retExtreme(ceilS.x1, false)
                 ceilS.refP := refPc
-            if trendDir == 1 and not na(ceilS.swpP) and not na(ceilS.refP) and low < ceilS.refP
+            if not na(ceilS.swpB) and ceilS.swpB == bar_index and trendDir == 1 and not na(ceilS.refP) and low < ceilS.refP
+                ceilS.swpT := true
+            if trendDir == 1 and not na(ceilS.swpP) and not na(ceilS.refP) and low < ceilS.refP and (not ceilS.swpT or f_swpConf(mnHiB, ceilS.swpB))
                 float spC = ceilS.swpP
                 int   sbC = ceilS.x1
                 if not na(spC)
@@ -1097,6 +1164,7 @@ if not onClose or barstate.isconfirmed
                 if na(florS.swpP) or low < florS.swpP
                     florS.swpP := low
                     florS.swpB := bar_index
+                    florS.swpT := false
                 if showSweep and drawOk
                     label.new(bar_index, na, "×", yloc = yloc.belowbar, style = label.style_none, textcolor = colSweep, size = size.small)
                 if altMode and not florS.idmHit and not na(florS.idmP) and close < florS.price and not na(florS.swpP)
@@ -1109,7 +1177,9 @@ if not onClose or barstate.isconfirmed
             if not na(florS.swpP) and na(florS.refP)
                 [refPf, refBf] = f_retExtreme(florS.x1, true)
                 florS.refP := refPf
-            if trendDir == -1 and not na(florS.swpP) and not na(florS.refP) and high > florS.refP
+            if not na(florS.swpB) and florS.swpB == bar_index and trendDir == -1 and not na(florS.refP) and high > florS.refP
+                florS.swpT := true
+            if trendDir == -1 and not na(florS.swpP) and not na(florS.refP) and high > florS.refP and (not florS.swpT or f_swpConf(mnLoB, florS.swpB))
                 float spF = florS.swpP
                 int   sbF = florS.x1
                 if not na(spF)
@@ -1246,7 +1316,10 @@ if not onClose or barstate.isconfirmed
                     if na(iCeilSwp) or high > iCeilSwp
                         iCeilSwp  := high
                         iCeilSwpB := bar_index
-                if iTrend == 1 and not na(iCeilSwp) and not na(iCeilRef) and low < iCeilRef
+                        iCeilSwpT := false
+                if not na(iCeilSwpB) and iCeilSwpB == bar_index and iTrend == 1 and not na(iCeilRef) and low < iCeilRef
+                    iCeilSwpT := true
+                if iTrend == 1 and not na(iCeilSwp) and not na(iCeilRef) and low < iCeilRef and (not iCeilSwpT or f_swpConf(pvHiB, iCeilSwpB))
                     float _ipC = iCeilSwp
                     int   _ibC = iCeilB
                     if not na(_ipC)
@@ -1298,7 +1371,10 @@ if not onClose or barstate.isconfirmed
                     if na(iFlorSwp) or low < iFlorSwp
                         iFlorSwp  := low
                         iFlorSwpB := bar_index
-                if iTrend == -1 and not na(iFlorSwp) and not na(iFlorRef) and high > iFlorRef
+                        iFlorSwpT := false
+                if not na(iFlorSwpB) and iFlorSwpB == bar_index and iTrend == -1 and not na(iFlorRef) and high > iFlorRef
+                    iFlorSwpT := true
+                if iTrend == -1 and not na(iFlorSwp) and not na(iFlorRef) and high > iFlorRef and (not iFlorSwpT or f_swpConf(pvLoB, iFlorSwpB))
                     float _ipF = iFlorSwp
                     int   _ibF = iFlorB
                     if not na(_ipF)
@@ -1443,7 +1519,10 @@ if not onClose or barstate.isconfirmed
                     if na(nCeilSwp) or high > nCeilSwp
                         nCeilSwp  := high
                         nCeilSwpB := bar_index
-                if nTrend == 1 and not na(nCeilSwp) and not na(nCeilRef) and low < nCeilRef
+                        nCeilSwpT := false
+                if not na(nCeilSwpB) and nCeilSwpB == bar_index and nTrend == 1 and not na(nCeilRef) and low < nCeilRef
+                    nCeilSwpT := true
+                if nTrend == 1 and not na(nCeilSwp) and not na(nCeilRef) and low < nCeilRef and (not nCeilSwpT or f_swpConf(pvHiB, nCeilSwpB))
                     float _npC = nCeilSwp
                     int   _nbC = nCeilB
                     if not na(_npC)
@@ -1497,7 +1576,10 @@ if not onClose or barstate.isconfirmed
                     if na(nFlorSwp) or low < nFlorSwp
                         nFlorSwp  := low
                         nFlorSwpB := bar_index
-                if nTrend == -1 and not na(nFlorSwp) and not na(nFlorRef) and high > nFlorRef
+                        nFlorSwpT := false
+                if not na(nFlorSwpB) and nFlorSwpB == bar_index and nTrend == -1 and not na(nFlorRef) and high > nFlorRef
+                    nFlorSwpT := true
+                if nTrend == -1 and not na(nFlorSwp) and not na(nFlorRef) and high > nFlorRef and (not nFlorSwpT or f_swpConf(pvLoB, nFlorSwpB))
                     float _npF = nFlorSwp
                     int   _nbF = nFlorB
                     if not na(_npF)
