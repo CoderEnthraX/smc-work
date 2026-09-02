@@ -1,753 +1,4 @@
 //@version=6
-// ═════════════════════════════════════════════════════════════════════════════
-//  SMC MARKET STRUCTURE — 3-CANDLE PULLBACK ENGINE  ·  v15.22
-//  + SESSION / DAILY / ANCHORED VOLUME PROFILES + KILLZONES + MTF TABLE
-// ═════════════════════════════════════════════════════════════════════════════
-//  v15.0 is v14.11 with the comments stripped, the retracement level display
-//  removed, and fourteen defaults changed. NO rule, engine or alert behaviour is
-//  different: the executable content is identical to v14.11 line for line apart
-//  from those fourteen input lines and the deleted display block.
-//
-//  v15.22  FOUR MASTER TOGGLES, A LIVE 50% LINE, AND THE max_bars_back FIX.
-//
-//  1. THE RUNTIME ERROR IS FIXED. "The requested historical offset (382) is
-//     beyond the historical buffer\'s limit (381), at f_hLine()" — reported on
-//     XAUUSD 1m at bar 14297. f_hLine draws the live iBOS*/nBOS* and 50% lines
-//     and runs inside "if barstate.islast", so it executes on one bar out of
-//     fourteen thousand. Pine sizes each series\' history buffer by reading the
-//     code, cannot infer a depth for a block that runs once, guesses small, and
-//     throws the moment something reaches one bar further. It is intermittent
-//     because the guess depends on how much history the chart loaded.
-//     THE FIX is the documented one: max_bars_back = 500 on the indicator
-//     declaration. No behaviour changes, no input moves.
-//
-//  2. THE 50% LINE CAN NOW BE TAKEN FROM THE LIVE LEG. "50% line measured from"
-//     in group 11 chooses between:
-//       RANGE — halfway between the two live extended lines, as before. It
-//         cannot exist until the broken side refills, which needs the 3-candle
-//         rule, and by then price is often already back through the midpoint.
-//       LIVE LEG — halfway between the running extreme of the leg and the
-//         opposite level, FROM THE CANDLE THAT BREAKS. Both ends exist on that
-//         bar: mRunHi resets to the break bar\'s high, and f_retExtInc
-//         re-anchors the opposite line in the same bar.
-//     It RATCHETS. A higher high moves the level up; a bearish candle does not
-//     move it back down, because the extreme has not changed. That is the
-//     behaviour asked for, stated exactly.
-//     "Live leg anchor extends on" picks what counts as a new extreme: any
-//     higher high (wick, the default, and what the retracement alerts use), or
-//     only a candle that CLOSES past the previous candle\'s high, which ignores
-//     a spike that closes back inside.
-//     One pair of settings drives all three tiers. The percentage keeps the
-//     same meaning it has in Range mode — measured up from the lower of the two
-//     prices, so 50 is the midpoint whichever way the trend runs.
-//
-//  3. FOUR MASTER TOGGLES, in group 0 at the top of the panel. Each one is an
-//     override: ON forces its behaviour, OFF hands control straight back to the
-//     individual settings, which are never overwritten.
-//       MTF — show every ticked timeframe up to 1M : lifts the ceiling.
-//       MTF — also show timeframes below the chart : lifts the floor. Both on
-//         gives every ticked timeframe, 1m to 1M.
-//       Structure — keep only the latest 10 marks per tier : ten main, ten
-//         internal, ten inner. The single biggest thing available for load time
-//         on a long chart.
-//       Structure — keep previous iBOS/iCHOCH and nBOS/nCHOCH : forces both
-//         history checkboxes on. It can only add history, never remove it.
-//     THE HISTORY TOGGLE NEEDED ONE STRUCTURAL CHANGE. inHist was read deep in
-//     the engine, long before any appended input exists, so the clear is now
-//     DEFERRED: the engine raises _intClrReq and the deletion happens at the end
-//     of the same bar, where the toggle is known. The visual result is identical
-//     — a main event bar never prints an internal mark, so nothing that was
-//     drawn on that bar is lost by moving the clear later. The inner clear was
-//     already flag-driven (rqClear) and simply moved with it.
-//     The MTF flag block, its eighteen requests and the table renderer move
-//     below the new inputs for the same reason. Executable code only; not one
-//     input declaration is reordered, so saved settings carry over.
-//
-//  NOT ONE ENGINE RULE CHANGES. Every BOS, CHOCH, iBOS, iCHOCH, nBOS and nCHOCH
-//  is classified exactly as in v15.20.
-//
-//  v15.20  THE MTF TABLE STOPS AT THE HIGHEST TIMEFRAME THE CHART CAN
-//  ACTUALLY FEED IT.  (v15.18 is withdrawn; this is built on v15.17.)
-//    THE PROBLEM, measured rather than assumed. A probe requesting
-//    bar_index + 1 from each timeframe reported how many bars request.security
-//    really returns. On EURUSD, from a 1m chart, the weekly series came back
-//    with NINE bars and the monthly with ONE. The per-timeframe engine is a
-//    state machine that replays every pivot and break from the first bar it can
-//    see, so one monthly candle does not make it fail — it makes it answer
-//    confidently and wrongly. That is where the monthly row reading BULLISH on
-//    a 15m chart and BEARISH on a 1h chart came from.
-//    THE RULE, which fixes it by not asking the question. A row is drawn only
-//    when its timeframe is at or above the chart AND at or below the ceiling
-//    the chart can support:
-//        chart 5m and below ....... ceiling 4h   (nothing daily or higher)
-//        chart 15m ................ ceiling 1W   (daily and weekly, no monthly)
-//        chart 10m, 30m, 45m, 1h .. ceiling 1D   (daily is the top row)
-//        chart 2h and above ....... ceiling 1M   (everything, through monthly)
-//    A 2m chart falls in with 5m and below, and the 61-to-119-minute band with
-//    1h and below; neither is named by the rule and both take the conservative
-//    side. THE 5m-AND-BELOW CEILING IS WHY: from a 1m chart the daily series
-//    comes back with about SIXTY-NINE bars, and on the reported EURUSD chart
-//    that row read BULLISH while the daily chart itself read BEARISH. Sixty-
-//    nine bars is not a daily structure, so the row is no longer offered.
-//    IT IS ALSO THE SECURITY-CALL OPTIMISATION. A row outside the ceiling has
-//    its _uX flag false, and a false flag already collapsed that request to
-//    timeframe.period — the chart\'s own data, already loaded, costing nothing.
-//    So on a 1m chart the weekly and monthly datasets are no longer fetched at
-//    all. Fewer real datasets per script is exactly what keeps an alert inside
-//    the server\'s budget, which is where the calculation errors came from.
-//    The requests stay DYNAMIC, as asked. The same mechanism means an alert
-//    created with the table switched off fetches no extra timeframe at all,
-//    because tblOn is part of every flag.
-//    TIDIER AND CHEAPER: each of the eighteen flag lines used to call
-//    timeframe.in_seconds on its own string, and now calls it once into a
-//    named constant that both tests read. The flags stay plain inline
-//    expressions on purpose — wrapping them in a helper function would let
-//    Pine promote them from simple to series, and a series flag would make
-//    the timeframe argument of request.security series too, which is exactly
-//    the thing being avoided here.
-//    AND ONE MICRO-OPTIMISATION in the table renderer: tsize(tblRowSz) was
-//    being recomputed six times per row on every redraw. It is hoisted to a
-//    single value.
-//    NO INPUT is added, removed or moved, so saved settings carry over and no
-//    settings reset is needed. NOT ONE ENGINE RULE CHANGES: the chart
-//    drawings, the three tiers, the alerts and every structure classification
-//    are identical to v15.17.
-//
-//  v15.17  ONE CANDLE CAN NO LONGER SUPPLY A LEVEL AND TRIGGER ITS OWN
-//  PROMOTION ON THE SAME BAR.
-//    Reported on two charts. FIRST: a single wide candle swept the ceiling AND
-//    the floor, and both pivot-2 promotions fired on that one bar, so the whole
-//    range collapsed onto that candle — its high became the possible BOS and its
-//    low the possible CHOCH, neither of them a pivot anything had confirmed.
-//    SECOND: a BOS line anchored back at its original pivot but drawn at the low
-//    of a much later candle, because that candle wicked below the floor, closed
-//    back above it, and its own high cleared the opposite reference — sweep and
-//    trigger on one bar again, so the floor was promoted down to the wick of the
-//    very candle that made it.
-//    THE CAUSE, and it is the same one both times. The promotion asks two
-//    questions: was the level swept, and has price since taken out the opposite
-//    reference. Nothing stops BOTH from being answered by the SAME candle. A
-//    wide bar wicks through the level and, in the same range, trades past the
-//    reference on the other side — so the sweep is recorded and the trigger
-//    fires before the bar has even closed, and the level moves to a wick that
-//    is one bar old and has been confirmed by nothing.
-//    THE FIX, and it is deliberately the narrowest one that works. When the
-//    trigger is satisfied ON THE BAR THAT MADE THE SWEPT EXTREME, that sweep is
-//    flagged, and while it carries the flag the promotion additionally requires
-//    the swept wick to have been confirmed as a pivot by the 3-CANDLE PULLBACK
-//    RULE. A wick made on the current bar can never be confirmed on its own bar,
-//    so the collapse cannot happen; if the pullback arrives later, the promotion
-//    fires then, exactly as before. THE FLAG IS PER SWEEP: recording a new,
-//    deeper swept extreme clears it, and a level re-created by any route starts
-//    clean.
-//    WHAT IS NOT TOUCHED, on purpose. If the trigger arrives on a LATER bar than
-//    the sweep — which is the ordinary case, and the GBPCHF sequence v15.14
-//    change 2 was written for — nothing is flagged, nothing is checked, and the
-//    promotion behaves exactly as it did in v15.16. v15.14 change 2 is intact:
-//    an unconfirmed swept wick still takes the level. Only the one-candle case
-//    is gated.
-//    WHAT THE FIRST CHART NOW DOES: the ceiling is not promoted, so it stays on
-//    the original pivot and the break is measured there. The candle then closes
-//    through it and the opposite side re-anchors with f_retExtInc, whose window
-//    includes the break candle (v15.14 change 1) — so the new floor lands on
-//    that candle's low, the deepest point of the leg. The original pivot keeps
-//    the BOS, the newest low becomes the CHOCH*, which is the outcome asked for.
-//    ALL SIX PROMOTION SITES: main, internal and inner, up-break and down-break.
-//    ONE FIELD is added to the SLine type and one bool to each of the four
-//    internal and inner sweep records. NO INPUT is added, removed or moved, so
-//    saved settings carry over and no settings reset is needed. The 3-candle
-//    rule itself, the swing detector, the IDM gate, the alternation, the
-//    retracement alerts and every drawing rule are untouched.
-//
-//  v15.16  INNER ALERTS COMPLETED · TWO NEW LIVE-LINE PAIRS · 50% RANGE LINES ·
-//  A MANUAL LIMIT ON HOW MANY MARKS STAY ON THE CHART.
-//  Four additions, all requested, and every one of them appended at the end of
-//  the script so that no existing input moves. Saved settings carry over and no
-//  settings reset is needed. Not one engine rule is touched: the classification
-//  of every BOS, CHOCH, iBOS, iCHOCH, nBOS and nCHOCH is identical to v15.15,
-//  and the diff to the engine block is four lines, all of them pushing a
-//  drawing that was already being created into an array so it can be counted.
-//
-//  1. THE INNER TIER CAN NOW BE ALERTED ON FROM THE CONDITION DROPDOWN.
-//     The inner engine has fired alert() calls for bullish nBOS, bearish nBOS,
-//     bullish nCHOCH, bearish nCHOCH and "any inner structure event" since the
-//     tier was added, but NOT ONE of them had an alertcondition entry — and
-//     alertcondition is what puts an event in the Condition dropdown of
-//     TradingView's Create Alert dialog. The main and internal tiers had their
-//     entries; the inner tier was reachable only through "Any alert() function
-//     call". SEVEN alertcondition entries are added: Bullish nBOS, Bearish
-//     nBOS, Bullish nCHOCH, Bearish nCHOCH, Any nBOS, Any nCHOCH and Any inner
-//     structure event. Two alert() toggles are added with them — "Any nBOS
-//     alert" and "Any nCHOCH alert" — because those two combined streams
-//     existed for the internal tier and not for the inner one. Every new entry
-//     obeys the arming gate exactly like the ones already there.
-//     The five arming slots also gain nBOS, nCHOCH and "Any inner structure
-//     event" as triggers, so an inner event can now arm the gate as well as
-//     pass through it.
-//
-//  2. iBOS* / iCHOCH* AND nBOS* / nCHOCH* LINES.
-//     The main engine draws its two live levels as the extended BOS* and CHOCH*
-//     lines. The internal and inner engines tracked exactly the same pair of
-//     levels and drew nothing at all until one of them broke, so the level
-//     price was about to test was invisible on two of the three tiers. Both
-//     pairs are now drawn, on the main engine's own naming rule: the level
-//     whose break would print a BOS gets the *BOS* style, the level whose break
-//     would print a CHOCH gets the *CHOCH* style, and a line therefore changes
-//     name and style the instant its tier's trend flips. While a tier's trend
-//     is still neutral — which every fresh range starts out as — BOTH of its
-//     lines read *CHOCH*, because the first break in either direction is a
-//     CHOCH. Four new style groups, each with the full set the main groups
-//     have: line colour, text colour, style, width, label text, text size,
-//     show-text, vertical and horizontal placement. Two on/off switches.
-//     They are redrawn in place on the last bar, so the pair costs four
-//     drawings no matter how long the chart is, and they can never crowd out
-//     the iBOS / iCHOCH history.
-//
-//  3. THE 50% LINE OF EVERY RANGE.
-//     The equilibrium of the BOS*/CHOCH* pair, of the iBOS*/iCHOCH* pair and of
-//     the nBOS*/nCHOCH* pair. Each has its own percentage — 50 by default, so
-//     it is the midpoint — measured UP FROM THE LOWER of the two lines, which
-//     is what makes 50 read the same whichever way the tier's trend is running.
-//     Each has the same complete style set the structure groups have, its own
-//     on/off switch, and an option to write the percentage into the label so it
-//     cannot go stale when the number is changed. One shared setting decides
-//     where all three lines start: the older level, the newer level, or the
-//     current bar.
-//     A LINE NEEDS BOTH OF ITS LEVELS. Every break empties the side it broke
-//     and it stays empty until the 3-candle rule confirms the next pivot, so
-//     there is no range to halve in between and the line is simply not drawn.
-//     The main line is on by default, the internal and inner ones are off,
-//     because three equilibrium lines at once is a busy chart.
-//
-//  4. MAX MARKS TO KEEP, ONE SETTING PER TIER.
-//     "Max BOS / CHOCH marks to keep" sits in the Engine group, "Max iBOS /
-//     iCHOCH" and "Max nBOS / nCHOCH" in the Internal + Inner group. 0 on all
-//     three keeps the behaviour every earlier version had. Any other number
-//     keeps that many of the most recent structure lines on that tier and
-//     deletes the rest oldest-first, along with their labels and their strong-
-//     point stamps. Set 3 and the chart carries the last three breaks only.
-//     DISPLAY ONLY, all three: the engine still computes every break on every
-//     bar, and every alert still fires whatever these are set to. The live
-//     BOS* / CHOCH* pair and the two new live pairs are never counted or
-//     deleted by them — those are the current levels, not history.
-//
-//  v15.15  THE PIVOT-2 PROMOTION NO LONGER MOVES THE ANCHOR.
-//    Reported on BTCUSD 15m after v15.14: a main BOS and a main CHOCH printing
-//    on adjacent candles a few points apart.
-//    THE CAUSE, and it is v15.5 all over again. v15.14 promoted the level to
-//    the swept wick AND set the new line x1 to the SWEEP BAR:
-//        int sbC = ceilS.swpB
-//        ceilS := mkSLine(spC, sbC, sdC, drawOk)
-//    When that ceiling is later broken the opposite side re-anchors with
-//    f_retExtInc(ceilS.x1, false), which scans from x1 + 1. With x1 sitting on
-//    the sweep bar, the SWEEP CANDLE OWN LOW is outside the window — and so is
-//    everything between the original pivot and the sweep. refP never covered
-//    the sweep bar either, so nothing else compensates. The new floor comes out
-//    shallower than the leg really was, and the next candle closes straight
-//    back through it: BOS, then CHOCH, one bar apart.
-//    v15.5 fixed the identical fault for the equal-price retest and stated it
-//    plainly: move x1 forward and that window shrinks, so the floor lands on a
-//    shallow low inside the real leg. Invariant 2 says the same thing —
-//    re-creating the trend-side line inside a range must not re-scope it.
-//    THE FIX: the promotion takes the swept wick PRICE and keeps the ORIGINAL
-//    anchor bar, at all six sites. The rule you asked for in v15.14 is intact —
-//    the level still becomes the swept wick — only the scope is preserved.
-//    MEASURED over 83,239 randomised promotion-then-break sequences: the two
-//    give a different floor in 9,035 of them (10.9%), and the kept anchor is
-//    deeper or equal in every single one. It never raises a floor.
-//    Six lines. No input added, removed or moved; no settings reset needed.
-//
-//  v15.14  TWO RULE CHANGES, BOTH REQUESTED, BOTH IN ALL THREE ENGINES.
-//
-//  1. THE BREAK CANDLE NOW COUNTS TOWARDS THE OPPOSITE LEVEL.
-//     Reported on GBPCAD 4h: candles 1-4 formed the pullback that confirmed a
-//     swing high; candle 5 wicked BELOW candle 4 low, then closed above the
-//     ceiling and printed the iBOS. The new floor landed on candle 4 low, not
-//     on candle 5 wick, even though candle 5 wick was the deepest point of that
-//     pullback and happened before the break close.
-//     THE CAUSE, one clause in f_retExtreme:
-//         int jEnd = sz - 1          // index of the CURRENT bar
-//         for j = j0 to jEnd - 1     // <- the break candle is skipped
-//     It implemented the documented rule literally — "the extreme wick STRICTLY
-//     BETWEEN the broken pivot candle and the break candle, both excluded".
-//     Excluding the pivot candle is right. Excluding the BREAK candle is not:
-//     it discards the deepest point of the leg in exactly the case that matters
-//     most, where the candle sweeps the previous low, takes the liquidity, and
-//     then closes up through the level. That wick is the strong low.
-//     THE FIX: f_retExtInc, identical except that it scans to jEnd, is used at
-//     the SIX opposite-side re-anchors — main, internal and inner, up-break and
-//     down-break. It can only ever deepen the level, and only when the break
-//     candle genuinely made the leg extreme; on an ordinary break candle the
-//     two functions return the same bar, so nothing else moves.
-//     NOT CHANGED, deliberately: the six opposite-REFERENCE calls that arm the
-//     pivot-2 promotion, the two IDM taken-past tests, and the two Module 1
-//     alternation re-arms all still use the exclusive f_retExtreme.
-//     The strong-point stamps follow the new level, because they read the same
-//     result — so the marks now sit on the sweep wick.
-//
-//  2. A PIVOT-2 PROMOTION TAKES THE SWEPT WICK.
-//     Reported on GBPCHF 4h: P1 was the ceiling and P2 the floor, confirmed by
-//     the P1-P2 pullback satisfying the 3-candle rule. P3 then wicked ABOVE P1
-//     and closed back inside — a sweep — and P4 took out P2. P4 became the
-//     possible CHOCH, but P3 never became the possible BOS, so the later break
-//     was measured against P1 at 1.0922 instead of P3 at 1.0944.
-//     THE CAUSE: the promotion called f_confExt, which requires the replacement
-//     to be a 3-candle-CONFIRMED pivot (v13.4, extended to internal in v13.6).
-//     P3 high was never confirmed, so f_confExt returned na, no promotion fired
-//     and the original pivot kept the line — which is what the rulebook said.
-//     THE RULE, as requested: once a pullback has satisfied the 3-candle rule,
-//     no later pullback has to satisfy it again until a break happens. So the
-//     swept extreme itself takes the level.
-//     THE FIX: the six promotions now take the recorded sweep extreme
-//     (ceilS.swpP / florS.swpP, iCeilSwp / iFlorSwp, nCeilSwp / nFlorSwp) and
-//     its bar, instead of asking f_confExt for a confirmed pivot. f_confExt has
-//     no callers left; the definition is kept so this is easy to revert.
-//     BOTH TRIGGERS ARE UNCHANGED. A promotion still requires a genuine sweep
-//     of the level AND price then taking out the opposite reference. This is
-//     not "any wick can become a level".
-//     IT DOES REVERSE INVARIANT 4 for this one path, which v13.4 added on
-//     purpose. Invariant 4 has been reworded rather than quietly broken. If a
-//     mark ever lands on a wick you do not consider structure, this is the
-//     first thing to look at.
-//
-//  MEASURED IN NODE against both reported sequences: change 1 moves the floor
-//  from candle 4 low to the break candle wick and is inert on an ordinary break
-//  candle; change 2 leaves the ceiling on P1 under the old code and promotes it
-//  to P3 swept wick under the new one, and is inert when no sweep occurred.
-//  NO INPUT is added, removed or moved, so saved settings carry over and no
-//  settings reset is needed. Module 1, the 3-candle rule itself, the alternating
-//  and free-running streams, the retracement alerts and the arming gate are all
-//  untouched. Existing alerts should be recreated only if you want them to see
-//  the new levels.
-//
-//  v15.13  EMA IS OFF BY DEFAULT AND HAS A MASTER SWITCH AT THE TOP.
-//    NEW INPUT: "▶ EMA — show exponential moving averages", off by default,
-//    drawn in group 0 Master Visibility Toggles alongside MASTER A and B.
-//    While it is off the module is completely inert: no line, no ribbon, no
-//    label, and no EMA cross alert can fire. Turn it on and the EMAs appear
-//    exactly as group 9 has them set — 9, 21, 50 and 200, with 100 available.
-//    IT IS A GATE, NOT AN OVERRIDE. Unlike MASTER A and MASTER B, which force
-//    their whole group on and ignore the individual boxes, this one can only
-//    silence the module. It will never switch on an EMA you unticked. That is
-//    deliberate: a show/hide switch for one module wants to preserve your
-//    per-EMA choices, not overrule them.
-//    The five per-EMA checkboxes keep their previous defaults, because a
-//    master that turned on and drew nothing would be worse than useless.
-//    WHERE IT SITS: declared AFTER every other input and placed on screen with
-//    group = gTog. A group renders where its earliest-declared member sits, so
-//    it appears at the top while costing no declaration shift — all existing
-//    inputs keep their positions and saved settings carry over untouched.
-//    ta.ema still runs on every bar whatever the switch says, because a ta.*
-//    function must to keep its state correct. It is one multiply and one add.
-//
-//  v15.12  LONDON KILLZONE DEFAULT SESSION IS NOW 0600-0900.
-//    Was 0700-1000. One default value; the input itself has not moved and no
-//    input has been added or removed, so every saved setting still lines up.
-//    It drives the London killzone BOX and the London session VOLUME PROFILE
-//    together, because both read the same window, and the killzone hour shift
-//    still applies on top of it.
-//    A DEFAULT ONLY TAKES EFFECT ON A FRESH START. A chart that already has
-//    this indicator on it keeps whatever is saved in its settings — it will
-//    still say 0700-1000. To pick the new default up, either type 0600-0900
-//    into the London session field yourself, or remove the indicator and
-//    re-add it (Defaults -> Reset settings does the same).
-//
-//  v15.11  EMA MODULE ADDED TO THE COMPLETE INDICATOR.
-//    The EMA module built for the split structure file is now here too, so one
-//    file carries everything: the three structure engines, volume profiles,
-//    VWAP, killzones, the MTF table, the alert system and now EMAs.
-//      · five EMAs — 9 / 21 / 50 / 100 / 200, each with its own on-off,
-//        length, colour and width on one row (100 is off by default)
-//      · ribbon fill between EMA 1 and EMA 2, coloured by which is on top
-//      · EMA 1 / EMA 2 cross alerts, delivered through the same "Any alert()
-//        function call" alert as everything else and obeying the arming gate
-//      · last-bar labels with an offset so they sit clear of price
-//    All five EMAs are CALCULATED whether or not they are drawn. ta.* functions
-//    must run on every bar to keep their state correct, and it keeps the ribbon
-//    and the cross right while a line is hidden. An EMA is one multiply and one
-//    add per bar, so the cost is not measurable next to the rest of this script.
-//    EVERY INPUT IS APPENDED AT THE END (invariant 6). All 425 existing inputs
-//    keep their declaration positions, so saved settings carry over and NO
-//    settings reset is needed. No engine, rule, level, mark or existing alert
-//    changes. The EMA lines are ON by default — untick EMA 1/2/3/5 in group 9
-//    if you want the chart exactly as it was.
-//
-//  v15.10  THE RETRACEMENT LATCH WAS SPENT WHERE NO ALERT COULD FIRE.
-//    REPORTED: XAUUSD 1m, retracement alerts at 30% on BOS/CHOCH and
-//    iBOS/iCHOCH. An armed alert created 17:04:36 armed at 17:05:16 and then
-//    said nothing until 17:41:00 — a bar boundary — while an equivalent alert
-//    created at another moment reported touches mid-candle at real seconds
-//    (20:00:23, 20:58:54). Same settings, same percentage, different behaviour.
-//    THE FAULT: the "already reported" latch was set inside the touch test —
-//        if not mainRetFired and not _mNewLvl
-//            if (trendDir == 1 and low <= mLvl) or ...
-//                rtMainRet    := true
-//                mainRetFired := true      <- here
-//    which runs at global scope on EVERY bar, including every bar of the
-//    historical replay TradingView performs when an alert is created. Alerts
-//    can never fire on historical bars, so the first touch of a level was
-//    consumed by history and the level arrived at the live edge already spent.
-//    It could then only report again once the leg made a new extreme and
-//    rebuilt the level — and mRunHi / mRunLo only move at a BAR CLOSE, so the
-//    recovery landed on a bar boundary. That is the :00 timestamp, and the
-//    35 minutes of silence before it.
-//    IT WAS NEVER ABOUT THE ARMING GATE. Modelled tick by tick with Pine
-//    semantics — per-tick var rollback, the bar-close-gated extreme, the
-//    _mNewLvl guard, alert.freq_once_per_bar and a historical replay phase —
-//    the old code behaves IDENTICALLY with the gate on and off: both swallow
-//    the live touch at 17:05:30 and report at 17:07:30 instead. Whether an
-//    alert looked correct depended only on where in the leg it was created.
-//    The gate made it more visible because a gated alert is usually created
-//    deliberately, mid-leg, on a level price has already been trading around.
-//    THE FIX: the touch test now only REPORTS. The latch is burned after the
-//    gate, and only where an alert can actually be delivered:
-//        if almOk and barstate.isrealtime
-//            if rtMainRet
-//                mainRetFired := true
-//            ...
-//    History can no longer consume a level, and neither can a shut gate.
-//    MEASURED: with the fix both configurations fire at 17:05:30, on the touch,
-//    at a real second — armed and non-armed now behave identically, which is
-//    what was asked for. No alert that fires today is lost.
-//    Three lines moved. No input added, removed or moved, so saved settings
-//    carry over and NO settings reset is needed. No engine, rule, level, mark
-//    or percentage changes. Existing alerts must be DELETED AND RECREATED —
-//    they run their own frozen copy of the old code.
-//
-//  v15.9  ALL FOUR KILLZONES ON THE LINE SWITCH, AND THE LINES ARE NAMED.
-//    1. WHY LONDON CLOSE HAD NO LINES. Nothing was wrong with the line code —
-//       f_kzEdge was already called on the London Close queues. v15.7 had taken
-//       the London Close BOX out of MASTER B, so with that box off there was no
-//       box for the lines to attach to. kcOn goes back to
-//           kcOn = mstB or kcOnI
-//       so MASTER B is once again all four killzone boxes. THIS REVERSES HALF
-//       OF v15.7 and is deliberate. The other half stands: the London Close
-//       SESSION PROFILE is still NOT driven by MASTER B (cOn = cOnI), so the
-//       master still draws boxes and no volume profiles. Checked over all 64
-//       switch combinations against the new specification: 0 disagreements.
-//    2. THE LINES NOW CARRY THEIR KILLZONE NAME, with one set of controls for
-//       all four instead of four separate groups:
-//         - Text position   Above the top line (default) / Under the bottom line
-//         - Text align      Left / Center (default) / Right
-//         - Text colour     one picker for all four
-//         - Text size       one dropdown for all four
-//       The name itself is still each killzone own Text field, so they stay
-//       individually renameable and an empty field means no label for that one.
-//       While the line switch is on these four settings REPLACE each killzone
-//       Text vert. / Text horiz. / Colour / Size; switch it off and every one of
-//       those comes straight back untouched.
-//       Mechanically the box text is cleared with box.set_text and the label the
-//       box pushed into its parallel label queue is blanked, so a killzone can
-//       never print its name twice — the Outside Top / Outside Bottom setting
-//       puts the name in a LABEL rather than in the box, and both paths are
-//       handled.
-//    LIFETIME, the part that carries real risk (see v13.6 bug #4): the label
-//    queue is wiped in full alongside the line queue on every last-bar
-//    execution and shares the same 120-line cap, so at most 120 lines and 60
-//    labels exist at once against TradingView budgets of 500 each. Modelled
-//    over 300 days x 5 executions at 1, 8 and 15 days of sessions, with and
-//    without text: counts exact every time, zero orphaned lines or labels, and
-//    nothing created at all while the switch is off.
-//    FOUR INPUTS APPENDED after the three from v15.8. All 421 earlier inputs
-//    keep their declaration positions, so saved settings carry over and no
-//    settings reset is needed. No engine, rule, mark or alert is touched.
-//
-//  v15.8  KILLZONE BOXES AS TOP AND BOTTOM LINES ONLY — one switch.
-//    NEW, in the toggle list at the top of the settings:
-//      - Killzone boxes — top and bottom line only   (off by default)
-//      - Line colour  ·  Line width
-//    ON  = all four killzone boxes are drawn as two solid horizontal lines,
-//          one on the session high and one on the session low. The fill and
-//          the left/right edges are suppressed. The session text is untouched.
-//    OFF = every box returns to its own Fill / Border / Border style / Border
-//          width exactly as set per killzone. It overrides, it never
-//          overwrites, so nothing of yours is changed underneath.
-//
-//    TWO CONSTRAINTS SHAPED THE IMPLEMENTATION, both worth knowing.
-//    1. Pine boxes have no per-side border control — border_color, _width and
-//       _style apply to all four sides at once. So a top-and-bottom-only box
-//       cannot be asked for directly. The box is made fully transparent
-//       (bgcolor and border_color set to na) and two real lines are drawn on
-//       its top and bottom edges, read back from the box itself with
-//       box.get_left / _top / _right / _bottom, so the lines cannot drift from
-//       the session window they belong to.
-//    2. f_kzbox is defined 138 input declarations BEFORE the end of the file,
-//       so it cannot read an appended input. Declaring the three new inputs
-//       next to it would have shifted 138 inputs and cost a full settings
-//       reset. Instead the drawing is DEFERRED to the end of the script (the
-//       v14.0 / v14.1 pattern) where it reads the boxes back out of the
-//       kqA / kqL / kqN / kqC and kqAv / kqLv / kqNv / kqCv queues they were
-//       already stored in. Drawing objects keep whatever state they were last
-//       given, so restyling them on the last bar is all that is needed.
-//
-//    DRAWING BUDGET, because v13.6 bug #4 was exactly this class of mistake —
-//    an unbounded queue that made TradingView start deleting the oldest
-//    drawings, main BOS/CHOCH lines included. The queue is wiped in full and
-//    rebuilt on each last-bar execution and is capped at 120 lines. Modelled
-//    over 400 days x 5 executions per day at 1, 3, 8 and 15 days of sessions:
-//    the queue never exceeded the cap, held exactly two lines per visible box
-//    every time, and every line created was either still queued or deleted —
-//    zero orphans. With the switch off it creates no lines and touches no box.
-//    Worst case 120 of the 500-drawing budget; at the default 1 day it is 16.
-//
-//    THREE INPUTS, ALL APPENDED AT THE VERY END (invariant 6) and placed on
-//    screen with group = gTog, which is why they appear at the TOP of the
-//    settings: a group renders where its earliest-declared member sits. All
-//    418 existing inputs keep their exact declaration positions, so saved
-//    settings carry over and NO settings reset is needed. No engine, rule,
-//    mark or alert is touched.
-//
-//  v15.7  MASTER B IS NOW THE THREE KILLZONE BOXES AND NOTHING ELSE.
-//    MASTER B was wired to five things: the London Close SESSION PROFILE plus
-//    all four killzone boxes —
-//        cOn  = mstB or cOnI        <- the London Close volume profile
-//        kaOn = mstB or kaOnI
-//        klOn = mstB or klOnI
-//        knOn = mstB or knOnI
-//        kcOn = mstB or kcOnI       <- the London Close box
-//    so switching it on drew a full session volume profile and a fourth box
-//    that were never wanted from a box toggle.
-//    NOW: MASTER B drives the Asia, London and New York killzone BOXES only.
-//        cOn  = cOnI                <- own checkbox only
-//        kaOn = mstB or kaOnI
-//        klOn = mstB or klOnI
-//        knOn = mstB or knOnI
-//        kcOn = kcOnI               <- own checkbox only
-//    The London Close session profile and the London Close box are both still
-//    available from their own checkboxes in the toggle list; they are simply no
-//    longer forced on by the master. With MASTER B OFF nothing at all changes:
-//    verified over all 32 combinations of the five individual switches, the
-//    resolved flags are identical to v15.6.1. Over all 64 combinations the new
-//    wiring matches the requested behaviour exactly; the old wiring differed in
-//    24 of them.
-//    NOTE, because it is easy to misread on the chart: a session PROFILE
-//    appearing while MASTER B is on is MASTER A's doing. MASTER A is ON by
-//    default (v15.3) and covers VWAP, the anchored and previous-day profiles
-//    and the Asia / London / New York session profiles. MASTER B has never
-//    controlled those and still does not.
-//    Two resolution lines and one label/tooltip change. NO input is added,
-//    removed or moved, so saved settings carry over and no reset is needed.
-//    No engine, rule, mark or alert is touched.
-//
-//  v15.6.1  COMPILE FIX IN THE v15.6 TOOLTIP TEXT. No behaviour change.
-//    Error at 2177:706, Syntax error at input "Touches". Two of the sentences
-//    v15.6 added to the arm tooltips quoted an option name using RAW DOUBLE
-//    QUOTES inside a Pine string literal, so the literal ended at that quote
-//    and the parser met a bare identifier immediately afterwards.
-//    Both now use single quotes, which this file has always used safely inside
-//    double-quoted strings (see the profile tooltips). No escape sequence is
-//    relied on anywhere.
-//    Not one line of logic differs from v15.6: the arming gate, the three
-//    engines, every alert and all 418 inputs are byte-identical apart from the
-//    two tooltip strings and this header.
-//    The build now runs a string-literal lexer over the whole file, validated
-//    against v15.5 as a known-good control, so an unescaped quote cannot ship
-//    again.
-//
-//  v15.6  THE ARMING GATE OPENED WITHOUT PRICE EVER REACHING THE LEVEL.
-//    REPORTED: EURUSD 1m. "Arm alerts only after price crosses a level" ON, arm
-//    price level 1.15743, "Arms when price" = Either, slot 1 trigger "Price
-//    crosses level", only the iCHOCH box ticked, one alert created on "Any
-//    alert() function call". Price never traded above 1.15660 all day, yet the
-//    iCHOCH alerts arrived from the start and the ARM panel read ARMED.
-//    THE FAULT — one line, the price trigger inside f_armHit:
-//        0 => lvl > 0 and (dir == "Touches from below" ? high >= lvl
-//                        : dir == "Touches from above" ? low  <= lvl
-//                        : (high >= lvl or low <= lvl))
-//    "Either" is "high >= lvl or low <= lvl". Price sitting BELOW the level
-//    satisfies "low <= lvl" on its own, so the gate opened on the FIRST LIVE
-//    BAR having touched nothing. The same trivially-true test broke the other
-//    two options whenever price was already on the far side: "Touches from
-//    above" armed instantly while price was below it, "Touches from below"
-//    armed instantly while price was above it. The test asked "is the level on
-//    one side of this bar?" when it had to ask "did price REACH the level?".
-//    WHY IT SURVIVED SO LONG: v13.6.1's barstate.isrealtime guard stopped
-//    history from pre-arming the latch, so the readout correctly showed WAITING
-//    across all of history and then flipped to ARMED on the first live bar —
-//    which is indistinguishable from an arm that works.
-//    THE FIX: a touch now requires the APPROACH SIDE. The previous bar's close
-//    fixes which side of the level price is on, and the level must be reached
-//    from that side:
-//        from below = close[1] <= lvl and high >= lvl
-//        from above = close[1] >= lvl and low  <= lvl
-//        Either     = whichever of the two applies to where price actually is
-//    Everything else about the gate is untouched: still a WICK test, never a
-//    close; still evaluated at global scope on every tick, so it trips intrabar;
-//    still live bars only; still one permanent latch; still five OR-ed slots,
-//    first to fire opens it for good. A gap straight through the level still
-//    arms, exactly as an ordinary TradingView price alert would.
-//    MEASURED IN NODE against an independent ground truth — the level lying
-//    inside a live bar's traded range, never either implementation's own
-//    output. Over 3,000 random series: the old "Either" armed in 2,224 of the
-//    2,224 series where price NEVER reached the level (100% false) and armed
-//    EARLY in 694 of the 776 where it did. The new test produced 0 false arms
-//    and armed on the exact touch bar in all 776. Across 2,331 arm events it
-//    never once armed without price trading at, or gapping through, the level.
-//    Old "Touches from above" false-armed 1,518 times and "from below" 706;
-//    both are now 0. On the reported setup the old gate delivered all eight
-//    seeded iCHOCH alerts before any touch, the new one delivered none.
-//    NO INPUT IS ADDED, REMOVED OR MOVED. Two tooltips are reworded, which is
-//    cosmetic, so saved settings carry over and NO settings reset is needed.
-//    Nothing else changes: not the 3-candle rule, not any of the three engines,
-//    not the retracement alerts, not which events each checkbox reports.
-//    Also corrected in that same tooltip: a double-encoded em dash that has
-//    been sitting there since at least v14.7 is now a plain em dash.
-//
-//  v15.5  AN EQUAL-PRICE PIVOT NO LONGER MOVES THE PIVOT. All three engines.
-//    THE FAULT: "EQUAL-LEVEL RETEST — a pivot at exactly the standing price keeps
-//    the level and re-anchors the line to the most recent touch." The PRICE was
-//    kept, but the ANCHOR BAR jumped forward to the later touch, and that anchor
-//    is what the opposite side re-anchors from on a break:
-//        f_retExtreme(ceilS.x1, false) = the lowest low between the pivot and the
-//        break bar.
-//    Move x1 forward and that window shrinks, so the new CHOCH* floor lands on a
-//    shallow low inside the real leg instead of the leg's actual extreme. Reported
-//    on a 3m BTCUSD chart where two highs touched 64538.23 exactly: the retest
-//    moved the anchor from P1 to P2, and the CHOCH* floor came out at P3 (64250)
-//    instead of P4 (63830). The range was nested inside the true one.
-//    It also silently reset that level's born bar, its armed sweep and its opposite
-//    reference, so a sweep in progress was forgotten.
-//    THE RULE, as it should be: an equal high is the SAME pivot being retested, not
-//    a new one. The first touch owns the level. Only a genuinely higher high (or a
-//    lower low) may take it, and only into an empty slot.
-//    THE FIX: the equal-price retest is removed from all three engines.
-//      MAIN     "adoptC or retestC" -> "adoptC", and the chart-start branch now
-//               also refuses a pivot equal to the standing level (_cEq / _fEq), so
-//               the rule holds while the trend is still neutral too.
-//      INTERNAL "if na(iCeilP) or aPhP == iCeilP" -> "if na(iCeilP)"
-//      INNER    "if na(nCeilP) or aPhP == nCeilP" -> "if na(nCeilP)"
-//    Nothing else changes: not the 3-candle rule, the sweep test, the pivot-2
-//    promotion, the opposite-side re-anchor, the retracement alerts or any input.
-//
-//  v15.4  "Show inner structure" is ON by default. One input default, nothing
-//    else. The inner engine has always RUN regardless of this switch — it only
-//    ever gated the drawing — so no rule, level, alert or event changes; the
-//    nBOS / nCHOCH marks simply appear now instead of being computed silently.
-//    Inner marks are sparse by nature: the inner range is neutral until its own
-//    first nCHOCH, so expect long stretches with nothing drawn.
-//
-//  v15.3  NEW DEFAULTS + A MASTER "WHITE STRUCTURE" SWITCH.
-//    NEW INPUT, declared FIRST so its group renders above the Master Visibility
-//    Toggles: "White BOS / CHOCH lines and text". ON turns all twelve main
-//    BOS / CHOCH / BOS* / CHOCH* line and text colours white; OFF returns every
-//    one of them to whatever its own colour picker says. It overrides, it does not
-//    overwrite — your per-event colours are untouched underneath.
-//    It does NOT touch iBOS / iCHOCH or nBOS / nCHOCH, which have their own colours.
-//    *** THIS SHIFTS EVERY INPUT BY ONE DECLARATION PLACE. TradingView matches
-//    saved settings by declaration order, so reset the settings once after loading
-//    (remove the indicator and re-add it, or Defaults -> Reset settings). You have
-//    to do that anyway for the eleven new defaults below to appear, so it is the
-//    same single reset, not an extra one.
-//    NEW DEFAULTS: MASTER A on · rows per profile 24 · max history to draw 5000 ·
-//    iBOS/iCHOCH line and text blue · keep previous iBOS/iCHOCH off · keep previous
-//    nBOS/nCHOCH off · strong internal mark 💎 · strong inner mark 🧨 · EVENT
-//    column off · VWAP band #1 off (#2 and #3 were already off).
-//    NOTE: there is no "keep previous" switch for the MAIN engine — it never had
-//    one. Main BOS/CHOCH history is bounded by "Max history to draw" alone, now
-//    5000 bars. Only internal and inner have that checkbox, and both are now off.
-//    No rule, no engine and no alert behaviour changes.
-//
-//  v15.2  THE PIVOT SHIFT RULE — the main engine used the wrong reference.
-//    THE RULE: P1 sweeps P0's high. P1 becomes the new main pivot ONLY IF price
-//    then sweeps or closes below P0's PULLBACK EXTREME LOW (without that being a
-//    CHOCH). If P1's pullback never reaches that low, P0 KEEPS the level, a close
-//    above P0 is the BOS, and a close below P0's pullback extreme is the CHOCH.
-//    THE FAULT: the main engine armed the promotion against f_firstConf — the
-//    FIRST CONFIRMED counter-swing after the pivot — not the pullback extreme.
-//    The first confirmed low is always at or above the extreme, so the shift could
-//    fire on a pullback far shallower than the rule allows, handing the level to
-//    P1's sweep wick. The BOS was then measured against a high price had never
-//    closed above, printed late, and its line was anchored on the sweep bar.
-//    Measured over 320,000 bars: the two references differ on 29% of sweeps, and
-//    f_retExtreme was never once higher than f_firstConf.
-//    THE FIX: the reference is now f_retExtreme — the extreme wick strictly between
-//    the pivot candle and the sweep — which is EXACTLY what the internal and inner
-//    engines have always used for the same test. The three engines now agree.
-//    Mirrored on the floor: the highest high between the floor pivot and the sweep.
-//    HONEST NOTE ON SIDE EFFECTS. Structure is a feedback loop, so removing a
-//    premature shift changes what happens afterwards. Over the same 320,000 bars
-//    98.0% of main BOS/CHOCH events are completely unchanged; 83 disappeared and
-//    62 appeared out of 4,219. Those are the legs that were being measured from a
-//    sweep wick. There is no version of this fix that leaves them alone.
-//    f_firstConf had no other caller and has been removed.
-//
-//  v15.1  A SWEEP MUST NOT MOVE THE LEVEL (main engine).
-//    While the trend is still NEUTRAL the main adopt was
-//        adoptC = trendDir == 0 ? phP >= allHi : na(ceilS)
-//    with no reference to the standing ceiling's sweep state. So a bar that wicked
-//    ABOVE the ceiling and closed back INSIDE — a sweep, not a break — became the
-//    new all-time extreme, and two bars later, when the 3-candle rule confirmed it
-//    as a pivot, "phP >= allHi" adopted it outright and overwrote the real level.
-//    The sweep was recorded and then bypassed: Module 2 says a wick through with
-//    the body closing back inside is a SWEEP, and Module 3 says the sweep only
-//    ARMS the pivot-2 promotion. This branch ignored both.
-//    Effect on the chart: the ceiling jumped onto the sweep wick, so the BOS was
-//    measured against a level price had never closed above, printed late, and its
-//    line was anchored on the sweep bar instead of the true pivot.
-//    FIX: the chart-start adopt is blocked while the standing level carries an
-//    armed sweep. The swept pivot keeps the level; a body close beyond it is the
-//    BOS, and a body close beyond the opposite side is the CHOCH — which is what
-//    the rules always said. Mirrored on the floor.
-//    INTERNAL and INNER were checked and need no change: they adopt only into an
-//    EMPTY slot ("na(iCeilP) or aPhP == iCeilP"), so a swept level can never be
-//    overwritten there. Adding the same guard would have been dead code.
-//    Nothing else moves: not the 3-candle rule, the pivot-2 promotion, the
-//    opposite-side re-anchor, the retracement alerts, or any input.
-//
-//  THE 3-CANDLE PULLBACK RULE (Module 1) — swing HIGH; lows mirror
-//    1. CANDIDATE = highest high so far; a new OR EQUAL extreme replaces it.
-//    2. Three BEARISH pullback candles: c1 = first bearish candle at/after the
-//       candidate (its LOW locks); c2 must CLOSE below c1's low; c3 must CLOSE
-//       below c2's low -> CONFIRMED.
-//    3. Always body-close beyond the previous locked WICK. Never body-to-body.
-//    4. Noise PAUSES, never resets. The three need not be consecutive.
-//    5. A new OR EQUAL extreme RESTARTS everything.
-//    6. Reported on the confirmation bar, ANCHORED at the candidate's bar.
-//
-//  TWO PIVOT STREAMS — never mix them up
-//    MAIN      hiT / loT   free-running.  Read by BOS / CHOCH only.
-//    INTERNAL  aHiT / aLoT alternating.   Read by iBOS / iCHOCH and nBOS / nCHOCH.
-//
-//  THREE NESTED ENGINES
-//    MAIN     BOS / CHOCH    · range anchored on the absolute extreme at start
-//    INTERNAL iBOS / iCHOCH  · anchored on the main trend-side line's pivot
-//    INNER    nBOS / nCHOCH  · anchored on the internal trend-side level
-//  Each: adopt into an empty slot · equal price re-anchors to the later touch ·
-//  first break of a range = CHOCH (trend starts neutral) · then with-trend = BOS,
-//  against = CHOCH + flip · broken side empties and refills · opposite side
-//  re-anchors to the retracement extreme · sweeps arm a pivot-2 promotion.
-//
-//  INVARIANTS — break these and old bugs come back
-//    1. Only a confirmed MAIN event starts a new internal range; only a confirmed
-//       INTERNAL event starts a new inner range.
-//    2. The range anchor is LATCHED for the life of the range. Re-creating the
-//       trend-side line inside a range must NOT re-scope or delete levels.
-//    3. Main = free-running pivots. Internal and inner = alternating.
-//    4. A structure level is a CONFIRMED PIVOT, with ONE deliberate exception
-//       (v15.14): a pivot-2 promotion takes the SWEPT WICK. There the sweep of
-//       the level plus price then taking out the opposite reference IS the
-//       qualification, so no separate 3-candle confirmation is required.
-//    5. Never adopt or seed a level price has already closed beyond.
-//    6. NEW INPUTS MUST BE APPENDED AT THE END — TradingView matches saved
-//       settings by declaration ORDER. Use group = to place them on screen.
-//    7. rearm() reads the chart's price buffers, so it must never be called inside
-//       request.security(). armHere() is buffer-free and safe in both.
-//    8. No variable-offset history references — use bufHi / bufLo / bufDir.
-//    9. Pine has no bitwise operators; the EVENT bitmask is unpacked by
-//       subtraction. Pine cannot show, hide or disable an input conditionally.
-//   10. ANY COMPARISON INVOLVING na YIELDS na, AND if TREATS na AS FALSE. So
-//       "x != na" is FALSE, not true. Guard every such test with na(x) first.
-//       This one silently disabled the retracement alert from v14.4 to v14.10.
-//
-//  RETRACEMENT ALERTS — main / internal / inner, one shared percentage
-//    The percentage is measured BACK FROM THE EXTREME of the leg: 20 = a shallow
-//    pullback near the high, 50 = midpoint, 79 = deep. The anchor is the leg's
-//    running extreme since that tier's last event, so the alert does not wait for
-//    the 3-candle pullback to confirm the range; if price has not reached the
-//    level by confirmation it stays armed and fires afterwards. Fires on TOUCH,
-//    intrabar (alert.freq_once_per_bar), only on a move BACK from the extreme,
-//    and never on the bar the level was established.
-// ═════════════════════════════════════════════════════════════════════════════
 indicator("SMC Market Structure — 3CP + Volume Profiles", "SMC 3CP+VP", overlay = true,
      max_bars_back = 500, max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500, dynamic_requests = true)
 
@@ -1343,7 +594,6 @@ f_confExt(array<int> arrB, array<float> arrP, bool wantLow, int afterBar, float 
                 b := cb
     [p, b]
 
-
 f_swpConf(array<int> arrB, int swpB) =>
     bool ok = false
     int  n  = array.size(arrB)
@@ -1790,8 +1040,7 @@ if not onClose or barstate.isconfirmed
         iFlorRef  := na
         iFlorIdmP   := na
         iFlorIdmHit := false
-        if not inHist
-            _intClrReq := true
+        _intClrReq := true
 
     if na(iAncB) and not na(iAnchor)
         iAncB := iAnchor
@@ -2839,7 +2088,7 @@ tbTM   = input.bool(true,  "1M",  inline = "tfe", group = gTbl)
 
 tblMaster = input.bool(true, "▶ Show multi-timeframe table (TF · TREND · EVENT · INTERNAL)", group = gTog, tooltip = "Quick on/off for the whole table from the toggle list at the top of the settings. The table also has its own 'Show table' switch in group 8 — BOTH must be on for it to appear, which lets you park the table with either one and turn it back on from whichever panel you happen to be in.")
 tblC4     = input.string("INTERNAL", "Column 4 title", group = gTbl)
-tblEvOn   = input.bool(false, "Show EVENT column", inline = "tbcol", group = gTbl)
+tblEvOn   = input.bool(false, "EVENT column — retired, see notes", inline = "tbcol", group = gTbl, tooltip = "RETIRED, and the box no longer does anything.\n\nThe per-timeframe engine is compiled once for EVERY timeframe the table requests — eighteen copies — so anything inside it costs eighteen times what it reads. The sweep-and-FVG code behind this column was about six thousand compiled tokens on its own, and the script had run into TradingView's hard limit of 100,256.\n\nIt was the cheapest thing to give up: it was off by default, and the sweep marks and structure the rest of the indicator draws are unaffected. The box is left in place only so that every setting after it keeps its saved value.")
 tblInOn   = input.bool(true, "Show INTERNAL column", inline = "tbcol", group = gTbl, tooltip = "Turn either column off and the table narrows to the remaining ones — TF and TREND are always shown. INTERNAL reports the internal (iBOS/iCHOCH) trend of each timeframe.")
 
 tblTrNeuTc  = input.color(color.white, "TREND    no trend   text", inline = "tcn", group = gTbl)
@@ -3118,36 +2367,66 @@ f_tfPack(bool on) =>
                 nFlB := na
         nnOut := nTr
 
-        bool swHi = high[1] > high[2] and close[1] < high[2]
-        bool swLo = low[1]  < low[2]  and close[1] > low[2]
-
-        var float fvgBT = na
-        var float fvgBB = na
-        var float fvgST = na
-        var float fvgSB = na
-        var bool  frBullPrev = false
-        var bool  frBearPrev = false
-        bool frBullNow = not na(fvgBT) and low  <= fvgBT and close > fvgBT
-        bool frBearNow = not na(fvgSB) and high >= fvgSB and close < fvgSB
-        bool frBull = frBullNow or frBullPrev
-        bool frBear = frBearNow or frBearPrev
-        frBullPrev := frBullNow
-        frBearPrev := frBearNow
-        if low > high[2]
-            fvgBB := high[2]
-            fvgBT := low
-        if high < low[2]
-            fvgST := low[2]
-            fvgSB := high
-        if not na(fvgBB) and close < fvgBB
-            fvgBT := na
-            fvgBB := na
-        if not na(fvgST) and close > fvgST
-            fvgST := na
-            fvgSB := na
-        evOut := (swHi ? 1 : 0) + (swLo ? 2 : 0) + (frBull ? 4 : 0) + (frBear ? 8 : 0)
     [trOut, evOut, inOut, nnOut]
 
+int _chartSec = timeframe.in_seconds(timeframe.period)
+int _s1   = timeframe.in_seconds("1")
+int _s2   = timeframe.in_seconds("2")
+int _s3   = timeframe.in_seconds("3")
+int _s5   = timeframe.in_seconds("5")
+int _s10  = timeframe.in_seconds("10")
+int _s15  = timeframe.in_seconds("15")
+int _s30  = timeframe.in_seconds("30")
+int _s45  = timeframe.in_seconds("45")
+int _s60  = timeframe.in_seconds("60")
+int _s120 = timeframe.in_seconds("120")
+int _s180 = timeframe.in_seconds("180")
+int _s240 = timeframe.in_seconds("240")
+int _s360 = timeframe.in_seconds("360")
+int _s480 = timeframe.in_seconds("480")
+int _s720 = timeframe.in_seconds("720")
+int _sD   = timeframe.in_seconds("1D")
+int _sW   = timeframe.in_seconds("1W")
+int _sM   = timeframe.in_seconds("1M")
+int _capSec = _chartSec >= 7200 ? _sM : _chartSec == 900 ? _sW : _chartSec <= 300 ? _s240 : _sD
+
+bool _u1   = tblOn and tblMaster and tbT1   and _s1   >= _chartSec and _s1   <= _capSec
+bool _u2   = tblOn and tblMaster and tbT2   and _s2   >= _chartSec and _s2   <= _capSec
+bool _u3   = tblOn and tblMaster and tbT3   and _s3   >= _chartSec and _s3   <= _capSec
+bool _u5   = tblOn and tblMaster and tbT5   and _s5   >= _chartSec and _s5   <= _capSec
+bool _u10  = tblOn and tblMaster and tbT10  and _s10  >= _chartSec and _s10  <= _capSec
+bool _u15  = tblOn and tblMaster and tbT15  and _s15  >= _chartSec and _s15  <= _capSec
+bool _u30  = tblOn and tblMaster and tbT30  and _s30  >= _chartSec and _s30  <= _capSec
+bool _u45  = tblOn and tblMaster and tbT45  and _s45  >= _chartSec and _s45  <= _capSec
+bool _u60  = tblOn and tblMaster and tbT60  and _s60  >= _chartSec and _s60  <= _capSec
+bool _u120 = tblOn and tblMaster and tbT120 and _s120 >= _chartSec and _s120 <= _capSec
+bool _u180 = tblOn and tblMaster and tbT180 and _s180 >= _chartSec and _s180 <= _capSec
+bool _u240 = tblOn and tblMaster and tbT240 and _s240 >= _chartSec and _s240 <= _capSec
+bool _u360 = tblOn and tblMaster and tbT360 and _s360 >= _chartSec and _s360 <= _capSec
+bool _u480 = tblOn and tblMaster and tbT480 and _s480 >= _chartSec and _s480 <= _capSec
+bool _u720 = tblOn and tblMaster and tbT720 and _s720 >= _chartSec and _s720 <= _capSec
+bool _uD   = tblOn and tblMaster and tbTD   and _sD   >= _chartSec and _sD   <= _capSec
+bool _uW   = tblOn and tblMaster and tbTW   and _sW   >= _chartSec and _sW   <= _capSec
+bool _uM   = tblOn and tblMaster and tbTM   and _sM   >= _chartSec and _sM   <= _capSec
+
+[_t1,   _e1  , _i1, _n1] = request.security(syminfo.tickerid, _u1   ? "1"   : timeframe.period, f_tfPack(_u1))
+[_t2,   _e2  , _i2, _n2] = request.security(syminfo.tickerid, _u2   ? "2"   : timeframe.period, f_tfPack(_u2))
+[_t3,   _e3  , _i3, _n3] = request.security(syminfo.tickerid, _u3   ? "3"   : timeframe.period, f_tfPack(_u3))
+[_t5,   _e5  , _i5, _n5] = request.security(syminfo.tickerid, _u5   ? "5"   : timeframe.period, f_tfPack(_u5))
+[_t10,  _e10 , _i10, _n10] = request.security(syminfo.tickerid, _u10  ? "10"  : timeframe.period, f_tfPack(_u10))
+[_t15,  _e15 , _i15, _n15] = request.security(syminfo.tickerid, _u15  ? "15"  : timeframe.period, f_tfPack(_u15))
+[_t30,  _e30 , _i30, _n30] = request.security(syminfo.tickerid, _u30  ? "30"  : timeframe.period, f_tfPack(_u30))
+[_t45,  _e45 , _i45, _n45] = request.security(syminfo.tickerid, _u45  ? "45"  : timeframe.period, f_tfPack(_u45))
+[_t60,  _e60 , _i60, _n60] = request.security(syminfo.tickerid, _u60  ? "60"  : timeframe.period, f_tfPack(_u60))
+[_t120, _e120, _i120, _n120] = request.security(syminfo.tickerid, _u120 ? "120" : timeframe.period, f_tfPack(_u120))
+[_t180, _e180, _i180, _n180] = request.security(syminfo.tickerid, _u180 ? "180" : timeframe.period, f_tfPack(_u180))
+[_t240, _e240, _i240, _n240] = request.security(syminfo.tickerid, _u240 ? "240" : timeframe.period, f_tfPack(_u240))
+[_t360, _e360, _i360, _n360] = request.security(syminfo.tickerid, _u360 ? "360" : timeframe.period, f_tfPack(_u360))
+[_t480, _e480, _i480, _n480] = request.security(syminfo.tickerid, _u480 ? "480" : timeframe.period, f_tfPack(_u480))
+[_t720, _e720, _i720, _n720] = request.security(syminfo.tickerid, _u720 ? "720" : timeframe.period, f_tfPack(_u720))
+[_tD,   _eD  , _iD, _nD] = request.security(syminfo.tickerid, _uD   ? "1D"  : timeframe.period, f_tfPack(_uD))
+[_tW,   _eW  , _iW, _nW] = request.security(syminfo.tickerid, _uW   ? "1W"  : timeframe.period, f_tfPack(_uW))
+[_tM,   _eM  , _iM, _nM] = request.security(syminfo.tickerid, _uM   ? "1M"  : timeframe.period, f_tfPack(_uM))
 
 almT1  = input.string("Price crosses level", "  - Slot 1 trigger", options = ["Price crosses level", "Price at N% of BOS*/CHOCH* range", "Price at N% of internal range", "BOS", "CHOCH", "iBOS", "iCHOCH", "Any structure event", "Any internal structure event", "Price at N% of inner nBOS/nCHOCH range", "nBOS", "nCHOCH", "Any inner structure event"], group = gA, tooltip = "What arms slot 1. Slot 1's own on/off switch, price and direction are the three boxes above this one.")
 
@@ -3215,6 +2494,101 @@ armTitTc = input.color(color.silver, "Label text", inline = "ar3", group = gArm)
 armBg    = input.color(color.new(color.black, 20), "Background", inline = "ar3", group = gArm)
 
 aNnRet   = input.bool(false, "Price at N% of inner nBOS/nCHOCH range alert", group = gA, tooltip = "The third tier of the same retracement rule, on the INNER nBOS/nCHOCH leg.\n\nFires the moment price gives back the set percentage of the leg that began at the last inner event — measured BACK FROM THAT LEG'S EXTREME, on the tick it happens rather than at the close.\n\nInner legs are the shortest of the three, so this is the most frequent and the twitchiest of the retracement alerts. It also depends on inner structure having a trend: between an internal event and the inner range's first nCHOCH there is no inner leg, and this stays silent.\n\nIt does not require 'Show inner structure' to be ticked — that switch only controls the drawing. The engine always runs.")
+
+f_tfRow(array<string> nm, array<int> tr, array<int> ev, array<int> intr, array<int> innr, bool use, string disp, string tfs, int t, int e, int n, int w) =>
+    if use
+        bool isChartTf = tfs == timeframe.period
+        array.push(nm, disp)
+        array.push(tr, isChartTf ? trendDir : t)
+        array.push(ev, e)
+        array.push(intr, isChartTf ? iTrend : n)
+        array.push(innr, isChartTf ? nTrend : w)
+
+int _tblRows = (_u1 ? 1 : 0) + (_u2 ? 1 : 0) + (_u3 ? 1 : 0) + (_u5 ? 1 : 0) + (_u10 ? 1 : 0) + (_u15 ? 1 : 0) + (_u30 ? 1 : 0) + (_u45 ? 1 : 0) + (_u60 ? 1 : 0) + (_u120 ? 1 : 0) + (_u180 ? 1 : 0) + (_u240 ? 1 : 0) + (_u360 ? 1 : 0) + (_u480 ? 1 : 0) + (_u720 ? 1 : 0) + (_uD ? 1 : 0) + (_uW ? 1 : 0) + (_uM ? 1 : 0)
+bool _evCol = false
+int _tblCols = 2 + (_evCol ? 1 : 0) + (tblInOn ? 1 : 0) + (tblInnOn ? 1 : 0)
+int _colEv   = _evCol ? 2 : -1
+int _colIn   = tblInOn ? (_evCol ? 3 : 2) : -1
+int _colInn  = tblInnOn ? (2 + (_evCol ? 1 : 0) + (tblInOn ? 1 : 0)) : -1
+
+string _rowSz = tsize(tblRowSz)
+var table smcTbl = na
+if barstate.islast and tblOn and tblMaster and _tblRows > 0
+    array<string> _rn = array.new<string>()
+    array<int>    _rt = array.new<int>()
+    array<int>    _re = array.new<int>()
+    array<int>    _ri = array.new<int>()
+    array<int>    _rw = array.new<int>()
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u1, "1m", "1", _t1, _e1, _i1, _n1)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u2, "2m", "2", _t2, _e2, _i2, _n2)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u3, "3m", "3", _t3, _e3, _i3, _n3)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u5, "5m", "5", _t5, _e5, _i5, _n5)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u10, "10m", "10", _t10, _e10, _i10, _n10)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u15, "15m", "15", _t15, _e15, _i15, _n15)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u30, "30m", "30", _t30, _e30, _i30, _n30)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u45, "45m", "45", _t45, _e45, _i45, _n45)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u60, "1h", "60", _t60, _e60, _i60, _n60)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u120, "2h", "120", _t120, _e120, _i120, _n120)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u180, "3h", "180", _t180, _e180, _i180, _n180)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u240, "4h", "240", _t240, _e240, _i240, _n240)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u360, "6h", "360", _t360, _e360, _i360, _n360)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u480, "8h", "480", _t480, _e480, _i480, _n480)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _u720, "12h", "720", _t720, _e720, _i720, _n720)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _uD, "1D", "1D", _tD, _eD, _iD, _nD)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _uW, "1W", "1W", _tW, _eW, _iW, _nW)
+    f_tfRow(_rn, _rt, _re, _ri, _rw, _uM, "1M", "1M", _tM, _eM, _iM, _nM)
+    if na(smcTbl)
+        smcTbl := table.new(tblPos == "Top left" ? position.top_left : tblPos == "Top center" ? position.top_center : tblPos == "Top right" ? position.top_right : tblPos == "Middle left" ? position.middle_left : tblPos == "Middle right" ? position.middle_right : tblPos == "Bottom left" ? position.bottom_left : tblPos == "Bottom center" ? position.bottom_center : position.bottom_right, _tblCols, _tblRows + 1, bgcolor = tblBgAll, border_color = tblCelC, border_width = tblCelW, frame_color = tblFrmC, frame_width = tblFrmW)
+    table.cell(smcTbl, 0, 0, tblC1, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
+    table.cell(smcTbl, 1, 0, tblC2, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
+    if _evCol
+        table.cell(smcTbl, _colEv, 0, tblC3, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
+    if tblInOn
+        table.cell(smcTbl, _colIn, 0, tblC4, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
+    if tblInnOn
+        table.cell(smcTbl, _colInn, 0, tblC5, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
+    for i = 0 to array.size(_rn) - 1
+        int    _tv   = array.get(_rt, i)
+        int    _ev   = array.get(_re, i)
+        int    _iv   = array.get(_ri, i)
+        int    _wv   = array.get(_rw, i)
+        string _trTx = _tv == 1 ? tblBullTx : _tv == -1 ? tblBearTx : tblFlatTx
+        color  _trBg = _tv == 1 ? tblBullBg : _tv == -1 ? tblBearBg : tblTrNeuBg
+        color  _trTc = _tv == 1 ? tblBullTc : _tv == -1 ? tblBearTc : tblTrNeuTc
+        int  _r     = _ev
+        bool _eBear = _r >= 8
+        _r := _eBear ? _r - 8 : _r
+        bool _eBull = _r >= 4
+        _r := _eBull ? _r - 4 : _r
+        bool _eSwLo = _r >= 2
+        _r := _eSwLo ? _r - 2 : _r
+        bool _eSwHi = _r >= 1
+        string _evTx = ""
+        if _eSwHi
+            _evTx := tblSwHiTx
+        if _eSwLo
+            _evTx := _evTx == "" ? tblSwLoTx : _evTx + " + " + tblSwLoTx
+        if _eBull
+            _evTx := _evTx == "" ? tblFvgBTx : _evTx + " + " + tblFvgBTx
+        if _eBear
+            _evTx := _evTx == "" ? tblFvgSTx : _evTx + " + " + tblFvgSTx
+        bool _evNone = _evTx == ""
+        if _evNone
+            _evTx := tblNoneTx
+        string _inTx = _iv == 1 ? tblBullTx   : _iv == -1 ? tblBearTx   : tblFlatTx
+        color  _inBg = _iv == 1 ? tblInBullBg : _iv == -1 ? tblInBearBg : tblInNeuBg
+        color  _inTc = _iv == 1 ? tblInBullTc : _iv == -1 ? tblInBearTc : tblInNeuTc
+        string _wnTx = _wv == 1 ? tblBullTx    : _wv == -1 ? tblBearTx    : tblFlatTx
+        color  _wnBg = _wv == 1 ? tblInnBullBg : _wv == -1 ? tblInnBearBg : tblInnNeuBg
+        color  _wnTc = _wv == 1 ? tblInnBullTc : _wv == -1 ? tblInnBearTc : tblInnNeuTc
+        table.cell(smcTbl, 0, i + 1, array.get(_rn, i), text_color = tblRowTc, text_size = _rowSz, bgcolor = tblRowBg)
+        table.cell(smcTbl, 1, i + 1, _trTx, text_color = _trTc, text_size = _rowSz, bgcolor = _trBg)
+        if _evCol
+            table.cell(smcTbl, _colEv, i + 1, _evTx, text_color = _evNone ? tblEvNoneTc : tblEvTc, text_size = _rowSz, bgcolor = _evNone ? tblEvNoneBg : tblEvBg)
+        if tblInOn
+            table.cell(smcTbl, _colIn, i + 1, _inTx, text_color = _inTc, text_size = _rowSz, bgcolor = _inBg)
+        if tblInnOn
+            table.cell(smcTbl, _colInn, i + 1, _wnTx, text_color = _wnTc, text_size = _rowSz, bgcolor = _wnBg)
 
 var array<line>  innLn = array.new<line>()
 var array<label> innLb = array.new<label>()
@@ -3523,49 +2897,6 @@ alertcondition(emaXUp and almOk, "Bullish EMA cross", "Bullish EMA cross — {{t
 alertcondition(emaXDn and almOk, "Bearish EMA cross", "Bearish EMA cross — {{ticker}} {{interval}}")
 alertcondition((emaXUp or emaXDn) and almOk, "Any EMA cross", "EMA cross — {{ticker}} {{interval}}")
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  v15.16 ADDITIONS — ONE APPENDED BLOCK.
-//  Every input below is declared AFTER all earlier inputs, so no existing input
-//  moves and saved settings carry over untouched (invariant 6). Groups render
-//  where their earliest-declared member sits, so the three new "max marks to
-//  keep" boxes appear inside the Engine and Internal+Inner panels they belong
-//  to, while the seven brand-new groups appear at the bottom of the list.
-//
-//  1. INNER ALERTS COMPLETED. The inner engine already fired alert() calls for
-//     bullish/bearish nBOS, bullish/bearish nCHOCH and "any inner event", but
-//     NONE of them had an alertcondition entry, so none of them could be picked
-//     from TradingView's Condition dropdown — only the "Any alert() function
-//     call" route saw them. All seven now have one, and "Any nBOS" / "Any
-//     nCHOCH" gain the two alert() toggles they were missing. The five arming
-//     slots also gain nBOS, nCHOCH and "Any inner structure event" triggers.
-//
-//  2. iBOS* / iCHOCH* AND nBOS* / nCHOCH* ACTIVE EXTENDED LINES. The main
-//     engine has always drawn its live levels as BOS*/CHOCH* — the extended
-//     dotted lines price has yet to break. The internal and inner engines
-//     tracked the identical levels (iCeilP/iFlorP, nCeilP/nFlorP) but drew
-//     nothing until they broke. They are now drawn on the same rule the main
-//     pair uses: the level whose break would be a BOS is the *BOS* line, the
-//     one whose break would be a CHOCH is the *CHOCH* line, so a line swaps
-//     name and style the moment its tier's trend flips. Both pairs have the
-//     full style set the main groups have, and their own on/off switch.
-//     They are ONE line each, redrawn on the last bar, so they cost four
-//     drawings in total however long the chart is.
-//
-//  3. 50% LINE OF EVERY RANGE. The midpoint (equilibrium) of the BOS*/CHOCH*
-//     pair, of the iBOS*/iCHOCH* pair and of the nBOS*/nCHOCH* pair, each with
-//     its own percentage — 50 by default, so it is the midpoint — and its own
-//     complete style set. The percentage is measured UP FROM THE LOWER of the
-//     two lines, which makes 50 the midpoint whichever way the tier's trend is
-//     running. A tier's line only exists while BOTH of its levels do: after a
-//     break one side is empty until the next 3-candle pullback refills it, and
-//     there is no range to halve until then, so the line disappears — that gap
-//     is the engine being honest, not a fault.
-//
-//  4. MANUAL CAPS ON HOW MANY MARKS STAY ON THE CHART, per tier. 0 keeps the
-//     old behaviour on all three. Any other number keeps that many of the most
-//     recent structure lines and deletes the rest, oldest first.
-// ═════════════════════════════════════════════════════════════════════════════
-
 g7  = "⑦ Possible iBOS (internal active extended line)"
 ipOn     = input.bool(true, "Show the iBOS* / iCHOCH* lines", group = g7, tooltip = "Draws the two LIVE internal levels — the ones the internal engine is measuring price against right now — as extended lines, exactly the way the main engine draws BOS* and CHOCH*.\n\nWHICH LINE IS WHICH: the level whose break would print an iBOS carries the iBOS* style from this group; the level whose break would print an iCHOCH carries the iCHOCH* style from the group below. While the internal trend is bullish that means the internal ceiling is iBOS* and the internal floor is iCHOCH*; while it is bearish they swap; and while the internal trend is still neutral — every range starts that way, before its first iCHOCH — BOTH sides are iCHOCH*, because the first break either way is an iCHOCH.\n\nThey follow the level, not the bar: a pivot-2 promotion or a re-anchor moves the line the moment the engine moves the level.\n\nIt also obeys the 'Internal marking' switch for the rule in force. With internal marking off there are no internal marks and no internal lines either.\n\nCOST: one line and one label per side, rewritten on the last bar, so this can never eat the drawing budget the iBOS/iCHOCH history needs.")
 ip1_lc   = input.color(color.new(color.blue, 0), "Line ", inline = "7a", group = g7)
@@ -3662,13 +2993,10 @@ nnKeep   = input.int(0, "Max nBOS / nCHOCH marks to keep on the chart  (0 = no l
 aANB = input.bool(false, "Any nBOS alert",   inline = "nal3", group = gInt, tooltip = "One message for an inner nBOS in either direction, so a single ticked box covers both. The two directional boxes above stay independent — tick all three and a bullish nBOS delivers two messages, which is occasionally what you want and usually not.")
 aANC = input.bool(false, "Any nCHOCH alert", inline = "nal3", group = gInt, tooltip = "One message for an inner nCHOCH in either direction. The same note applies: it does not replace the two directional boxes, it sits alongside them.")
 
-mtfAll   = input.bool(false, "▶ MTF — show every ticked timeframe, right up to 1M", group = gTog, tooltip = "LIFTS THE CEILING ON THE MULTI-TIMEFRAME TABLE.\n\nBy default the table stops at the highest timeframe the chart can actually feed it — 4h from a 5m chart, 1W from 15m, 1D from 1h, everything from 2h up. That ceiling exists because request.security only returns as much of a higher timeframe as the chart\'s own range covers, and the per-timeframe engine replays from the first bar it can see: hand it two monthly candles and it will still print a trend, and that trend is meaningless.\n\nON = the ceiling is gone and every ticked timeframe is shown, up to 1M, whatever the chart is. Use it when you want the whole ladder and are willing to judge the thin rows yourself.\n\nOFF = the default ceiling.\n\nIT DOES NOT CHANGE THE FLOOR. Timeframes below the chart stay hidden unless you also turn on the switch below. Both on = every ticked timeframe, 1m to 1M.\n\nBE AWARE OF WHAT YOU ARE TURNING ON: from a 1m chart the weekly series comes back with about nine bars and the monthly with one. Those rows will show something. It will not be right.")
-mtfBelow = input.bool(false, "▶ MTF — also show timeframes below the chart", group = gTog, tooltip = "LIFTS THE FLOOR ON THE MULTI-TIMEFRAME TABLE.\n\nBy default a row is only drawn when its timeframe is at or above the chart\'s, so a 4h chart shows 4h and up and nothing below.\n\nON = the ticked timeframes below the chart are shown too, so that same 4h chart also reports 1m, 5m, 15m and 1h.\n\nOFF = the default floor.\n\nUNLIKE THE CEILING, THIS ONE IS SOUND. A lower timeframe requested from a higher chart has more bars than it needs, not fewer, so those rows are computed on plenty of history. The cost is data: each timeframe below the chart is a real dataset the script did not fetch before, and on a monthly chart a 1m row is a very large one. If the script feels heavy or an alert starts erroring, untick the low timeframes you are not reading.")
-mstTen   = input.bool(false, "▶ Structure — keep only the latest 10 marks per tier", group = gTog, tooltip = "One number for all three tiers: the ten most recent BOS/CHOCH, the ten most recent iBOS/iCHOCH and the ten most recent nBOS/nCHOCH stay on the chart, and everything older is deleted, oldest first, with its label and its strong-point stamp.\n\nON = ten each, and the per-tier \'Max ... marks to keep\' boxes are ignored.\nOFF = those three boxes decide, exactly as they do now.\n\nIT IS A DISPLAY RULE. The engine still computes every break on every bar, every alert still fires, and the trend, the levels and the three tiers are untouched. It is also the fastest way to make a long chart light: thirty drawings instead of several hundred is the single biggest thing you can do for load time.\n\nThe live BOS*/CHOCH*, iBOS*/iCHOCH* and nBOS*/nCHOCH* lines are never counted or deleted by it — those are the current levels, not history.")
-mstHist  = input.bool(false, "▶ Structure — keep previous iBOS / iCHOCH and nBOS / nCHOCH", group = gTog, tooltip = "Forces the internal and inner history to stay on the chart.\n\nON = a confirmed main BOS/CHOCH no longer erases the previous range\'s iBOS/iCHOCH marks, and a confirmed internal event no longer erases the previous range\'s nBOS/nCHOCH marks. Both \'Keep previous ...\' checkboxes in the Internal + Inner group are ignored while it is on.\nOFF = those two checkboxes decide, exactly as they do now.\n\nIt can only ADD history, never remove it: with either checkbox already ticked, this changes nothing for that tier.\n\nPairs well with the ten-marks switch above — keep the history but cap how much of it is drawn.")
-
-eqSrc   = input.string("Range (BOS*/CHOCH* pair)", "50% line measured from", options = ["Range (BOS*/CHOCH* pair)", "Live leg (from the break)"], group = gEqM, tooltip = "WHICH TWO PRICES THE 50% IS TAKEN BETWEEN. One setting, applied to all three tiers.\n\nRANGE (the original): halfway between the two live extended lines. It is the equilibrium of a settled range, and it cannot exist until the range is settled — a break empties the side it broke, and that side only refills when the 3-candle rule confirms the next pivot.\n\nLIVE LEG: halfway between the running extreme of the leg and the opposite level, from the moment the breaking candle closes. In a bullish leg that is the highest high since the BOS/CHOCH down to the CHOCH* floor, which the engine re-anchors on the break bar itself, so both ends exist immediately.\n\nWHY IT MATTERS: the 3-candle pullback often only confirms once price is already back under the midpoint, so a range 50% can appear below price and be useless for the decision it was meant to inform. The live leg gives you the level while the leg is still running.\n\nIT RATCHETS, IT DOES NOT DRIFT. A new extreme moves the level; a candle closing back the other way does not, because the extreme has not changed. What it is NOT is a settled level — it moves while the leg extends, by design.")
-eqSrcCl = input.string("New high / low (wick)", "Live leg anchor extends on", options = ["New high / low (wick)", "Close beyond the previous extreme"], group = gEqM, tooltip = "Only read when the setting above is on LIVE LEG. It decides what counts as the leg making a new extreme.\n\nNEW HIGH / LOW (WICK): any higher high in a bullish leg moves the anchor, wick included. This is the running extreme the retracement alerts already use, so the 50% line and those alerts agree.\n\nCLOSE BEYOND THE PREVIOUS EXTREME: the anchor only moves on a candle that CLOSES past the previous candle\'s high (past its low in a bearish leg). A wick through that closes back inside is ignored, so a single spike cannot drag the level away. Fewer adjustments, and the level lags a genuine extension by one candle.\n\nNeither option ever moves the level back the other way.")
+mstTen  = input.bool(false, "▶ Structure — keep only the latest 10 marks per tier", group = gTog, tooltip = "One number for all three tiers: the ten most recent BOS/CHOCH, the ten most recent iBOS/iCHOCH and the ten most recent nBOS/nCHOCH stay on the chart. Everything older is deleted, oldest first, together with its label and its strong-point stamp.\n\nON  = ten each, and the three per-tier 'Max ... marks to keep' boxes are ignored.\nOFF = those three boxes decide, exactly as they do now.\n\nIT IS A DISPLAY RULE. The engine still computes every break on every bar, every alert still fires, and the trend, the levels and the three tiers are untouched. It is also the single biggest thing you can do for load time on a long chart: thirty drawings instead of several hundred.\n\nThe live BOS*/CHOCH*, iBOS*/iCHOCH* and nBOS*/nCHOCH* lines are never counted or deleted by it — those are the current levels, not history.")
+mstHist = input.bool(false, "▶ Structure — keep previous iBOS / iCHOCH and nBOS / nCHOCH", group = gTog, tooltip = "Forces the internal and inner history to stay on the chart.\n\nON  = a confirmed main BOS/CHOCH no longer erases the previous range's iBOS/iCHOCH marks, and a confirmed internal event no longer erases the previous range's nBOS/nCHOCH marks. Both 'Keep previous ...' checkboxes in the Internal + Inner group are ignored while it is on.\nOFF = those two checkboxes decide, exactly as they do now.\n\nIt can only ADD history, never remove it: if either checkbox is already ticked, this changes nothing for that tier.\n\nPairs with the ten-marks switch above — keep the history, but cap how much of it is drawn.")
+eqSrc   = input.string("Range (BOS*/CHOCH* pair)", "50% line measured from", options = ["Range (BOS*/CHOCH* pair)", "Live leg (from the break)"], group = gEqM, tooltip = "WHICH TWO PRICES THE 50% IS TAKEN BETWEEN. One setting, applied to all three tiers.\n\nRANGE (the original): halfway between the two live extended lines. It is the equilibrium of a settled range, and it cannot exist until the range is settled — a break empties the side it broke, and that side only refills once the 3-candle rule confirms the next pivot.\n\nLIVE LEG: halfway between the running extreme of the leg and the opposite level, from the moment the breaking candle closes. In a bullish leg that is the highest high since the BOS/CHOCH down to the CHOCH* floor, which the engine re-anchors on the break bar itself, so both ends exist immediately.\n\nWHY IT MATTERS: the 3-candle pullback often only confirms once price is already back under the midpoint, so a range 50% can appear below price and be useless for the decision it was meant to inform. The live leg gives you the level while the leg is still running.\n\nIT RATCHETS, IT DOES NOT DRIFT. A new extreme moves the level; a candle closing back the other way does not, because the extreme has not changed. What it is NOT is a settled level — it moves while the leg extends, by design.")
+eqSrcCl = input.string("New high / low (wick)", "Live leg anchor extends on", options = ["New high / low (wick)", "Close beyond the previous extreme"], group = gEqM, tooltip = "Only read while the setting above is on LIVE LEG. It decides what counts as the leg making a new extreme.\n\nNEW HIGH / LOW (WICK): any higher high in a bullish leg moves the anchor, wick included. This is the running extreme the retracement alerts already use, so the 50% line and those alerts agree.\n\nCLOSE BEYOND THE PREVIOUS EXTREME: the anchor only moves on a candle that CLOSES past the previous candle's high (past its low in a bearish leg). A wick through that closes back inside is ignored, so one spike cannot drag the level away. Fewer adjustments, and the level lags a genuine extension by one candle.\n\nNeither option ever moves the level back the other way.")
 
 var line  ipCeilLn = na
 var label ipCeilLb = na
@@ -3919,159 +3247,6 @@ alertcondition(evNChoDn and almOk, "Bearish nCHOCH", "Bearish nCHOCH — {{ticke
 alertcondition((evNBosUp or evNBosDn) and almOk, "Any nBOS",   "nBOS — {{ticker}} {{interval}}")
 alertcondition((evNChoUp or evNChoDn) and almOk, "Any nCHOCH", "nCHOCH — {{ticker}} {{interval}}")
 alertcondition((evNBosUp or evNBosDn or evNChoUp or evNChoDn) and almOk, "Any inner structure event", "Inner structure event — {{ticker}} {{interval}}")
-
-int _chartSec = timeframe.in_seconds(timeframe.period)
-int _s1   = timeframe.in_seconds("1")
-int _s2   = timeframe.in_seconds("2")
-int _s3   = timeframe.in_seconds("3")
-int _s5   = timeframe.in_seconds("5")
-int _s10  = timeframe.in_seconds("10")
-int _s15  = timeframe.in_seconds("15")
-int _s30  = timeframe.in_seconds("30")
-int _s45  = timeframe.in_seconds("45")
-int _s60  = timeframe.in_seconds("60")
-int _s120 = timeframe.in_seconds("120")
-int _s180 = timeframe.in_seconds("180")
-int _s240 = timeframe.in_seconds("240")
-int _s360 = timeframe.in_seconds("360")
-int _s480 = timeframe.in_seconds("480")
-int _s720 = timeframe.in_seconds("720")
-int _sD   = timeframe.in_seconds("1D")
-int _sW   = timeframe.in_seconds("1W")
-int _sM   = timeframe.in_seconds("1M")
-int _capSec = mtfAll ? _sM : _chartSec >= 7200 ? _sM : _chartSec == 900 ? _sW : _chartSec <= 300 ? _s240 : _sD
-
-bool _u1   = tblOn and tblMaster and tbT1   and (mtfBelow or _s1 >= _chartSec) and _s1 <= _capSec
-bool _u2   = tblOn and tblMaster and tbT2   and (mtfBelow or _s2 >= _chartSec) and _s2 <= _capSec
-bool _u3   = tblOn and tblMaster and tbT3   and (mtfBelow or _s3 >= _chartSec) and _s3 <= _capSec
-bool _u5   = tblOn and tblMaster and tbT5   and (mtfBelow or _s5 >= _chartSec) and _s5 <= _capSec
-bool _u10  = tblOn and tblMaster and tbT10  and (mtfBelow or _s10 >= _chartSec) and _s10 <= _capSec
-bool _u15  = tblOn and tblMaster and tbT15  and (mtfBelow or _s15 >= _chartSec) and _s15 <= _capSec
-bool _u30  = tblOn and tblMaster and tbT30  and (mtfBelow or _s30 >= _chartSec) and _s30 <= _capSec
-bool _u45  = tblOn and tblMaster and tbT45  and (mtfBelow or _s45 >= _chartSec) and _s45 <= _capSec
-bool _u60  = tblOn and tblMaster and tbT60  and (mtfBelow or _s60 >= _chartSec) and _s60 <= _capSec
-bool _u120 = tblOn and tblMaster and tbT120 and (mtfBelow or _s120 >= _chartSec) and _s120 <= _capSec
-bool _u180 = tblOn and tblMaster and tbT180 and (mtfBelow or _s180 >= _chartSec) and _s180 <= _capSec
-bool _u240 = tblOn and tblMaster and tbT240 and (mtfBelow or _s240 >= _chartSec) and _s240 <= _capSec
-bool _u360 = tblOn and tblMaster and tbT360 and (mtfBelow or _s360 >= _chartSec) and _s360 <= _capSec
-bool _u480 = tblOn and tblMaster and tbT480 and (mtfBelow or _s480 >= _chartSec) and _s480 <= _capSec
-bool _u720 = tblOn and tblMaster and tbT720 and (mtfBelow or _s720 >= _chartSec) and _s720 <= _capSec
-bool _uD   = tblOn and tblMaster and tbTD   and (mtfBelow or _sD >= _chartSec) and _sD <= _capSec
-bool _uW   = tblOn and tblMaster and tbTW   and (mtfBelow or _sW >= _chartSec) and _sW <= _capSec
-bool _uM   = tblOn and tblMaster and tbTM   and (mtfBelow or _sM >= _chartSec) and _sM <= _capSec
-
-[_t1,   _e1  , _i1, _n1] = request.security(syminfo.tickerid, _u1   ? "1"   : timeframe.period, f_tfPack(_u1))
-[_t2,   _e2  , _i2, _n2] = request.security(syminfo.tickerid, _u2   ? "2"   : timeframe.period, f_tfPack(_u2))
-[_t3,   _e3  , _i3, _n3] = request.security(syminfo.tickerid, _u3   ? "3"   : timeframe.period, f_tfPack(_u3))
-[_t5,   _e5  , _i5, _n5] = request.security(syminfo.tickerid, _u5   ? "5"   : timeframe.period, f_tfPack(_u5))
-[_t10,  _e10 , _i10, _n10] = request.security(syminfo.tickerid, _u10  ? "10"  : timeframe.period, f_tfPack(_u10))
-[_t15,  _e15 , _i15, _n15] = request.security(syminfo.tickerid, _u15  ? "15"  : timeframe.period, f_tfPack(_u15))
-[_t30,  _e30 , _i30, _n30] = request.security(syminfo.tickerid, _u30  ? "30"  : timeframe.period, f_tfPack(_u30))
-[_t45,  _e45 , _i45, _n45] = request.security(syminfo.tickerid, _u45  ? "45"  : timeframe.period, f_tfPack(_u45))
-[_t60,  _e60 , _i60, _n60] = request.security(syminfo.tickerid, _u60  ? "60"  : timeframe.period, f_tfPack(_u60))
-[_t120, _e120, _i120, _n120] = request.security(syminfo.tickerid, _u120 ? "120" : timeframe.period, f_tfPack(_u120))
-[_t180, _e180, _i180, _n180] = request.security(syminfo.tickerid, _u180 ? "180" : timeframe.period, f_tfPack(_u180))
-[_t240, _e240, _i240, _n240] = request.security(syminfo.tickerid, _u240 ? "240" : timeframe.period, f_tfPack(_u240))
-[_t360, _e360, _i360, _n360] = request.security(syminfo.tickerid, _u360 ? "360" : timeframe.period, f_tfPack(_u360))
-[_t480, _e480, _i480, _n480] = request.security(syminfo.tickerid, _u480 ? "480" : timeframe.period, f_tfPack(_u480))
-[_t720, _e720, _i720, _n720] = request.security(syminfo.tickerid, _u720 ? "720" : timeframe.period, f_tfPack(_u720))
-[_tD,   _eD  , _iD, _nD] = request.security(syminfo.tickerid, _uD   ? "1D"  : timeframe.period, f_tfPack(_uD))
-[_tW,   _eW  , _iW, _nW] = request.security(syminfo.tickerid, _uW   ? "1W"  : timeframe.period, f_tfPack(_uW))
-[_tM,   _eM  , _iM, _nM] = request.security(syminfo.tickerid, _uM   ? "1M"  : timeframe.period, f_tfPack(_uM))
-
-f_tfRow(array<string> nm, array<int> tr, array<int> ev, array<int> intr, array<int> innr, bool use, string disp, string tfs, int t, int e, int n, int w) =>
-    if use
-        bool isChartTf = tfs == timeframe.period
-        array.push(nm, disp)
-        array.push(tr, isChartTf ? trendDir : t)
-        array.push(ev, e)
-        array.push(intr, isChartTf ? iTrend : n)
-        array.push(innr, isChartTf ? nTrend : w)
-
-int _tblRows = (_u1 ? 1 : 0) + (_u2 ? 1 : 0) + (_u3 ? 1 : 0) + (_u5 ? 1 : 0) + (_u10 ? 1 : 0) + (_u15 ? 1 : 0) + (_u30 ? 1 : 0) + (_u45 ? 1 : 0) + (_u60 ? 1 : 0) + (_u120 ? 1 : 0) + (_u180 ? 1 : 0) + (_u240 ? 1 : 0) + (_u360 ? 1 : 0) + (_u480 ? 1 : 0) + (_u720 ? 1 : 0) + (_uD ? 1 : 0) + (_uW ? 1 : 0) + (_uM ? 1 : 0)
-int _tblCols = 2 + (tblEvOn ? 1 : 0) + (tblInOn ? 1 : 0) + (tblInnOn ? 1 : 0)
-int _colEv   = tblEvOn ? 2 : -1
-int _colIn   = tblInOn ? (tblEvOn ? 3 : 2) : -1
-int _colInn  = tblInnOn ? (2 + (tblEvOn ? 1 : 0) + (tblInOn ? 1 : 0)) : -1
-
-string _rowSz = tsize(tblRowSz)
-var table smcTbl = na
-if barstate.islast and tblOn and tblMaster and _tblRows > 0
-    array<string> _rn = array.new<string>()
-    array<int>    _rt = array.new<int>()
-    array<int>    _re = array.new<int>()
-    array<int>    _ri = array.new<int>()
-    array<int>    _rw = array.new<int>()
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u1, "1m", "1", _t1, _e1, _i1, _n1)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u2, "2m", "2", _t2, _e2, _i2, _n2)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u3, "3m", "3", _t3, _e3, _i3, _n3)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u5, "5m", "5", _t5, _e5, _i5, _n5)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u10, "10m", "10", _t10, _e10, _i10, _n10)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u15, "15m", "15", _t15, _e15, _i15, _n15)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u30, "30m", "30", _t30, _e30, _i30, _n30)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u45, "45m", "45", _t45, _e45, _i45, _n45)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u60, "1h", "60", _t60, _e60, _i60, _n60)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u120, "2h", "120", _t120, _e120, _i120, _n120)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u180, "3h", "180", _t180, _e180, _i180, _n180)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u240, "4h", "240", _t240, _e240, _i240, _n240)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u360, "6h", "360", _t360, _e360, _i360, _n360)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u480, "8h", "480", _t480, _e480, _i480, _n480)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u720, "12h", "720", _t720, _e720, _i720, _n720)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _uD, "1D", "1D", _tD, _eD, _iD, _nD)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _uW, "1W", "1W", _tW, _eW, _iW, _nW)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _uM, "1M", "1M", _tM, _eM, _iM, _nM)
-    if na(smcTbl)
-        smcTbl := table.new(tblPos == "Top left" ? position.top_left : tblPos == "Top center" ? position.top_center : tblPos == "Top right" ? position.top_right : tblPos == "Middle left" ? position.middle_left : tblPos == "Middle right" ? position.middle_right : tblPos == "Bottom left" ? position.bottom_left : tblPos == "Bottom center" ? position.bottom_center : position.bottom_right, _tblCols, _tblRows + 1, bgcolor = tblBgAll, border_color = tblCelC, border_width = tblCelW, frame_color = tblFrmC, frame_width = tblFrmW)
-    table.cell(smcTbl, 0, 0, tblC1, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
-    table.cell(smcTbl, 1, 0, tblC2, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
-    if tblEvOn
-        table.cell(smcTbl, _colEv, 0, tblC3, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
-    if tblInOn
-        table.cell(smcTbl, _colIn, 0, tblC4, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
-    if tblInnOn
-        table.cell(smcTbl, _colInn, 0, tblC5, text_color = tblHdrTc, text_size = tsize(tblHdrSz), bgcolor = tblHdrBg)
-    for i = 0 to array.size(_rn) - 1
-        int    _tv   = array.get(_rt, i)
-        int    _ev   = array.get(_re, i)
-        int    _iv   = array.get(_ri, i)
-        int    _wv   = array.get(_rw, i)
-        string _trTx = _tv == 1 ? tblBullTx : _tv == -1 ? tblBearTx : tblFlatTx
-        color  _trBg = _tv == 1 ? tblBullBg : _tv == -1 ? tblBearBg : tblTrNeuBg
-        color  _trTc = _tv == 1 ? tblBullTc : _tv == -1 ? tblBearTc : tblTrNeuTc
-        int  _r     = _ev
-        bool _eBear = _r >= 8
-        _r := _eBear ? _r - 8 : _r
-        bool _eBull = _r >= 4
-        _r := _eBull ? _r - 4 : _r
-        bool _eSwLo = _r >= 2
-        _r := _eSwLo ? _r - 2 : _r
-        bool _eSwHi = _r >= 1
-        string _evTx = ""
-        if _eSwHi
-            _evTx := tblSwHiTx
-        if _eSwLo
-            _evTx := _evTx == "" ? tblSwLoTx : _evTx + " + " + tblSwLoTx
-        if _eBull
-            _evTx := _evTx == "" ? tblFvgBTx : _evTx + " + " + tblFvgBTx
-        if _eBear
-            _evTx := _evTx == "" ? tblFvgSTx : _evTx + " + " + tblFvgSTx
-        bool _evNone = _evTx == ""
-        if _evNone
-            _evTx := tblNoneTx
-        string _inTx = _iv == 1 ? tblBullTx   : _iv == -1 ? tblBearTx   : tblFlatTx
-        color  _inBg = _iv == 1 ? tblInBullBg : _iv == -1 ? tblInBearBg : tblInNeuBg
-        color  _inTc = _iv == 1 ? tblInBullTc : _iv == -1 ? tblInBearTc : tblInNeuTc
-        string _wnTx = _wv == 1 ? tblBullTx    : _wv == -1 ? tblBearTx    : tblFlatTx
-        color  _wnBg = _wv == 1 ? tblInnBullBg : _wv == -1 ? tblInnBearBg : tblInnNeuBg
-        color  _wnTc = _wv == 1 ? tblInnBullTc : _wv == -1 ? tblInnBearTc : tblInnNeuTc
-        table.cell(smcTbl, 0, i + 1, array.get(_rn, i), text_color = tblRowTc, text_size = _rowSz, bgcolor = tblRowBg)
-        table.cell(smcTbl, 1, i + 1, _trTx, text_color = _trTc, text_size = _rowSz, bgcolor = _trBg)
-        if tblEvOn
-            table.cell(smcTbl, _colEv, i + 1, _evTx, text_color = _evNone ? tblEvNoneTc : tblEvTc, text_size = _rowSz, bgcolor = _evNone ? tblEvNoneBg : tblEvBg)
-        if tblInOn
-            table.cell(smcTbl, _colIn, i + 1, _inTx, text_color = _inTc, text_size = _rowSz, bgcolor = _inBg)
-        if tblInnOn
-            table.cell(smcTbl, _colInn, i + 1, _wnTx, text_color = _wnTc, text_size = _rowSz, bgcolor = _wnBg)
 
 if _intClrReq and not inHist and not mstHist
     f_intClear()
