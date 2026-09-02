@@ -1,0 +1,45 @@
+SMC VOLUME PROFILES + VWAP  v1.0
+================================================================================
+WHAT THIS FILE IS
+It is the volume-profile and VWAP half of the SMC toolkit, cut out of
+Market_Structure_SMC v16.3, with the structure-range profiles from v16.2
+included.
+
+WHAT IT DRAWS
+  · Session volume profiles  - Asia, London, New York, London Close
+  · Previous-day profiles, and the live current-day anchored profile
+  · The four killzone boxes
+  · VWAP, with its bands
+  · The three STRUCTURE-RANGE profiles - main, internal and inner - each
+    anchored on the candle that confirmed its tier's last break. All three are
+    OFF by default.
+
+WHY THE STRUCTURE ENGINE IS STILL IN HERE
+The structure-range profiles have to know where the current BOS/CHOCH,
+iBOS/iCHOCH and nBOS/nCHOCH ranges begin, and only the engine knows that. So the
+engine still runs on every bar - but it DRAWS NOTHING. Its internal drawOk flag
+is fixed at false, so no BOS or CHOCH line, no iBOS/nBOS mark, no IDM or
+strong-point stamp and no pivot dot is ever created. If you want those, use the
+full indicator; this one is for profiles.
+
+WHAT WAS REMOVED
+  · The multi-timeframe table, its per-timeframe engine and its eight
+    request.security calls. That engine was compiled once per requested
+    timeframe, so removing it is the single biggest saving in the file.
+  · Every alert and alertcondition, and the arming-gate readout.
+  · The EMA module.
+  · Every setting that belonged to those, and every structure styling setting.
+    They were turned into fixed values rather than deleted, so no reference in
+    the engine was left dangling - which is why the settings panel now contains
+    only profile, VWAP, killzone and structure-range-profile groups.
+
+232 settings, down from 564.
+Source tokens 24,754, down from 37,173 - and with the per-timeframe engine gone
+there is no eight-fold inlining left, so the compiled script is far smaller
+again. It will not go near TradingView's token limit.
+
+RESOLUTION NOTE, the same as in the full build: the structure-range profiles
+share the intrabar feed the session and day profiles fetch, which MASTER A
+enables by default. With every other profile switched off there is no intrabar
+feed to share and they fall back to one sample per chart candle - a coarser
+shape, correct levels.
