@@ -1,4 +1,4 @@
-COMMENTS AND CHANGE NOTES STRIPPED FROM Market_Structure_SMC_v16.2.txt
+COMMENTS AND CHANGE NOTES STRIPPED FROM Market_Structure_SMC_v16.3.txt
 The script itself carries no comments any more; everything that was in it is here,
 in the order it appeared. Comments never counted toward Pine's compiled-token limit,
 so this split is for readability and paste size, not for the token budget.
@@ -929,3 +929,26 @@ v16.2 / v2.2  -  STRUCTURE-RANGE VOLUME PROFILES, AND MULTI-TIMEFRAME ALERTS
 
 35 inputs added to the main file, 3 to the EMA file, all appended at the end.
 No engine rule changes.
+
+================================================================================
+v16.3  -  COMPILE FIX: f_msVp RETURNED TWO DIFFERENT TYPES
+================================================================================
+"Error at 3279:5 Return type of one of the if or switch blocks is not compatible
+with return type of other block(s) (void; series bool)"
+
+f_msVp, the little driver that starts and feeds a structure-range profile, ended
+one branch with c.feed() - which returns nothing - and the other with
+c.on := false, which in Pine is an expression of type series bool. A function's
+value is its last statement, so the two branches disagreed about what the
+function returns and it would not compile.
+
+The fix is the standard one: declare a throwaway bool at the top and end the
+function with it, so the if/else is a statement rather than the return value.
+Behaviour is unchanged.
+
+The EMA build never had this function - it has no volume-profile module for the
+structure-range profiles to attach to - so it is unaffected and stays at v2.2.
+
+Every other user-defined function in both files was scanned for the same fault:
+a top-level if/else whose branches end in different kinds of statement. None
+found.

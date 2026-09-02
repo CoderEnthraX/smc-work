@@ -3276,12 +3276,14 @@ var DrawQueue dqIs = DrawQueue.new(array.new<box>(), array.new<line>(), array.ne
 var DrawQueue dqNs = DrawQueue.new(array.new<box>(), array.new<line>(), array.new<int>(), array.new<int>(), array.new<int>())
 
 f_msVp(VPCol c, bool use, bool restart) =>
+    bool _vpDone = false
     if use
         if restart or not c.on
             c.begin()
         c.feed()
     else if c.on
         c.on := false
+    _vpDone
 
 if msVOn or isVOn or nsVOn
     bool _vM = evBosUp or evBosDn or evChoUp or evChoDn
