@@ -1580,23 +1580,13 @@ tblFvgSTx = input.string("BEAR FVG",   "", inline = "tbe2", group = gTbl)
 tblNoneTx = input.string("***", "No event", group = gTbl, tooltip = "Shown when that timeframe's candle has neither swept the previous candle nor reacted out of a fair value gap.")
 
 tbT1   = input.bool(true,  "1m",  inline = "tfa", group = gTbl)
-tbT2   = input.bool(false, "2m",  inline = "tfa", group = gTbl)
-tbT3   = input.bool(true,  "3m",  inline = "tfa", group = gTbl)
 tbT5   = input.bool(true,  "5m",  inline = "tfa", group = gTbl)
-tbT10  = input.bool(false, "10m", inline = "tfb", group = gTbl)
-tbT15  = input.bool(true,  "15m", inline = "tfb", group = gTbl)
-tbT30  = input.bool(true,  "30m", inline = "tfb", group = gTbl)
-tbT45  = input.bool(false, "45m", inline = "tfb", group = gTbl)
-tbT60  = input.bool(true,  "1h",  inline = "tfc", group = gTbl)
-tbT120 = input.bool(false, "2h",  inline = "tfc", group = gTbl)
-tbT180 = input.bool(false, "3h",  inline = "tfc", group = gTbl)
-tbT240 = input.bool(true,  "4h",  inline = "tfc", group = gTbl)
-tbT360 = input.bool(false, "6h",  inline = "tfd", group = gTbl)
-tbT480 = input.bool(false, "8h",  inline = "tfd", group = gTbl)
-tbT720 = input.bool(false, "12h", inline = "tfd", group = gTbl)
-tbTD   = input.bool(true,  "1D",  inline = "tfe", group = gTbl)
-tbTW   = input.bool(true,  "1W",  inline = "tfe", group = gTbl)
-tbTM   = input.bool(true,  "1M",  inline = "tfe", group = gTbl)
+tbT15  = input.bool(true,  "15m", inline = "tfa", group = gTbl)
+tbT60  = input.bool(true,  "1h",  inline = "tfa", group = gTbl)
+tbT240 = input.bool(true,  "4h",  inline = "tfb", group = gTbl)
+tbTD   = input.bool(true,  "1D",  inline = "tfb", group = gTbl)
+tbTW   = input.bool(true,  "1W",  inline = "tfb", group = gTbl)
+tbTM   = input.bool(true,  "1M",  inline = "tfb", group = gTbl)
 
 tblMaster = input.bool(true, "▶ Show multi-timeframe table (TF · TREND · EVENT · INTERNAL)", group = gTog, tooltip = "Quick on/off for the whole table from the toggle list at the top of the settings. The table also has its own 'Show table' switch in group 8 — BOTH must be on for it to appear, which lets you park the table with either one and turn it back on from whichever panel you happen to be in.")
 tblC4     = input.string("INTERNAL", "Column 4 title", group = gTbl)
@@ -1883,59 +1873,29 @@ f_tfPack(bool on) =>
 
 int _chartSec = timeframe.in_seconds(timeframe.period)
 int _s1   = timeframe.in_seconds("1")
-int _s2   = timeframe.in_seconds("2")
-int _s3   = timeframe.in_seconds("3")
 int _s5   = timeframe.in_seconds("5")
-int _s10  = timeframe.in_seconds("10")
 int _s15  = timeframe.in_seconds("15")
-int _s30  = timeframe.in_seconds("30")
-int _s45  = timeframe.in_seconds("45")
 int _s60  = timeframe.in_seconds("60")
-int _s120 = timeframe.in_seconds("120")
-int _s180 = timeframe.in_seconds("180")
 int _s240 = timeframe.in_seconds("240")
-int _s360 = timeframe.in_seconds("360")
-int _s480 = timeframe.in_seconds("480")
-int _s720 = timeframe.in_seconds("720")
 int _sD   = timeframe.in_seconds("1D")
 int _sW   = timeframe.in_seconds("1W")
 int _sM   = timeframe.in_seconds("1M")
 int _capSec = _chartSec >= 7200 ? _sM : _chartSec == 900 ? _sW : _chartSec <= 300 ? _s240 : _sD
 
 bool _u1   = tblOn and tblMaster and tbT1   and _s1   >= _chartSec and _s1   <= _capSec
-bool _u2   = tblOn and tblMaster and tbT2   and _s2   >= _chartSec and _s2   <= _capSec
-bool _u3   = tblOn and tblMaster and tbT3   and _s3   >= _chartSec and _s3   <= _capSec
 bool _u5   = tblOn and tblMaster and tbT5   and _s5   >= _chartSec and _s5   <= _capSec
-bool _u10  = tblOn and tblMaster and tbT10  and _s10  >= _chartSec and _s10  <= _capSec
 bool _u15  = tblOn and tblMaster and tbT15  and _s15  >= _chartSec and _s15  <= _capSec
-bool _u30  = tblOn and tblMaster and tbT30  and _s30  >= _chartSec and _s30  <= _capSec
-bool _u45  = tblOn and tblMaster and tbT45  and _s45  >= _chartSec and _s45  <= _capSec
 bool _u60  = tblOn and tblMaster and tbT60  and _s60  >= _chartSec and _s60  <= _capSec
-bool _u120 = tblOn and tblMaster and tbT120 and _s120 >= _chartSec and _s120 <= _capSec
-bool _u180 = tblOn and tblMaster and tbT180 and _s180 >= _chartSec and _s180 <= _capSec
 bool _u240 = tblOn and tblMaster and tbT240 and _s240 >= _chartSec and _s240 <= _capSec
-bool _u360 = tblOn and tblMaster and tbT360 and _s360 >= _chartSec and _s360 <= _capSec
-bool _u480 = tblOn and tblMaster and tbT480 and _s480 >= _chartSec and _s480 <= _capSec
-bool _u720 = tblOn and tblMaster and tbT720 and _s720 >= _chartSec and _s720 <= _capSec
 bool _uD   = tblOn and tblMaster and tbTD   and _sD   >= _chartSec and _sD   <= _capSec
 bool _uW   = tblOn and tblMaster and tbTW   and _sW   >= _chartSec and _sW   <= _capSec
 bool _uM   = tblOn and tblMaster and tbTM   and _sM   >= _chartSec and _sM   <= _capSec
 
 [_t1,   _e1  , _i1, _n1] = request.security(syminfo.tickerid, _u1   ? "1"   : timeframe.period, f_tfPack(_u1))
-[_t2,   _e2  , _i2, _n2] = request.security(syminfo.tickerid, _u2   ? "2"   : timeframe.period, f_tfPack(_u2))
-[_t3,   _e3  , _i3, _n3] = request.security(syminfo.tickerid, _u3   ? "3"   : timeframe.period, f_tfPack(_u3))
 [_t5,   _e5  , _i5, _n5] = request.security(syminfo.tickerid, _u5   ? "5"   : timeframe.period, f_tfPack(_u5))
-[_t10,  _e10 , _i10, _n10] = request.security(syminfo.tickerid, _u10  ? "10"  : timeframe.period, f_tfPack(_u10))
 [_t15,  _e15 , _i15, _n15] = request.security(syminfo.tickerid, _u15  ? "15"  : timeframe.period, f_tfPack(_u15))
-[_t30,  _e30 , _i30, _n30] = request.security(syminfo.tickerid, _u30  ? "30"  : timeframe.period, f_tfPack(_u30))
-[_t45,  _e45 , _i45, _n45] = request.security(syminfo.tickerid, _u45  ? "45"  : timeframe.period, f_tfPack(_u45))
 [_t60,  _e60 , _i60, _n60] = request.security(syminfo.tickerid, _u60  ? "60"  : timeframe.period, f_tfPack(_u60))
-[_t120, _e120, _i120, _n120] = request.security(syminfo.tickerid, _u120 ? "120" : timeframe.period, f_tfPack(_u120))
-[_t180, _e180, _i180, _n180] = request.security(syminfo.tickerid, _u180 ? "180" : timeframe.period, f_tfPack(_u180))
 [_t240, _e240, _i240, _n240] = request.security(syminfo.tickerid, _u240 ? "240" : timeframe.period, f_tfPack(_u240))
-[_t360, _e360, _i360, _n360] = request.security(syminfo.tickerid, _u360 ? "360" : timeframe.period, f_tfPack(_u360))
-[_t480, _e480, _i480, _n480] = request.security(syminfo.tickerid, _u480 ? "480" : timeframe.period, f_tfPack(_u480))
-[_t720, _e720, _i720, _n720] = request.security(syminfo.tickerid, _u720 ? "720" : timeframe.period, f_tfPack(_u720))
 [_tD,   _eD  , _iD, _nD] = request.security(syminfo.tickerid, _uD   ? "1D"  : timeframe.period, f_tfPack(_uD))
 [_tW,   _eW  , _iW, _nW] = request.security(syminfo.tickerid, _uW   ? "1W"  : timeframe.period, f_tfPack(_uW))
 [_tM,   _eM  , _iM, _nM] = request.security(syminfo.tickerid, _uM   ? "1M"  : timeframe.period, f_tfPack(_uM))
@@ -2016,7 +1976,7 @@ f_tfRow(array<string> nm, array<int> tr, array<int> ev, array<int> intr, array<i
         array.push(intr, isChartTf ? iTrend : n)
         array.push(innr, isChartTf ? nTrend : w)
 
-int _tblRows = (_u1 ? 1 : 0) + (_u2 ? 1 : 0) + (_u3 ? 1 : 0) + (_u5 ? 1 : 0) + (_u10 ? 1 : 0) + (_u15 ? 1 : 0) + (_u30 ? 1 : 0) + (_u45 ? 1 : 0) + (_u60 ? 1 : 0) + (_u120 ? 1 : 0) + (_u180 ? 1 : 0) + (_u240 ? 1 : 0) + (_u360 ? 1 : 0) + (_u480 ? 1 : 0) + (_u720 ? 1 : 0) + (_uD ? 1 : 0) + (_uW ? 1 : 0) + (_uM ? 1 : 0)
+int _tblRows = (_u1 ? 1 : 0) + (_u5 ? 1 : 0) + (_u15 ? 1 : 0) + (_u60 ? 1 : 0) + (_u240 ? 1 : 0) + (_uD ? 1 : 0) + (_uW ? 1 : 0) + (_uM ? 1 : 0)
 bool _evCol = false
 int _tblCols = 2 + (_evCol ? 1 : 0) + (tblInOn ? 1 : 0) + (tblInnOn ? 1 : 0)
 int _colEv   = _evCol ? 2 : -1
@@ -2032,20 +1992,10 @@ if barstate.islast and tblOn and tblMaster and _tblRows > 0
     array<int>    _ri = array.new<int>()
     array<int>    _rw = array.new<int>()
     f_tfRow(_rn, _rt, _re, _ri, _rw, _u1, "1m", "1", _t1, _e1, _i1, _n1)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u2, "2m", "2", _t2, _e2, _i2, _n2)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u3, "3m", "3", _t3, _e3, _i3, _n3)
     f_tfRow(_rn, _rt, _re, _ri, _rw, _u5, "5m", "5", _t5, _e5, _i5, _n5)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u10, "10m", "10", _t10, _e10, _i10, _n10)
     f_tfRow(_rn, _rt, _re, _ri, _rw, _u15, "15m", "15", _t15, _e15, _i15, _n15)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u30, "30m", "30", _t30, _e30, _i30, _n30)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u45, "45m", "45", _t45, _e45, _i45, _n45)
     f_tfRow(_rn, _rt, _re, _ri, _rw, _u60, "1h", "60", _t60, _e60, _i60, _n60)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u120, "2h", "120", _t120, _e120, _i120, _n120)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u180, "3h", "180", _t180, _e180, _i180, _n180)
     f_tfRow(_rn, _rt, _re, _ri, _rw, _u240, "4h", "240", _t240, _e240, _i240, _n240)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u360, "6h", "360", _t360, _e360, _i360, _n360)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u480, "8h", "480", _t480, _e480, _i480, _n480)
-    f_tfRow(_rn, _rt, _re, _ri, _rw, _u720, "12h", "720", _t720, _e720, _i720, _n720)
     f_tfRow(_rn, _rt, _re, _ri, _rw, _uD, "1D", "1D", _tD, _eD, _iD, _nD)
     f_tfRow(_rn, _rt, _re, _ri, _rw, _uW, "1W", "1W", _tW, _eW, _iW, _nW)
     f_tfRow(_rn, _rt, _re, _ri, _rw, _uM, "1M", "1M", _tM, _eM, _iM, _nM)

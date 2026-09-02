@@ -1,19 +1,20 @@
-COMMENTS AND CHANGE NOTES STRIPPED FROM SMC_Market_Structure_EMA_v1.13.txt
+COMMENTS AND CHANGE NOTES STRIPPED FROM Market_Structure_SMC_v15.24.txt
 The script itself carries no comments any more; everything that was in it is here,
 in the order it appeared. Comments never counted toward Pine's compiled-token limit,
 so this split is for readability and paste size, not for the token budget.
 ==============================================================================
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  SMC MARKET STRUCTURE — 3-CANDLE PULLBACK ENGINE + EMA  ·  v1.13
-//  Structure half of the toolkit. Companion: SMC Volume Profiles + VWAP.
+//  SMC MARKET STRUCTURE — 3-CANDLE PULLBACK ENGINE  ·  v15.23
+//  + SESSION / DAILY / ANCHORED VOLUME PROFILES + KILLZONES + MTF TABLE
 // ═════════════════════════════════════════════════════════════════════════════
-//  Built from Market_Structure_SMC v15.9 by removing every volume-profile and
-//  VWAP module and adding an EMA module. EVERY STRUCTURE RULE IS UNCHANGED: the
-//  engine block is byte-identical to v15.9.
+//  v15.0 is v14.11 with the comments stripped, the retracement level display
+//  removed, and fourteen defaults changed. NO rule, engine or alert behaviour is
+//  different: the executable content is identical to v14.11 line for line apart
+//  from those fourteen input lines and the deleted display block.
 //
-//  v1.13  THE COMPILED-TOKEN LIMIT, THE RUNTIME ERROR, A LIVE 50% LINE AND
-//  TWO MASTER TOGGLES.  Built on v1.10; v15.21 and v15.22 are withdrawn.
+//  v15.23  THE COMPILED-TOKEN LIMIT, THE RUNTIME ERROR, A LIVE 50% LINE AND
+//  TWO MASTER TOGGLES.  Built on v15.20; v15.21 and v15.22 are withdrawn.
 //
 //  1. "Compiled code contains too many tokens: 102987. The limit is 100256."
 //     WHERE IT COMES FROM. f_tfPack is the whole structure engine written out
@@ -77,8 +78,8 @@ so this split is for readability and paste size, not for the token budget.
 //  FOUR INPUTS ADDED, all appended at the end; not one existing input moves.
 //  NOT ONE ENGINE RULE CHANGES.
 //
-//  v1.10  THE MTF TABLE STOPS AT THE HIGHEST TIMEFRAME THE CHART CAN
-//  ACTUALLY FEED IT.  (v1.8 is withdrawn; this is built on v1.7.)
+//  v15.20  THE MTF TABLE STOPS AT THE HIGHEST TIMEFRAME THE CHART CAN
+//  ACTUALLY FEED IT.  (v15.18 is withdrawn; this is built on v15.17.)
 //    THE PROBLEM, measured rather than assumed. A probe requesting
 //    bar_index + 1 from each timeframe reported how many bars request.security
 //    really returns. On EURUSD, from a 1m chart, the weekly series came back
@@ -122,9 +123,9 @@ so this split is for readability and paste size, not for the token budget.
 //    NO INPUT is added, removed or moved, so saved settings carry over and no
 //    settings reset is needed. NOT ONE ENGINE RULE CHANGES: the chart
 //    drawings, the three tiers, the alerts and every structure classification
-//    are identical to v1.7.
+//    are identical to v15.17.
 //
-//  v1.7  ONE CANDLE CAN NO LONGER SUPPLY A LEVEL AND TRIGGER ITS OWN
+//  v15.17  ONE CANDLE CAN NO LONGER SUPPLY A LEVEL AND TRIGGER ITS OWN
 //  PROMOTION ON THE SAME BAR.
 //    Reported on two charts. FIRST: a single wide candle swept the ceiling AND
 //    the floor, and both pivot-2 promotions fired on that one bar, so the whole
@@ -154,7 +155,7 @@ so this split is for readability and paste size, not for the token budget.
 //    WHAT IS NOT TOUCHED, on purpose. If the trigger arrives on a LATER bar than
 //    the sweep — which is the ordinary case, and the GBPCHF sequence v15.14
 //    change 2 was written for — nothing is flagged, nothing is checked, and the
-//    promotion behaves exactly as it did in v1.6. v15.14 change 2 is intact:
+//    promotion behaves exactly as it did in v15.16. v15.14 change 2 is intact:
 //    an unconfirmed swept wick still takes the level. Only the one-candle case
 //    is gated.
 //    WHAT THE FIRST CHART NOW DOES: the ceiling is not promoted, so it stays on
@@ -170,12 +171,12 @@ so this split is for readability and paste size, not for the token budget.
 //    rule itself, the swing detector, the IDM gate, the alternation, the
 //    retracement alerts and every drawing rule are untouched.
 //
-//  v1.6  INNER ALERTS COMPLETED · TWO NEW LIVE-LINE PAIRS · 50% RANGE LINES ·
+//  v15.16  INNER ALERTS COMPLETED · TWO NEW LIVE-LINE PAIRS · 50% RANGE LINES ·
 //  A MANUAL LIMIT ON HOW MANY MARKS STAY ON THE CHART.
 //  Four additions, all requested, and every one of them appended at the end of
 //  the script so that no existing input moves. Saved settings carry over and no
 //  settings reset is needed. Not one engine rule is touched: the classification
-//  of every BOS, CHOCH, iBOS, iCHOCH, nBOS and nCHOCH is identical to v1.5,
+//  of every BOS, CHOCH, iBOS, iCHOCH, nBOS and nCHOCH is identical to v15.15,
 //  and the diff to the engine block is four lines, all of them pushing a
 //  drawing that was already being created into an array so it can be counted.
 //
@@ -242,7 +243,7 @@ so this split is for readability and paste size, not for the token budget.
 //     BOS* / CHOCH* pair and the two new live pairs are never counted or
 //     deleted by them — those are the current levels, not history.
 //
-//  v1.5  THE PIVOT-2 PROMOTION NO LONGER MOVES THE ANCHOR.
+//  v15.15  THE PIVOT-2 PROMOTION NO LONGER MOVES THE ANCHOR.
 //    Reported on BTCUSD 15m after v15.14: a main BOS and a main CHOCH printing
 //    on adjacent candles a few points apart.
 //    THE CAUSE, and it is v15.5 all over again. v15.14 promoted the level to
@@ -268,7 +269,7 @@ so this split is for readability and paste size, not for the token budget.
 //    deeper or equal in every single one. It never raises a floor.
 //    Six lines. No input added, removed or moved; no settings reset needed.
 //
-//  v1.4  TWO RULE CHANGES, BOTH REQUESTED, BOTH IN ALL THREE ENGINES.
+//  v15.14  TWO RULE CHANGES, BOTH REQUESTED, BOTH IN ALL THREE ENGINES.
 //
 //  1. THE BREAK CANDLE NOW COUNTS TOWARDS THE OPPOSITE LEVEL.
 //     Reported on GBPCAD 4h: candles 1-4 formed the pullback that confirmed a
@@ -331,7 +332,7 @@ so this split is for readability and paste size, not for the token budget.
 //  untouched. Existing alerts should be recreated only if you want them to see
 //  the new levels.
 //
-//  v1.3  EMA IS OFF BY DEFAULT AND HAS A MASTER SWITCH AT THE TOP.
+//  v15.13  EMA IS OFF BY DEFAULT AND HAS A MASTER SWITCH AT THE TOP.
 //    NEW INPUT: "▶ EMA — show exponential moving averages", off by default,
 //    drawn in group 0 Master Visibility Toggles alongside MASTER A and B.
 //    While it is off the module is completely inert: no line, no ribbon, no
@@ -351,7 +352,7 @@ so this split is for readability and paste size, not for the token budget.
 //    ta.ema still runs on every bar whatever the switch says, because a ta.*
 //    function must to keep its state correct. It is one multiply and one add.
 //
-//  v1.2  LONDON KILLZONE DEFAULT SESSION IS NOW 0600-0900.
+//  v15.12  LONDON KILLZONE DEFAULT SESSION IS NOW 0600-0900.
 //    Was 0700-1000. One default value; the input itself has not moved and no
 //    input has been added or removed, so every saved setting still lines up.
 //    It drives the London killzone BOX and the London session VOLUME PROFILE
@@ -363,53 +364,376 @@ so this split is for readability and paste size, not for the token budget.
 //    into the London session field yourself, or remove the indicator and
 //    re-add it (Defaults -> Reset settings does the same).
 //
-//  v1.1 carries the v15.10 retracement-latch fix: the "already reported"
-//  latch is burned only on a live bar with the alert gate open, so the
-//  historical replay performed when an alert is created can no longer
-//  consume a level before the alert is listening. Same three lines as the
-//  main file; nothing else differs from v1.0.
+//  v15.11  EMA MODULE ADDED TO THE COMPLETE INDICATOR.
+//    The EMA module built for the split structure file is now here too, so one
+//    file carries everything: the three structure engines, volume profiles,
+//    VWAP, killzones, the MTF table, the alert system and now EMAs.
+//      · five EMAs — 9 / 21 / 50 / 100 / 200, each with its own on-off,
+//        length, colour and width on one row (100 is off by default)
+//      · ribbon fill between EMA 1 and EMA 2, coloured by which is on top
+//      · EMA 1 / EMA 2 cross alerts, delivered through the same "Any alert()
+//        function call" alert as everything else and obeying the arming gate
+//      · last-bar labels with an offset so they sit clear of price
+//    All five EMAs are CALCULATED whether or not they are drawn. ta.* functions
+//    must run on every bar to keep their state correct, and it keeps the ribbon
+//    and the cross right while a line is hidden. An EMA is one multiply and one
+//    add per bar, so the cost is not measurable next to the rest of this script.
+//    EVERY INPUT IS APPENDED AT THE END (invariant 6). All 425 existing inputs
+//    keep their declaration positions, so saved settings carry over and NO
+//    settings reset is needed. No engine, rule, level, mark or existing alert
+//    changes. The EMA lines are ON by default — untick EMA 1/2/3/5 in group 9
+//    if you want the chart exactly as it was.
 //
-//  REMOVED, and why it is faster for it:
-//    · request.security_lower_tf — this file no longer requests intrabar data
-//      at all. That was the single heaviest call in the original.
-//    · f_render, the per-profile binning pass: for every profile it walked every
-//      intrabar bar and spread its volume across up to 100 price rows, then ran
-//      a value-area expansion loop. Gone entirely.
-//    · the VPStyle and DrawQueue types, ten drawing queues, and the four VPCol
-//      volume arrays (a VPCol now carries only x1 / hi / lo).
-//    · session, previous-day and current-day profiles; VWAP and its three bands.
-//  KEPT: the three structure engines, the 3-candle pullback rule, IDM and ALT
-//    mode, sweeps, retracement alerts, the arming gate, the MTF table, and the
-//    killzone BOXES including the top/bottom line mode with its own text.
-//  ADDED: EMA module — five EMAs, ribbon fill, cross alerts, last-bar labels.
+//  v15.10  THE RETRACEMENT LATCH WAS SPENT WHERE NO ALERT COULD FIRE.
+//    REPORTED: XAUUSD 1m, retracement alerts at 30% on BOS/CHOCH and
+//    iBOS/iCHOCH. An armed alert created 17:04:36 armed at 17:05:16 and then
+//    said nothing until 17:41:00 — a bar boundary — while an equivalent alert
+//    created at another moment reported touches mid-candle at real seconds
+//    (20:00:23, 20:58:54). Same settings, same percentage, different behaviour.
+//    THE FAULT: the "already reported" latch was set inside the touch test —
+//        if not mainRetFired and not _mNewLvl
+//            if (trendDir == 1 and low <= mLvl) or ...
+//                rtMainRet    := true
+//                mainRetFired := true      <- here
+//    which runs at global scope on EVERY bar, including every bar of the
+//    historical replay TradingView performs when an alert is created. Alerts
+//    can never fire on historical bars, so the first touch of a level was
+//    consumed by history and the level arrived at the live edge already spent.
+//    It could then only report again once the leg made a new extreme and
+//    rebuilt the level — and mRunHi / mRunLo only move at a BAR CLOSE, so the
+//    recovery landed on a bar boundary. That is the :00 timestamp, and the
+//    35 minutes of silence before it.
+//    IT WAS NEVER ABOUT THE ARMING GATE. Modelled tick by tick with Pine
+//    semantics — per-tick var rollback, the bar-close-gated extreme, the
+//    _mNewLvl guard, alert.freq_once_per_bar and a historical replay phase —
+//    the old code behaves IDENTICALLY with the gate on and off: both swallow
+//    the live touch at 17:05:30 and report at 17:07:30 instead. Whether an
+//    alert looked correct depended only on where in the leg it was created.
+//    The gate made it more visible because a gated alert is usually created
+//    deliberately, mid-leg, on a level price has already been trading around.
+//    THE FIX: the touch test now only REPORTS. The latch is burned after the
+//    gate, and only where an alert can actually be delivered:
+//        if almOk and barstate.isrealtime
+//            if rtMainRet
+//                mainRetFired := true
+//            ...
+//    History can no longer consume a level, and neither can a shut gate.
+//    MEASURED: with the fix both configurations fire at 17:05:30, on the touch,
+//    at a real second — armed and non-armed now behave identically, which is
+//    what was asked for. No alert that fires today is lost.
+//    Three lines moved. No input added, removed or moved, so saved settings
+//    carry over and NO settings reset is needed. No engine, rule, level, mark
+//    or percentage changes. Existing alerts must be DELETED AND RECREATED —
+//    they run their own frozen copy of the old code.
+//
+//  v15.9  ALL FOUR KILLZONES ON THE LINE SWITCH, AND THE LINES ARE NAMED.
+//    1. WHY LONDON CLOSE HAD NO LINES. Nothing was wrong with the line code —
+//       f_kzEdge was already called on the London Close queues. v15.7 had taken
+//       the London Close BOX out of MASTER B, so with that box off there was no
+//       box for the lines to attach to. kcOn goes back to
+//           kcOn = mstB or kcOnI
+//       so MASTER B is once again all four killzone boxes. THIS REVERSES HALF
+//       OF v15.7 and is deliberate. The other half stands: the London Close
+//       SESSION PROFILE is still NOT driven by MASTER B (cOn = cOnI), so the
+//       master still draws boxes and no volume profiles. Checked over all 64
+//       switch combinations against the new specification: 0 disagreements.
+//    2. THE LINES NOW CARRY THEIR KILLZONE NAME, with one set of controls for
+//       all four instead of four separate groups:
+//         - Text position   Above the top line (default) / Under the bottom line
+//         - Text align      Left / Center (default) / Right
+//         - Text colour     one picker for all four
+//         - Text size       one dropdown for all four
+//       The name itself is still each killzone own Text field, so they stay
+//       individually renameable and an empty field means no label for that one.
+//       While the line switch is on these four settings REPLACE each killzone
+//       Text vert. / Text horiz. / Colour / Size; switch it off and every one of
+//       those comes straight back untouched.
+//       Mechanically the box text is cleared with box.set_text and the label the
+//       box pushed into its parallel label queue is blanked, so a killzone can
+//       never print its name twice — the Outside Top / Outside Bottom setting
+//       puts the name in a LABEL rather than in the box, and both paths are
+//       handled.
+//    LIFETIME, the part that carries real risk (see v13.6 bug #4): the label
+//    queue is wiped in full alongside the line queue on every last-bar
+//    execution and shares the same 120-line cap, so at most 120 lines and 60
+//    labels exist at once against TradingView budgets of 500 each. Modelled
+//    over 300 days x 5 executions at 1, 8 and 15 days of sessions, with and
+//    without text: counts exact every time, zero orphaned lines or labels, and
+//    nothing created at all while the switch is off.
+//    FOUR INPUTS APPENDED after the three from v15.8. All 421 earlier inputs
+//    keep their declaration positions, so saved settings carry over and no
+//    settings reset is needed. No engine, rule, mark or alert is touched.
+//
+//  v15.8  KILLZONE BOXES AS TOP AND BOTTOM LINES ONLY — one switch.
+//    NEW, in the toggle list at the top of the settings:
+//      - Killzone boxes — top and bottom line only   (off by default)
+//      - Line colour  ·  Line width
+//    ON  = all four killzone boxes are drawn as two solid horizontal lines,
+//          one on the session high and one on the session low. The fill and
+//          the left/right edges are suppressed. The session text is untouched.
+//    OFF = every box returns to its own Fill / Border / Border style / Border
+//          width exactly as set per killzone. It overrides, it never
+//          overwrites, so nothing of yours is changed underneath.
+//
+//    TWO CONSTRAINTS SHAPED THE IMPLEMENTATION, both worth knowing.
+//    1. Pine boxes have no per-side border control — border_color, _width and
+//       _style apply to all four sides at once. So a top-and-bottom-only box
+//       cannot be asked for directly. The box is made fully transparent
+//       (bgcolor and border_color set to na) and two real lines are drawn on
+//       its top and bottom edges, read back from the box itself with
+//       box.get_left / _top / _right / _bottom, so the lines cannot drift from
+//       the session window they belong to.
+//    2. f_kzbox is defined 138 input declarations BEFORE the end of the file,
+//       so it cannot read an appended input. Declaring the three new inputs
+//       next to it would have shifted 138 inputs and cost a full settings
+//       reset. Instead the drawing is DEFERRED to the end of the script (the
+//       v14.0 / v14.1 pattern) where it reads the boxes back out of the
+//       kqA / kqL / kqN / kqC and kqAv / kqLv / kqNv / kqCv queues they were
+//       already stored in. Drawing objects keep whatever state they were last
+//       given, so restyling them on the last bar is all that is needed.
+//
+//    DRAWING BUDGET, because v13.6 bug #4 was exactly this class of mistake —
+//    an unbounded queue that made TradingView start deleting the oldest
+//    drawings, main BOS/CHOCH lines included. The queue is wiped in full and
+//    rebuilt on each last-bar execution and is capped at 120 lines. Modelled
+//    over 400 days x 5 executions per day at 1, 3, 8 and 15 days of sessions:
+//    the queue never exceeded the cap, held exactly two lines per visible box
+//    every time, and every line created was either still queued or deleted —
+//    zero orphans. With the switch off it creates no lines and touches no box.
+//    Worst case 120 of the 500-drawing budget; at the default 1 day it is 16.
+//
+//    THREE INPUTS, ALL APPENDED AT THE VERY END (invariant 6) and placed on
+//    screen with group = gTog, which is why they appear at the TOP of the
+//    settings: a group renders where its earliest-declared member sits. All
+//    418 existing inputs keep their exact declaration positions, so saved
+//    settings carry over and NO settings reset is needed. No engine, rule,
+//    mark or alert is touched.
+//
+//  v15.7  MASTER B IS NOW THE THREE KILLZONE BOXES AND NOTHING ELSE.
+//    MASTER B was wired to five things: the London Close SESSION PROFILE plus
+//    all four killzone boxes —
+//        cOn  = mstB or cOnI        <- the London Close volume profile
+//        kaOn = mstB or kaOnI
+//        klOn = mstB or klOnI
+//        knOn = mstB or knOnI
+//        kcOn = mstB or kcOnI       <- the London Close box
+//    so switching it on drew a full session volume profile and a fourth box
+//    that were never wanted from a box toggle.
+//    NOW: MASTER B drives the Asia, London and New York killzone BOXES only.
+//        cOn  = cOnI                <- own checkbox only
+//        kaOn = mstB or kaOnI
+//        klOn = mstB or klOnI
+//        knOn = mstB or knOnI
+//        kcOn = kcOnI               <- own checkbox only
+//    The London Close session profile and the London Close box are both still
+//    available from their own checkboxes in the toggle list; they are simply no
+//    longer forced on by the master. With MASTER B OFF nothing at all changes:
+//    verified over all 32 combinations of the five individual switches, the
+//    resolved flags are identical to v15.6.1. Over all 64 combinations the new
+//    wiring matches the requested behaviour exactly; the old wiring differed in
+//    24 of them.
+//    NOTE, because it is easy to misread on the chart: a session PROFILE
+//    appearing while MASTER B is on is MASTER A's doing. MASTER A is ON by
+//    default (v15.3) and covers VWAP, the anchored and previous-day profiles
+//    and the Asia / London / New York session profiles. MASTER B has never
+//    controlled those and still does not.
+//    Two resolution lines and one label/tooltip change. NO input is added,
+//    removed or moved, so saved settings carry over and no reset is needed.
+//    No engine, rule, mark or alert is touched.
+//
+//  v15.6.1  COMPILE FIX IN THE v15.6 TOOLTIP TEXT. No behaviour change.
+//    Error at 2177:706, Syntax error at input "Touches". Two of the sentences
+//    v15.6 added to the arm tooltips quoted an option name using RAW DOUBLE
+//    QUOTES inside a Pine string literal, so the literal ended at that quote
+//    and the parser met a bare identifier immediately afterwards.
+//    Both now use single quotes, which this file has always used safely inside
+//    double-quoted strings (see the profile tooltips). No escape sequence is
+//    relied on anywhere.
+//    Not one line of logic differs from v15.6: the arming gate, the three
+//    engines, every alert and all 418 inputs are byte-identical apart from the
+//    two tooltip strings and this header.
+//    The build now runs a string-literal lexer over the whole file, validated
+//    against v15.5 as a known-good control, so an unescaped quote cannot ship
+//    again.
+//
+//  v15.6  THE ARMING GATE OPENED WITHOUT PRICE EVER REACHING THE LEVEL.
+//    REPORTED: EURUSD 1m. "Arm alerts only after price crosses a level" ON, arm
+//    price level 1.15743, "Arms when price" = Either, slot 1 trigger "Price
+//    crosses level", only the iCHOCH box ticked, one alert created on "Any
+//    alert() function call". Price never traded above 1.15660 all day, yet the
+//    iCHOCH alerts arrived from the start and the ARM panel read ARMED.
+//    THE FAULT — one line, the price trigger inside f_armHit:
+//        0 => lvl > 0 and (dir == "Touches from below" ? high >= lvl
+//                        : dir == "Touches from above" ? low  <= lvl
+//                        : (high >= lvl or low <= lvl))
+//    "Either" is "high >= lvl or low <= lvl". Price sitting BELOW the level
+//    satisfies "low <= lvl" on its own, so the gate opened on the FIRST LIVE
+//    BAR having touched nothing. The same trivially-true test broke the other
+//    two options whenever price was already on the far side: "Touches from
+//    above" armed instantly while price was below it, "Touches from below"
+//    armed instantly while price was above it. The test asked "is the level on
+//    one side of this bar?" when it had to ask "did price REACH the level?".
+//    WHY IT SURVIVED SO LONG: v13.6.1's barstate.isrealtime guard stopped
+//    history from pre-arming the latch, so the readout correctly showed WAITING
+//    across all of history and then flipped to ARMED on the first live bar —
+//    which is indistinguishable from an arm that works.
+//    THE FIX: a touch now requires the APPROACH SIDE. The previous bar's close
+//    fixes which side of the level price is on, and the level must be reached
+//    from that side:
+//        from below = close[1] <= lvl and high >= lvl
+//        from above = close[1] >= lvl and low  <= lvl
+//        Either     = whichever of the two applies to where price actually is
+//    Everything else about the gate is untouched: still a WICK test, never a
+//    close; still evaluated at global scope on every tick, so it trips intrabar;
+//    still live bars only; still one permanent latch; still five OR-ed slots,
+//    first to fire opens it for good. A gap straight through the level still
+//    arms, exactly as an ordinary TradingView price alert would.
+//    MEASURED IN NODE against an independent ground truth — the level lying
+//    inside a live bar's traded range, never either implementation's own
+//    output. Over 3,000 random series: the old "Either" armed in 2,224 of the
+//    2,224 series where price NEVER reached the level (100% false) and armed
+//    EARLY in 694 of the 776 where it did. The new test produced 0 false arms
+//    and armed on the exact touch bar in all 776. Across 2,331 arm events it
+//    never once armed without price trading at, or gapping through, the level.
+//    Old "Touches from above" false-armed 1,518 times and "from below" 706;
+//    both are now 0. On the reported setup the old gate delivered all eight
+//    seeded iCHOCH alerts before any touch, the new one delivered none.
+//    NO INPUT IS ADDED, REMOVED OR MOVED. Two tooltips are reworded, which is
+//    cosmetic, so saved settings carry over and NO settings reset is needed.
+//    Nothing else changes: not the 3-candle rule, not any of the three engines,
+//    not the retracement alerts, not which events each checkbox reports.
+//    Also corrected in that same tooltip: a double-encoded em dash that has
+//    been sitting there since at least v14.7 is now a plain em dash.
+//
+//  v15.5  AN EQUAL-PRICE PIVOT NO LONGER MOVES THE PIVOT. All three engines.
+//    THE FAULT: "EQUAL-LEVEL RETEST — a pivot at exactly the standing price keeps
+//    the level and re-anchors the line to the most recent touch." The PRICE was
+//    kept, but the ANCHOR BAR jumped forward to the later touch, and that anchor
+//    is what the opposite side re-anchors from on a break:
+//        f_retExtreme(ceilS.x1, false) = the lowest low between the pivot and the
+//        break bar.
+//    Move x1 forward and that window shrinks, so the new CHOCH* floor lands on a
+//    shallow low inside the real leg instead of the leg's actual extreme. Reported
+//    on a 3m BTCUSD chart where two highs touched 64538.23 exactly: the retest
+//    moved the anchor from P1 to P2, and the CHOCH* floor came out at P3 (64250)
+//    instead of P4 (63830). The range was nested inside the true one.
+//    It also silently reset that level's born bar, its armed sweep and its opposite
+//    reference, so a sweep in progress was forgotten.
+//    THE RULE, as it should be: an equal high is the SAME pivot being retested, not
+//    a new one. The first touch owns the level. Only a genuinely higher high (or a
+//    lower low) may take it, and only into an empty slot.
+//    THE FIX: the equal-price retest is removed from all three engines.
+//      MAIN     "adoptC or retestC" -> "adoptC", and the chart-start branch now
+//               also refuses a pivot equal to the standing level (_cEq / _fEq), so
+//               the rule holds while the trend is still neutral too.
+//      INTERNAL "if na(iCeilP) or aPhP == iCeilP" -> "if na(iCeilP)"
+//      INNER    "if na(nCeilP) or aPhP == nCeilP" -> "if na(nCeilP)"
+//    Nothing else changes: not the 3-candle rule, the sweep test, the pivot-2
+//    promotion, the opposite-side re-anchor, the retracement alerts or any input.
+//
+//  v15.4  "Show inner structure" is ON by default. One input default, nothing
+//    else. The inner engine has always RUN regardless of this switch — it only
+//    ever gated the drawing — so no rule, level, alert or event changes; the
+//    nBOS / nCHOCH marks simply appear now instead of being computed silently.
+//    Inner marks are sparse by nature: the inner range is neutral until its own
+//    first nCHOCH, so expect long stretches with nothing drawn.
+//
+//  v15.3  NEW DEFAULTS + A MASTER "WHITE STRUCTURE" SWITCH.
+//    NEW INPUT, declared FIRST so its group renders above the Master Visibility
+//    Toggles: "White BOS / CHOCH lines and text". ON turns all twelve main
+//    BOS / CHOCH / BOS* / CHOCH* line and text colours white; OFF returns every
+//    one of them to whatever its own colour picker says. It overrides, it does not
+//    overwrite — your per-event colours are untouched underneath.
+//    It does NOT touch iBOS / iCHOCH or nBOS / nCHOCH, which have their own colours.
+//    *** THIS SHIFTS EVERY INPUT BY ONE DECLARATION PLACE. TradingView matches
+//    saved settings by declaration order, so reset the settings once after loading
+//    (remove the indicator and re-add it, or Defaults -> Reset settings). You have
+//    to do that anyway for the eleven new defaults below to appear, so it is the
+//    same single reset, not an extra one.
+//    NEW DEFAULTS: MASTER A on · rows per profile 24 · max history to draw 5000 ·
+//    iBOS/iCHOCH line and text blue · keep previous iBOS/iCHOCH off · keep previous
+//    nBOS/nCHOCH off · strong internal mark 💎 · strong inner mark 🧨 · EVENT
+//    column off · VWAP band #1 off (#2 and #3 were already off).
+//    NOTE: there is no "keep previous" switch for the MAIN engine — it never had
+//    one. Main BOS/CHOCH history is bounded by "Max history to draw" alone, now
+//    5000 bars. Only internal and inner have that checkbox, and both are now off.
+//    No rule, no engine and no alert behaviour changes.
+//
+//  v15.2  THE PIVOT SHIFT RULE — the main engine used the wrong reference.
+//    THE RULE: P1 sweeps P0's high. P1 becomes the new main pivot ONLY IF price
+//    then sweeps or closes below P0's PULLBACK EXTREME LOW (without that being a
+//    CHOCH). If P1's pullback never reaches that low, P0 KEEPS the level, a close
+//    above P0 is the BOS, and a close below P0's pullback extreme is the CHOCH.
+//    THE FAULT: the main engine armed the promotion against f_firstConf — the
+//    FIRST CONFIRMED counter-swing after the pivot — not the pullback extreme.
+//    The first confirmed low is always at or above the extreme, so the shift could
+//    fire on a pullback far shallower than the rule allows, handing the level to
+//    P1's sweep wick. The BOS was then measured against a high price had never
+//    closed above, printed late, and its line was anchored on the sweep bar.
+//    Measured over 320,000 bars: the two references differ on 29% of sweeps, and
+//    f_retExtreme was never once higher than f_firstConf.
+//    THE FIX: the reference is now f_retExtreme — the extreme wick strictly between
+//    the pivot candle and the sweep — which is EXACTLY what the internal and inner
+//    engines have always used for the same test. The three engines now agree.
+//    Mirrored on the floor: the highest high between the floor pivot and the sweep.
+//    HONEST NOTE ON SIDE EFFECTS. Structure is a feedback loop, so removing a
+//    premature shift changes what happens afterwards. Over the same 320,000 bars
+//    98.0% of main BOS/CHOCH events are completely unchanged; 83 disappeared and
+//    62 appeared out of 4,219. Those are the legs that were being measured from a
+//    sweep wick. There is no version of this fix that leaves them alone.
+//    f_firstConf had no other caller and has been removed.
+//
+//  v15.1  A SWEEP MUST NOT MOVE THE LEVEL (main engine).
+//    While the trend is still NEUTRAL the main adopt was
+//        adoptC = trendDir == 0 ? phP >= allHi : na(ceilS)
+//    with no reference to the standing ceiling's sweep state. So a bar that wicked
+//    ABOVE the ceiling and closed back INSIDE — a sweep, not a break — became the
+//    new all-time extreme, and two bars later, when the 3-candle rule confirmed it
+//    as a pivot, "phP >= allHi" adopted it outright and overwrote the real level.
+//    The sweep was recorded and then bypassed: Module 2 says a wick through with
+//    the body closing back inside is a SWEEP, and Module 3 says the sweep only
+//    ARMS the pivot-2 promotion. This branch ignored both.
+//    Effect on the chart: the ceiling jumped onto the sweep wick, so the BOS was
+//    measured against a level price had never closed above, printed late, and its
+//    line was anchored on the sweep bar instead of the true pivot.
+//    FIX: the chart-start adopt is blocked while the standing level carries an
+//    armed sweep. The swept pivot keeps the level; a body close beyond it is the
+//    BOS, and a body close beyond the opposite side is the CHOCH — which is what
+//    the rules always said. Mirrored on the floor.
+//    INTERNAL and INNER were checked and need no change: they adopt only into an
+//    EMPTY slot ("na(iCeilP) or aPhP == iCeilP"), so a swept level can never be
+//    overwritten there. Adding the same guard would have been dead code.
+//    Nothing else moves: not the 3-candle rule, the pivot-2 promotion, the
+//    opposite-side re-anchor, the retracement alerts, or any input.
 //
 //  THE 3-CANDLE PULLBACK RULE (Module 1) — swing HIGH; lows mirror
 //    1. CANDIDATE = highest high so far; a new OR EQUAL extreme replaces it.
 //    2. Three BEARISH pullback candles: c1 = first bearish candle at/after the
-//       candidate (its LOW locks); c2 must CLOSE below c1 low; c3 must CLOSE
-//       below c2 low -> CONFIRMED.
+//       candidate (its LOW locks); c2 must CLOSE below c1's low; c3 must CLOSE
+//       below c2's low -> CONFIRMED.
 //    3. Always body-close beyond the previous locked WICK. Never body-to-body.
 //    4. Noise PAUSES, never resets. The three need not be consecutive.
 //    5. A new OR EQUAL extreme RESTARTS everything.
-//    6. Reported on the confirmation bar, ANCHORED at the candidate bar.
+//    6. Reported on the confirmation bar, ANCHORED at the candidate's bar.
 //
 //  TWO PIVOT STREAMS — never mix them up
 //    MAIN      hiT / loT   free-running.  Read by BOS / CHOCH only.
 //    INTERNAL  aHiT / aLoT alternating.   Read by iBOS / iCHOCH and nBOS / nCHOCH.
 //
 //  THREE NESTED ENGINES
-//    MAIN     BOS / CHOCH    · anchored on the absolute extreme at chart start
-//    INTERNAL iBOS / iCHOCH  · anchored on the main trend-side line pivot
+//    MAIN     BOS / CHOCH    · range anchored on the absolute extreme at start
+//    INTERNAL iBOS / iCHOCH  · anchored on the main trend-side line's pivot
 //    INNER    nBOS / nCHOCH  · anchored on the internal trend-side level
-//  Each: adopt into an EMPTY slot — an equal-price pivot never takes the level
-//  (v15.5) · first break of a range = CHOCH · then with-trend = BOS, against =
-//  CHOCH + flip · broken side empties and refills · opposite side re-anchors to
-//  the retracement extreme · sweeps arm a pivot-2 promotion.
+//  Each: adopt into an empty slot · equal price re-anchors to the later touch ·
+//  first break of a range = CHOCH (trend starts neutral) · then with-trend = BOS,
+//  against = CHOCH + flip · broken side empties and refills · opposite side
+//  re-anchors to the retracement extreme · sweeps arm a pivot-2 promotion.
 //
 //  INVARIANTS — break these and old bugs come back
 //    1. Only a confirmed MAIN event starts a new internal range; only a confirmed
 //       INTERNAL event starts a new inner range.
-//    2. The range anchor is LATCHED for the life of the range.
+//    2. The range anchor is LATCHED for the life of the range. Re-creating the
+//       trend-side line inside a range must NOT re-scope or delete levels.
 //    3. Main = free-running pivots. Internal and inner = alternating.
 //    4. A structure level is a CONFIRMED PIVOT, with ONE deliberate exception
 //       (v15.14): a pivot-2 promotion takes the SWEPT WICK. There the sweep of
@@ -418,20 +742,26 @@ so this split is for readability and paste size, not for the token budget.
 //    5. Never adopt or seed a level price has already closed beyond.
 //    6. NEW INPUTS MUST BE APPENDED AT THE END — TradingView matches saved
 //       settings by declaration ORDER. Use group = to place them on screen.
-//    7. rearm() reads the chart price buffers, so it must never be called inside
+//    7. rearm() reads the chart's price buffers, so it must never be called inside
 //       request.security(). armHere() is buffer-free and safe in both.
 //    8. No variable-offset history references — use bufHi / bufLo / bufDir.
 //    9. Pine has no bitwise operators; the EVENT bitmask is unpacked by
 //       subtraction. Pine cannot show, hide or disable an input conditionally.
-//   10. ANY COMPARISON INVOLVING na YIELDS na, AND if TREATS na AS FALSE, so
-//       "x != na" is FALSE. Guard every such test with na(x) first.
+//   10. ANY COMPARISON INVOLVING na YIELDS na, AND if TREATS na AS FALSE. So
+//       "x != na" is FALSE, not true. Guard every such test with na(x) first.
+//       This one silently disabled the retracement alert from v14.4 to v14.10.
 //
-//  ARMING GATE (v15.6): a price slot arms only when price REACHES the level from
-//  the side it is actually on — close[1] fixes the side, then the wick must come
-//  to the level. Live bars only; one permanent latch; five OR-ed slots.
+//  RETRACEMENT ALERTS — main / internal / inner, one shared percentage
+//    The percentage is measured BACK FROM THE EXTREME of the leg: 20 = a shallow
+//    pullback near the high, 50 = midpoint, 79 = deep. The anchor is the leg's
+//    running extreme since that tier's last event, so the alert does not wait for
+//    the 3-candle pullback to confirm the range; if price has not reached the
+//    level by confirmation it stays armed and fires afterwards. Fires on TOUCH,
+//    intrabar (alert.freq_once_per_bar), only on a move BACK from the extreme,
+//    and never on the bar the level was established.
 // ═════════════════════════════════════════════════════════════════════════════
 // ═════════════════════════════════════════════════════════════════════════════
-//  v1.6 ADDITIONS — ONE APPENDED BLOCK.
+//  v15.16 ADDITIONS — ONE APPENDED BLOCK.
 //  Every input below is declared AFTER all earlier inputs, so no existing input
 //  moves and saved settings carry over untouched (invariant 6). Groups render
 //  where their earliest-declared member sits, so the three new "max marks to
@@ -472,3 +802,39 @@ so this split is for readability and paste size, not for the token budget.
 //     old behaviour on all three. Any other number keeps that many of the most
 //     recent structure lines and deletes the rest, oldest first.
 // ═════════════════════════════════════════════════════════════════════════════
+
+================================================================================
+v15.24 / v1.14  -  TEN TIMEFRAMES REMOVED FROM THE MULTI-TIMEFRAME TABLE
+================================================================================
+REMOVED : 2m, 3m, 10m, 30m, 45m, 2h, 3h, 6h, 8h, 12h
+REMAINING (8) : 1m, 5m, 15m, 1h, 4h, 1D, 1W, 1M
+
+WHY IT IS WORTH SO MUCH. f_tfPack is the whole structure engine written out
+again for one requested timeframe, and Pine INLINES a user function at every
+call site. Each timeframe the table requests is therefore another complete
+copy of that engine in the compiled script. Removing ten of them removes ten
+copies.
+
+    compiled tokens   102,987  ->  about 69,700   (the hard limit is 100,256)
+    request.security  18 calls ->  8 calls
+    engine instances  18       ->  8, on every bar
+
+The third line is the one that matters beyond the token error: fewer requested
+datasets per script is exactly what keeps an alert inside TradingView's
+server budget, which is where the "calculation error" alerts were coming from.
+
+WHAT IT COSTS. Deleting an input renumbers every input after it, so the 207
+inputs that followed the timeframe checkboxes take their neighbour's saved
+value once. That is the table styling, the EMA group, the internal and inner
+styling, the alert checkboxes, the arm readout and the 50%-line groups.
+Inputs 1 to 330 - every structure colour, the volume profiles and the
+killzones - are untouched. Re-set the back half of the panel once and it is
+done.
+
+ONE CONSEQUENCE WORTH KNOWING. The row for the chart's own timeframe is the
+only one that bypasses request.security and reads the live engine directly.
+On a chart set to a timeframe that no longer has a row - 3m, 30m, 2h and the
+rest of the removed list - the table simply has no self row. The remaining
+rows are unaffected and still correct.
+
+NOTHING ELSE CHANGED. Not one engine rule, not one drawing rule, and no alert.
