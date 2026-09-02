@@ -1,4 +1,4 @@
-COMMENTS AND CHANGE NOTES STRIPPED FROM Market_Structure_SMC_v15.24.txt
+COMMENTS AND CHANGE NOTES STRIPPED FROM Market_Structure_SMC_v16.0.txt
 The script itself carries no comments any more; everything that was in it is here,
 in the order it appeared. Comments never counted toward Pine's compiled-token limit,
 so this split is for readability and paste size, not for the token budget.
@@ -804,7 +804,7 @@ so this split is for readability and paste size, not for the token budget.
 // ═════════════════════════════════════════════════════════════════════════════
 
 ================================================================================
-v15.24 / v1.14  -  TEN TIMEFRAMES REMOVED FROM THE MULTI-TIMEFRAME TABLE
+v16.0 / v2.0  -  TEN TIMEFRAMES REMOVED FROM THE MULTI-TIMEFRAME TABLE
 ================================================================================
 REMOVED : 2m, 3m, 10m, 30m, 45m, 2h, 3h, 6h, 8h, 12h
 REMAINING (8) : 1m, 5m, 15m, 1h, 4h, 1D, 1W, 1M
