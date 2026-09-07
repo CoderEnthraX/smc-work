@@ -40,7 +40,7 @@ strSz   = input.string("Small", "", options = ["Tiny", "Small", "Normal", "Large
 
 grpE = "Engine"
 onClose   = input.bool(true,  "Evaluate on bar close only (no intrabar repaint)", tooltip = "If true, market structure events (BOS/CHOCH) are only confirmed when the candle fully closes. If false, they trigger immediately in real-time but might repaint if the price drops back before closing.", group = grpE)
-histBars  = input.int(300, "Max history to draw (bars back from last)", minval = 500, maxval = 20000, tooltip = "TradingView keeps only ~500 drawings per script, so this focuses the drawing budget on the most recent N bars: structure older than this is computed but not drawn. The engine itself always runs on every bar of history.", group = grpE)
+histBars  = input.int(300, "Max history to draw (bars back from last)", minval = 100, maxval = 20000, tooltip = "TradingView keeps only ~500 drawings per script, so this focuses the drawing budget on the most recent N bars: structure older than this is computed but not drawn. The engine itself always runs on every bar of history.", group = grpE)
 showPiv   = input.bool(false, "Mark confirmed pivots (•)", inline = "pv", group = grpE)
 colPivHi  = input.color(color.new(color.red, 30),  "", inline = "pv", group = grpE)
 colPivLo  = input.color(color.new(color.teal, 30), "", inline = "pv", group = grpE)

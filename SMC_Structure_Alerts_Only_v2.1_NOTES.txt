@@ -85,6 +85,27 @@ computed offset (close[n], time[n] and friends) found none anywhere in the
 file - drawing coordinates were the only exposure in the structure engine.
 
 --------------------------------------------------------------------------------
+v2.1 ALSO FIXES A COMPILE ERROR THAT HAD BEEN IN THIS FILE SINCE v1.0
+--------------------------------------------------------------------------------
+    Error at 43:23  Input's "defval" value must be between "minval" and "maxval"
+
+When this alert-only build was first cut, "Max history to draw" had its default
+lowered from 5000 to 300 to keep the drawing budget small - but the floor that
+came with it from the full indicator, minval = 500, was left alone. 300 is below
+500, so Pine refused the input and the script never compiled. v1.0 and v2.0 both
+carried it; neither of them could ever have run.
+
+The floor is now minval = 100. The default stays at 300, and you can take it
+lower still if you want the leanest possible alert copy.
+
+This is the kind of fault a compile catches in one second and a reader does not,
+so it is now covered by a checker that runs over every file before I hand it
+over: for every input it re-does Pine's own build-time validation - defval inside
+minval/maxval, minval below maxval, step above zero, and a string defval that is
+actually one of its options. Run across all nine scripts in this project it found
+exactly one fault, this one, in the three alert-only builds and nowhere else.
+
+--------------------------------------------------------------------------------
 ONE PLACE I HAVE NOT TOUCHED
 --------------------------------------------------------------------------------
 The volume-profile and killzone renderers anchor their boxes and POC/VA lines to
