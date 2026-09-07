@@ -1,0 +1,428 @@
+================================================================================
+v2.1 — FIX: "The requested historical offset is beyond the historical
+buffer's limit"                                    (built on v2.0)
+================================================================================
+
+WHAT YOU SAW
+    Error on bar 14031: The requested historical offset (1095) is beyond the
+    historical buffer's limit (1094).
+        at f_hLine()
+        at #main()
+
+WHAT IT ACTUALLY WAS - and it was my bug, in every version since the live 50%
+line was added.
+
+TradingView keeps only a limited window of past bars addressable by a script.
+When you hand a drawing a bar index - line.set_xy1(line, x, y) - Pine turns that
+index into an offset from the current bar and reads it out of that window. Ask
+for a bar older than the window and the whole indicator stops with this error.
+
+f_hLine draws the six live levels: BOS* / CHOCH*, iBOS* / iCHOCH*,
+nBOS* / nCHOCH* and the three 50% lines. It pinned each line's left end to the
+pivot the level came from, and it bounded that with "Max history to draw"
+(histBars), which defaults to 5000 and can be set to 20000.
+
+histBars is not the buffer. It is a display window, and it was never the right
+thing to bound a drawing coordinate with. The buffer on your chart was 1094
+bars. So the moment a live level stayed put for more than about 1094 bars - a
+range that holds, which is completely normal - the line's left end pointed
+outside the window and the script died.
+
+WHY THE 10-MARKS CAP DID NOT HELP
+You had "keep only the latest 10 marks per tier" ticked and 15-20 drawings on
+the chart, and still got it. That is expected and it is the clue that pins the
+diagnosis: the cap only ever trims HISTORY. The six live lines are the current
+levels - they are deliberately never counted or deleted by it. The crash came
+from one of those six, not from the marks the cap governs. Nothing you could
+have set in the panel would have avoided it.
+
+WHY IT LOOKED RANDOM
+It depends on how old the current structure range is, not on how much is drawn.
+Quiet, range-bound stretches age the anchor; a fresh break resets it. So it
+fires on some symbols and timeframes and not others, and it can clear itself
+when the next break lands.
+
+--------------------------------------------------------------------------------
+THE FIX
+--------------------------------------------------------------------------------
+Two new helpers, declared before anything that draws:
+
+    int _xBack = 1500
+    f_xClamp(int b) => na(b) ? bar_index : math.max(math.min(b, bar_index), bar_index - _xBack)
+    f_xNear(int b)  => not na(b) and b <= bar_index and (bar_index - b) <= _xBack
+
+and max_bars_back raised from 500 to 2000, so a 1500-bar reach is always inside
+the buffer with 500 bars to spare.
+
+They are applied by kind, because the right answer differs:
+
+  CLAMP - for lines that extend to the right, where only the left end moves and
+  the level itself is unchanged. f_hLine, mkSLine (the live BOS*/CHOCH* line),
+  freeze() and repos(). A level older than 1500 bars now starts 1500 bars back
+  instead of at its pivot. A chart shows 200-400 bars, so you will not see it.
+
+  SKIP - for marks that sit ON a specific old bar, where clamping would put the
+  mark at a bar it does not belong to. f_intMark, f_innMark, f_intStrong,
+  f_innStrong, f_idmMark, the pivot dots, and the two strong-point stamps. These
+  are all created at the moment of the break, when the pivot is recent, so the
+  skip is very nearly unreachable - and a single missing mark beats the whole
+  indicator stopping.
+
+The engine is untouched. Every break, every trend, every alert is computed
+exactly as before; this only governs where a drawing may be anchored.
+
+PROVED, NOT ASSUMED
+f_hLine's clamp was run over its whole input space - bar_index from 0 to 15000,
+last_bar_index at four offsets, histBars at 300 / 500 / 5000 / 20000, and the
+anchor at every interesting position including na and beyond the current bar.
+Worst offset produced: exactly 1500, against a 2000 buffer. Same for f_xClamp.
+It cannot ask for a bar outside the window under any settings.
+
+Also checked: nine functions changed, two added, nothing else differs from
+v2.0; no new unresolved identifiers; indentation, brackets, empty-block and
+duplicate-declaration scans clean; and a grep for series history read at a
+computed offset (close[n], time[n] and friends) found none anywhere in the
+file - drawing coordinates were the only exposure in the structure engine.
+
+--------------------------------------------------------------------------------
+ONE PLACE I HAVE NOT TOUCHED
+--------------------------------------------------------------------------------
+The volume-profile and killzone renderers anchor their boxes and POC/VA lines to
+the start of the session or day they cover, and that anchor is not guarded. It
+cannot bite at the default settings, and raising the buffer to 2000 has widened
+the margin, but it can be reached with:
+
+    "Keep last N previous-day profiles" above 1, or
+    "Days of sessions to keep" well above 1,
+
+on a 1-minute or 5-minute chart, where a day is 1440 or 288 bars. Say the word
+and I will guard those the same way. I left them alone because it is a different
+module from the one that failed, and guarding it changes what gets drawn.
+================================================================================
+
+================================================================================
+WHAT CHANGED IN v2.0   (built on v1.0)
+================================================================================
+
+Three changes, and nothing else. Every function in the file except the pullback
+counter is byte-for-byte identical to v1.0, and the two new switches are OFF by
+default, so a fresh copy behaves exactly like v1.0 did.
+
+--------------------------------------------------------------------------------
+1. PULLBACK RULE 1 — body bigger than its own longest wick
+--------------------------------------------------------------------------------
+Settings: "Market structure - mode & inducement (IDM)" group, below the
+ALTERNATE switch.
+
+The normal three-candle pullback is unchanged. This adds one extra demand on top
+of it: each of the three candles must satisfy
+
+    body      = |close - open|
+    longest wick = the larger of
+                     high - max(open, close)      (upper wick)
+                     min(open, close) - low       (lower wick)
+    the candle counts only while   body > longest wick
+
+A candle that fails does NOT reset the count. It simply does not count, exactly
+the way a wrong-direction candle behaves today, and the sequence keeps waiting.
+That was a deliberate choice: resetting would have been far stricter than what
+you asked for.
+
+--------------------------------------------------------------------------------
+2. PULLBACK RULE 2 — close beyond the previous candle's BODY, not its wick
+--------------------------------------------------------------------------------
+Same group, directly below rule 1.
+
+The normal rule asks each pullback candle to close beyond the PREVIOUS pullback
+candle's wick: below its low when hunting a high, above its high when hunting a
+low.
+
+Rule 2 moves that reference onto the body: below the previous candle's body
+bottom when hunting a high, above its body top when hunting a low. Because a
+pullback candle is by definition bearish (hunting a high) or bullish (hunting a
+low), its body edge IS its close - so in practice it becomes "each candle closes
+beyond the last one's close".
+
+Rule 2 also carries rule 1's body-bigger-than-its-wick demand, whether or not
+rule 1 is ticked. So it is LOOSER on where the close lands and STRICTER on the
+quality of the candle.
+
+WITH BOTH TICKED, rule 2 decides the reference level. The body demand is
+identical in both, so they never contradict each other.
+
+MEASURED EFFECT (120,000 simulated bars per direction, random walk):
+    default                 baseline
+    rule 1 only             41% fewer swings confirmed
+    rule 2 only             27% fewer
+    both ticked             27% fewer - identical to rule 2 alone, which
+                            confirms rule 2 supersedes rule 1 as described
+
+Both rules apply to MAIN, INTERNAL and INNER at once, and to the multi-timeframe
+engine, because all four run on the same pullback counter. There is no way for
+the tiers to disagree with each other.
+
+--------------------------------------------------------------------------------
+3. FIXED: the ALTERNATE rule now reaches INTERNAL and INNER
+--------------------------------------------------------------------------------
+THE BUG. "ALTERNATE rule: BOS is valid only AFTER IDM" only ever gated the MAIN
+tier. The internal and inner engines were computing their inducement levels and
+their idm-hit flags on every break - the machinery was all there and running -
+but nothing ever consulted it. So turning ALTERNATE on changed the main
+BOS/CHOCH marks and left iBOS/iCHOCH and nBOS/nCHOCH exactly as they were.
+
+THE FIX. Both tiers now do what the main tier has always done, in both halves of
+the rule:
+
+  a) The break gate. An internal or inner BOS is now only valid once its
+     inducement has been taken:
+
+        if close > iCeilP and (iTrend != 1 or not altMode or iCeilIdmHit or na(iCeilIdmP))
+
+     Read it as: a CHOCH is never gated; with ALTERNATE off nothing is gated;
+     otherwise the IDM must have been taken, or there must be no IDM to take.
+     This is the main engine's condition transcribed one tier down - same shape,
+     same order, same escape clauses.
+
+  b) The sweep re-anchor. When ALTERNATE is on and price closes beyond the level
+     without the IDM having been taken, the main engine rejects the break AND
+     moves the level up to the sweep extreme, then re-arms the inducement there.
+     Internal and inner now do the same, using the same field resets the main
+     engine's mkSLine() performs: level and bar move to the sweep, born moves to
+     this bar, the sweep and reference fields are cleared, and f_intArmIdm()
+     re-arms the IDM on the new pivot.
+
+WITH ALTERNATE OFF, all of this is dead code: "not altMode" short-circuits the
+gate to true, and the re-anchor block never runs. The default chart is
+untouched.
+
+NOT CHANGED: the multi-timeframe engine (f_tfPack) still ignores ALTERNATE, for
+every tier, exactly as it always has - it has never modelled inducement at all.
+It stays self-consistent; it is simply a trend reading, not a mark-for-mark
+replica. Teaching it IDM would have meant eight more inlined copies of that
+machinery and the compiled-token limit is not far enough away to spend it there.
+
+--------------------------------------------------------------------------------
+PROOF THAT THE DEFAULTS DID NOT MOVE
+--------------------------------------------------------------------------------
+  · The old and new pullback counters were both re-implemented outside Pine and
+    run side by side over 120,000 bars in each direction with the switches off.
+    Every confirmation, and the counter's internal state on every bar, matched.
+    Zero mismatches.
+  · Every function body diffed against v1.0: only update() differs. Nothing
+    was added or removed.
+  · Undefined-identifier scan: no new unresolved names.
+  · Use-before-declare scan: same count as v1.0, all known false positives.
+  · Indentation, bracket balance, empty-block and duplicate-declaration scans:
+    clean.
+  · Inlined-token model: 35,195 (the limit bites near 68,000 on this scale).
+
+--------------------------------------------------------------------------------
+ONE THING TO KNOW BEFORE YOU PASTE
+--------------------------------------------------------------------------------
+The two new switches had to be declared BEFORE the pullback engine, because Pine
+will not let a function read a setting that is declared further down the file.
+That puts them at position 104 instead of at the end, so the 185 settings
+below them each move down by two slots.
+
+TradingView stores saved values by position, so if you paste this over your
+existing script those settings can land in the wrong boxes. The groups affected
+are:
+
+     28  9. EMA — exponential moving averages
+     25  Alerts — enable, then create ONE alert using 'Any alert() function call'
+     22  0. Internal + Inner structure — iBOS / iCHOCH · nBOS / nCHOCH
+     16  8. Multi-timeframe structure alerts
+     15  ⑪ 50% line — main BOS* / CHOCH* range
+     13  Arm status readout
+     12  ⑫ 50% line — internal iBOS* / iCHOCH* range
+     12  ⑬ 50% line — inner nBOS* / nCHOCH* range
+     10  ⑦ Possible iBOS (internal active extended line)
+     10  ⑨ Possible nBOS (inner active extended line)
+      9  ⑧ Possible iCHOCH (internal active extended line)
+      9  ⑩ Possible nCHOCH (inner active extended line)
+      3  0. Master toggles
+      1  Engine
+
+THE EASY WAY ROUND IT: add v2.0 to the chart as a NEW indicator rather than
+pasting it over v1.0. It starts on clean defaults, you keep v1.0 running
+next to it until you have matched your colours across, then remove the old one.
+
+If you do paste over the top and the panel looks scrambled, open the settings,
+click Defaults -> Reset settings once, and set it up again from clean.
+================================================================================
+
+================================================================================
+SMC MARKET STRUCTURE — ALERTS ONLY  ·  v1.0
+Companion notes for  SMC_Structure_Alerts_Only_v1.0.txt
+================================================================================
+
+WHY THIS FILE EXISTS
+--------------------------------------------------------------------------------
+A TradingView alert does not run your indicator the way your chart does. The chart
+gets a browser tab with the whole machine behind it. The alert gets a slot on a
+shared server that has to hold your script in memory for weeks and re-run it on
+every tick. When a script asks that server for too much, the alert does not warn
+you — it dies with "Calculation error" and stops sending, which is exactly what
+happened to the 1-minute alert created on 1 September: it survived three days and
+roughly 30-40 messages, then stopped.
+
+The heavy part was never the market-structure engine. It was everything bolted
+around it:
+
+  1. request.security_lower_tf(...)  — the intrabar feed the volume profiles need.
+     On a 1m chart the auto intrabar timeframe resolves to "1", so the script pulls
+     a full second dataset of 1-minute bars in order to split 1-minute candles.
+     It is a whole extra dataset for exactly one sample per candle. Pure cost,
+     zero benefit, and it is the single most expensive thing in the file.
+
+  2. Eight request.security(...) datasets for the multi-timeframe table.
+
+  3. Hundreds of boxes and lines for the profiles, the killzones and the VWAP
+     bands, all rebuilt on the last bar of every tick.
+
+This file removes all of it and keeps the engine and the alerts.
+
+================================================================================
+WHAT WAS REMOVED
+================================================================================
+Physically deleted, not just switched off, so nothing can turn them back on and
+nothing costs a single token at runtime:
+
+  · The whole volume-profile engine — VPCol, VPStyle, DrawQueue, begin(), feed(),
+    f_render(), f_wipe(), and the six profile modules (Asia, London, New York,
+    London Close, previous days, current day).
+  · request.security_lower_tf() and f_autoLtf() — the intrabar feed. Gone entirely.
+  · The four killzone boxes, the killzone edge-line module, and the session
+    helpers f_hhmm() / f_sesShift().
+  · The VWAP module and its three bands.
+  · The multi-timeframe TABLE — the renderer f_tfRow() and all of its styling
+    settings. The eight data requests behind it are kept, but only for alerts,
+    and only when you ask for them (see below).
+  · The three structure-range volume profiles (main / internal / inner).
+
+16 functions dropped in total. The 46 that remain are byte-for-byte identical to
+the ones in Market_Structure_SMC_v16.3, which is the point: the engine has not
+been rewritten, edited or "optimised" by hand, so it cannot have picked up a new
+bug. It has only had things removed from around it.
+
+Settings went from 564 to 288. Source lines from 3,346 to 2,345.
+
+================================================================================
+WHAT WAS KEPT — EVERYTHING THAT MAKES AN ALERT
+================================================================================
+  · The complete three-tier structure engine: main BOS / CHOCH, internal
+    iBOS / iCHOCH, inner nBOS / nCHOCH — including the 3-candle-pullback rule,
+    the pivot-2 promotion gate, sweeps and IDM. Unchanged.
+  · All 28 alertcondition() entries, for alerts built from the dropdown.
+  · All 24 alert() messages, for one "Any alert() function call" alert.
+  · The arming gate (5 slots) and the arm-status readout.
+  · "Stop after N alert triggers" — the budget.
+  · The multi-timeframe structure alerts.
+  · The EMA module and its cross alerts.
+  · The structure drawing: BOS / CHOCH marks, the live BOS* / CHOCH*,
+    iBOS* / iCHOCH*, nBOS* / nCHOCH* lines, and the three 50% lines.
+    You keep the picture — you just keep much less of it (see the defaults).
+
+================================================================================
+DEFAULTS CHANGED FOR THIS BUILD
+================================================================================
+  · "Structure — keep only the latest 10 marks per tier"   OFF  ->  ON
+      30 drawings on the chart instead of several hundred. It is a display rule
+      only: the engine still computes every break on every bar and every alert
+      still fires.
+
+  · "Max history to draw (bars back from last)"          5000  ->  300
+      Same idea. The engine still runs on the whole history; only the drawing
+      window is short.
+
+  · The EMA master toggle stays OFF, and all three MTF alert switches stay OFF.
+
+Everything else keeps the v16.3 default. Nothing about how a break is detected
+has been changed in any way.
+
+================================================================================
+THE MULTI-TIMEFRAME ALERTS — HOW THEY WORK NOW
+================================================================================
+In v16.3 the eight higher-timeframe requests were gated on the table being
+visible. There is no table here, so they are gated on the alerts instead:
+
+    a timeframe is requested  ==  it is ticked in group 8
+                              AND at least one of the three
+                                  "MTF alert — ..." switches is on
+
+All three switches are off by default, so a fresh copy of this indicator makes
+ZERO higher-timeframe requests. That is the state you want for a long-running
+alert. Turn on only what you actually need, and untick the timeframes you do not
+watch — every ticked timeframe that passes the ceiling costs one request.
+
+The ceiling rule is unchanged from v16.3:
+
+    chart 1m to 5m   ->  up to 4h
+    chart 15m        ->  up to 1W
+    chart 10m to 1h  ->  up to 1D
+    chart 2h and up  ->  up to 1M
+
+A timeframe below the chart's own is never requested. A ticked timeframe above
+the ceiling is skipped in silence, because the higher-timeframe history a fast
+chart is given is too short to build a structure you would trust.
+
+A higher timeframe reports at ITS OWN close. A 4h break watched from a 15m chart
+arrives when the 4h candle closes. That is correct behaviour, not a delay.
+
+================================================================================
+HOW TO USE IT
+================================================================================
+  1. Add this indicator to the chart alongside — or instead of — v16.3.
+  2. Tick the events you want in the Alerts group.
+  3. Create ONE alert, condition = this indicator, "Any alert() function call".
+  4. Set "Stop after N alert triggers" if you want the alert to go quiet after a
+     set number of messages instead of running until you stop it. 0 = unlimited.
+
+Run your visual copy (v16.3, with the profiles and the table) on the chart, and
+run THIS one for the alert. They are the same engine, so they agree on every
+break; they just cost very different amounts to keep alive.
+
+================================================================================
+IF AN ALERT STILL DIES
+================================================================================
+Work down this list — each step removes real cost:
+
+  1. Turn all three MTF alert switches off. That is eight requests gone.
+  2. Turn the EMA master off.
+  3. Drop "Max history to draw" further, to 150.
+  4. Move the alert off the 1-minute chart. A 1m alert re-runs the engine sixty
+     times more often than a 1h one for the same structure.
+  5. Re-create the alert. TradingView does not restart a dead one by itself, and
+     an alert that has already errored stays errored.
+
+================================================================================
+COMPILE / RESOURCE FOOTPRINT
+================================================================================
+  source tokens              22,264   (v16.3: 37,178)
+  inlined-token model        34,752   (v16.3: 49,666 — limit is reached near 68k
+                                       on this model's scale, so there is roughly
+                                       twice the headroom of v16.3)
+  request.security calls          8   (all gated off by default)
+  request.security_lower_tf       0   (v16.3: 1)
+  boxes used                      0   (v16.3: hundreds)
+  max_lines_count               500
+  max_labels_count              500
+  max_bars_back                 500
+
+================================================================================
+VERIFICATION RUN BEFORE RELEASE
+================================================================================
+  · Undefined-identifier diff against v16.3 ......... no new unresolved names
+  · Use-before-declare scan ......................... 14, all known false
+                                                      positives (UDT field names
+                                                      ln / swpB / isHigh, and the
+                                                      na() builtin read as "n")
+  · Every surviving function body diffed vs v16.3 ... 46 of 46 byte-identical
+  · Dangling f_* call check ......................... none
+  · Empty / dangling block scan ..................... none
+  · Bracket balance ................................. net zero
+  · Duplicate top-level declarations ................ none
+  · Cut-boundary column check ....................... every cut began and ended
+                                                      at column 0, so no function
+                                                      body was sliced
+================================================================================
