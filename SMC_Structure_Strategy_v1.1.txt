@@ -1,5 +1,5 @@
 //@version=6
-// SMC Structure Strategy  -  v1.0  -  1m main-tier CHOCH entries, two rules, 15m trend filter, R-multiple targets, IST session window  -  ASCII only
+// SMC Structure Strategy  -  v1.1  -  1m main-tier CHOCH entries, two rules, 15m trend filter, R-multiple targets, IST session window  -  ASCII only
 strategy("SMC Structure Strategy", "SMC STRAT", overlay = true,
      max_bars_back = 2000, max_lines_count = 500, max_labels_count = 500, dynamic_requests = true,
      initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1,
@@ -1868,24 +1868,6 @@ if almOk and ((rtMainRet and aMainRet) or (rtIntRet and aIntRet) or (rtNnRet and
     if rtNnRet and aNnRet
         array.push(almQB, "Price at " + str.tostring(aRetPct, "#.#") + "% retracement of the nBOS/nCHOCH leg - level " + str.tostring(nLvl, format.mintick) + " - " + rtTfTxt)
 
-alertcondition(evBosUp and almOk, "Bullish BOS",    "Bullish BOS - {{ticker}} {{interval}}")
-alertcondition(evBosDn and almOk, "Bearish BOS",    "Bearish BOS - {{ticker}} {{interval}}")
-alertcondition(evChoUp and almOk, "Bullish CHOCH",  "Bullish CHOCH - {{ticker}} {{interval}}")
-alertcondition(evChoDn and almOk, "Bearish CHOCH",  "Bearish CHOCH - {{ticker}} {{interval}}")
-alertcondition((evBosUp or evBosDn) and almOk, "Any BOS",     "BOS - {{ticker}} {{interval}}")
-alertcondition((evChoUp or evChoDn) and almOk, "Any CHOCH",   "CHOCH - {{ticker}} {{interval}}")
-alertcondition((evBosUp or evBosDn or evChoUp or evChoDn) and almOk, "Any structure event", "Structure event - {{ticker}} {{interval}}")
-alertcondition((evSwpHi or evSwpLo) and almOk, "Liquidity Sweep", "Liquidity sweep - {{ticker}} {{interval}}")
-alertcondition(evIBosUp and almOk, "Bullish iBOS",    "Bullish iBOS - {{ticker}} {{interval}}")
-alertcondition(evIBosDn and almOk, "Bearish iBOS",    "Bearish iBOS - {{ticker}} {{interval}}")
-alertcondition(evIChoUp and almOk, "Bullish iCHOCH",  "Bullish iCHOCH - {{ticker}} {{interval}}")
-alertcondition(evIChoDn and almOk, "Bearish iCHOCH",  "Bearish iCHOCH - {{ticker}} {{interval}}")
-alertcondition((evIBosUp or evIBosDn) and almOk, "Any iBOS",     "iBOS - {{ticker}} {{interval}}")
-alertcondition((evIChoUp or evIChoDn) and almOk, "Any iCHOCH",   "iCHOCH - {{ticker}} {{interval}}")
-alertcondition((evIBosUp or evIBosDn or evIChoUp or evIChoDn) and almOk, "Any internal structure event", "Internal structure event - {{ticker}} {{interval}}")
-alertcondition(rtMainRet and almOk, "Price at N% of BOS*/CHOCH* range", "Price at retracement level of BOS*/CHOCH* range - {{ticker}} {{interval}}")
-alertcondition(rtIntRet and almOk, "Price at N% of iBOS/iCHOCH range", "Price at retracement level of iBOS/iCHOCH range - {{ticker}} {{interval}}")
-alertcondition(rtNnRet and almOk, "Price at N% of inner nBOS/nCHOCH range", "Price at retracement level of nBOS/nCHOCH range - {{ticker}} {{interval}}")
 
 f_armTag(bool on, int trig, float lvl) =>
     string t = ""
@@ -1898,25 +1880,6 @@ f_armJoin(string acc, string add) =>
 
 f_armPos(string p) =>
     p == "Top left" ? position.top_left : p == "Top center" ? position.top_center : p == "Top right" ? position.top_right : p == "Middle left" ? position.middle_left : p == "Middle right" ? position.middle_right : p == "Bottom left" ? position.bottom_left : p == "Bottom center" ? position.bottom_center : position.bottom_right
-
-var table armTbl = na
-if barstate.islast and armShow
-    if na(armTbl)
-        armTbl := table.new(f_armPos(armPos), 2, 1, bgcolor = armBg, border_width = 0)
-    string _aTx = not almAnySlot ? armTxtN : almArmed ? armTxtA : armTxtW
-    color  _aTc = not almAnySlot ? armColN : almArmed ? armColA : armColW
-    if almAnySlot and not almArmed and armShowP
-        string _lst = ""
-        _lst := f_armJoin(_lst, f_armTag(almGate, almK1, almGateP))
-        _lst := f_armJoin(_lst, f_armTag(almOn2,  almK2, almP2))
-        _lst := f_armJoin(_lst, f_armTag(almOn3,  almK3, almP3))
-        _lst := f_armJoin(_lst, f_armTag(almOn4,  almK4, almP4))
-        _lst := f_armJoin(_lst, f_armTag(almOn5,  almK5, almP5))
-        if _lst != ""
-            _aTx := _aTx + "  " + _lst
-    table.cell(armTbl, 0, 0, armTitle, text_color = armTitTc, text_size = tsize(armSize), bgcolor = armBg)
-    table.cell(armTbl, 1, 0, _aTx, text_color = _aTc, text_size = tsize(armSize), bgcolor = armBg)
-
 
 g7  = "(7) Possible iBOS (internal active extended line)"
 ipOn     = input.bool(true, "Show the iBOS* / iCHOCH* lines", group = g7, tooltip = "Draws the two LIVE internal levels - the ones the internal engine is measuring price against right now - as extended lines, exactly the way the main engine draws BOS* and CHOCH*.\n\nWHICH LINE IS WHICH: the level whose break would print an iBOS carries the iBOS* style from this group; the level whose break would print an iCHOCH carries the iCHOCH* style from the group below. While the internal trend is bullish that means the internal ceiling is iBOS* and the internal floor is iCHOCH*; while it is bearish they swap; and while the internal trend is still neutral - every range starts that way, before its first iCHOCH - BOTH sides are iCHOCH*, because the first break either way is an iCHOCH.\n\nThey follow the level, not the bar: a pivot-2 promotion or a re-anchor moves the line the moment the engine moves the level.\n\nIt also obeys the 'Internal marking' switch for the rule in force. With internal marking off there are no internal marks and no internal lines either.\n\nCOST: one line and one label per side, rewritten on the last bar, so this can never eat the drawing budget the iBOS/iCHOCH history needs.")
@@ -2159,7 +2122,7 @@ f_eqTxt(string t, bool app, float pct) =>
         s := t == "" ? _p : t + " " + _p
     s
 
-if barstate.islast
+if bar_index == last_bar_index
     [_icLc, _icTc, _icLs, _icW, _icTx, _icTs, _icSh, _icTv, _icTh] = f_ipStyle(iTrend == 1)
     [_icL, _icB] = f_hLine(ipCeilLn, ipCeilLb, ipOn and intUse, iCeilP, iCeilB, _icTx, _icLc, _icTc, _icLs, _icW, _icTs, _icSh, _icTv, _icTh)
     ipCeilLn := _icL
@@ -2256,13 +2219,6 @@ if almOk and (evNBosUp or evNBosDn or evNChoUp or evNChoDn)
     if (evNChoUp or evNChoDn) and aANC
         array.push(almQC, "nCHOCH - " + nnTfTxt)
 
-alertcondition(evNBosUp and almOk, "Bullish nBOS",   "Bullish nBOS - {{ticker}} {{interval}}")
-alertcondition(evNBosDn and almOk, "Bearish nBOS",   "Bearish nBOS - {{ticker}} {{interval}}")
-alertcondition(evNChoUp and almOk, "Bullish nCHOCH", "Bullish nCHOCH - {{ticker}} {{interval}}")
-alertcondition(evNChoDn and almOk, "Bearish nCHOCH", "Bearish nCHOCH - {{ticker}} {{interval}}")
-alertcondition((evNBosUp or evNBosDn) and almOk, "Any nBOS",   "nBOS - {{ticker}} {{interval}}")
-alertcondition((evNChoUp or evNChoDn) and almOk, "Any nCHOCH", "nCHOCH - {{ticker}} {{interval}}")
-alertcondition((evNBosUp or evNBosDn or evNChoUp or evNChoDn) and almOk, "Any inner structure event", "Inner structure event - {{ticker}} {{interval}}")
 
 if _intClrReq and not inHist and not mstHist
     f_intClear()

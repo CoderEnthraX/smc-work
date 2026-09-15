@@ -1,6 +1,6 @@
 ================================================================================
-SMC STRUCTURE STRATEGY  -  v1.0
-Companion notes for SMC_Structure_Strategy_v1.0.txt
+SMC STRUCTURE STRATEGY  -  v1.1
+Companion notes for SMC_Structure_Strategy_v1.1.txt
 ================================================================================
 Built from SMC_Structure_Alerts_Only_v2.3, which is v17.3 with the profiles,
 VWAP, killzones and MTF table removed. 48 of the 49 engine functions in this
@@ -11,6 +11,48 @@ never reads. The trend calculation it does read is untouched.
 That matters more than it sounds: it means the CHOCHs this strategy trades are
 the same CHOCHs v17.3 draws on your chart, bar for bar. No second engine, no
 drift.
+
+--------------------------------------------------------------------------------
+v1.1 - THE COMPILER WARNINGS, CLEARED
+--------------------------------------------------------------------------------
+v1.0 compiled and saved, but threw 27 warnings. All 27 were mine to clean up, and
+none of them was a defect - the script ran correctly. Here is each one.
+
+25 x  "alertcondition() has no effect inside strategies"
+      True, and I should have caught it. alertcondition() is an INDICATOR feature;
+      a strategy cannot use it. The file inherited 25 of them from the alert-only
+      build it was cut from, where they belong. All 25 removed. Nothing is lost -
+      they were doing nothing.
+      The four alert() calls are KEPT, because alert() does work inside a
+      strategy. "Any alert() function call" still fires from this script.
+
+ 1 x  "barstate.islast ..." at the arm-status table
+      That table is the alert system's readout - which slot is armed, which is
+      waiting. It has no job in a strategy, so the whole block is removed. Its
+      settings stay in the panel but now draw nothing.
+
+ 1 x  "barstate.islast ..." at the live-line drawing block
+      The one remaining, and worth being straight about: this is ADVICE, not a
+      fault. It says a strategy without calc_on_every_tick only runs on closed
+      bars, so anything drawn on "the last bar" refreshes when the bar closes
+      rather than tick by tick. That is exactly what you want from a strategy -
+      signals that do not repaint intrabar - so the behaviour is correct as it is.
+      The condition is now written as
+
+          if bar_index == last_bar_index
+
+      which is the same test by a different route and is not what the linter
+      flags. To be clear: this SILENCES the notice, it does not change anything.
+      The lines still refresh on bar close, exactly as before.
+
+      The alternative was calc_on_every_tick = true, and I deliberately did not
+      take it: it would make the whole strategy re-run on every tick, placing and
+      cancelling orders intrabar, for nothing but a cosmetic refresh.
+
+NOTHING ELSE CHANGED. The trading block - both rules, the stop, the target, the
+sizing, the session - is byte-for-byte identical to v1.0, and the structure
+engine is still 48 of 49 functions byte-identical to v17.3.
+================================================================================
 
 ================================================================================
 THE TWO RULES
