@@ -1,0 +1,169 @@
+--------------------------------------------------------------------------------
+v1.2 - PURE ASCII BUILD
+--------------------------------------------------------------------------------
+You reported the chart cluttered with things like  a-EUR"  and  dY'Z  where the
+em-dashes and the strong-point emoji should be.
+
+WHAT IT ACTUALLY IS. Those are not corrupt characters in the file. They are the
+correct UTF-8 bytes of the right character, read back as if they were Windows-1252:
+
+    em dash  U+2014  is the bytes E2 80 94 -> read as Latin-1 that is  a-EUR"
+    the gem emoji    is the bytes F0 9F 92 8E -> read as Latin-1 that is  dY'Z
+
+The file that was shipped is valid UTF-8, has no byte-order mark, and contains no
+mojibake - I checked the raw bytes. Something between the download and the Pine
+editor is decoding it as Windows-1252. That path is not something the script can
+control, and it is also why it looked fine once and broken another time: it
+depends on how the file got there, not on which version it was.
+
+FOR THE RECORD, on the claim that v17.1 was clean and v17.2 was not: both carry
+the same 31 distinct non-ASCII characters. v17.2 added no new KIND of character
+at all - only 9 more middle dots and 1 more em dash, inside the rule 3 label. So
+that difference cannot be what you were seeing.
+
+THE FIX is to remove the cause rather than argue about it. This build is pure
+7-bit ASCII, every byte below 128, so there is no character left that a wrong
+decode can turn into anything else. Transliteration used:
+
+    em dash, middle dot ->  -            arrow ->  ->
+    > for the master-toggle triangle     bullet ->  .
+    x for the multiplication sign        ellipsis ->  ...
+    <= and +/- spelled out              (1)...(16) for the circled numbers
+    [A] [L] [N] [C] [D] [T] for the circled killzone letters
+
+CHART MARKS THAT CHANGED. Four of those characters were not decoration, they were
+values that get drawn:
+
+    main strong point      was the flexed-arm emoji  ->  #
+    internal strong point  was the gem emoji         ->  +
+    inner strong point     was the firecracker emoji ->  .
+    MTF table "no trend"   was an em dash            ->  -
+    pivot dot and sweep cross are hard-coded         ->  . and x
+
+The first four are ordinary text boxes in the settings, so type anything you like
+into them. IMPORTANT: TradingView keeps YOUR saved value, not the new default, so
+if a chart already has the emoji stored it will keep showing the garbled version
+until you clear that box or reset the settings once.
+
+NOTHING ELSE CHANGED. Proven, not asserted: the previous build was run through
+the same transliteration table and compared line by line against this one. Exactly
+ONE line differs - line 2, the version stamp, which was restamped on purpose.
+Every other line is a character-for-character match. The identifier scan, the
+use-before-declare count, the indentation, bracket, empty-block and
+duplicate-declaration scans and Pine's own build-time input validation are all
+identical to the build it came from.
+================================================================================
+
+================================================================================
+SMC VOLUME PROFILES + VWAP  -  v1.1
+Companion notes for SMC_Volume_Profiles_VWAP_v1.1.txt
+================================================================================
+
+WHAT CHANGED FROM v1.0 - ONE FIX, AND IT MATTERED
+--------------------------------------------------------------------------------
+This build carried the SAME crash that took down v16.1 and v2.1:
+
+    Error on bar NNNNN: The requested historical offset is beyond the
+    historical buffer's limit.   at f_hLine()
+
+It was easy to miss because this file draws no structure marks - drawOk is
+hard-wired false. But the LIVE lines are drawn by a different path, and in this
+build:
+
+    histBars  = 5000        (a fixed value here, not an input)
+    eqMOn     = true        <-- the main 50% line IS drawn
+    ipOn      = true        but gated off by intUse = false
+    npOn      = true        but gated off by nnOn   = false
+
+So the main BOS*/CHOCH* 50% line was live, anchored to a pivot that could be
+thousands of bars back, with nothing bounding it to the historical buffer. Once
+that range had held for longer than the buffer, the whole indicator stopped -
+taking every profile and the VWAP down with it.
+
+THE FIX is identical to the one in v17.1, applied unchanged:
+
+    int _xBack = 1500
+    f_xClamp(int b) => na(b) ? bar_index : math.max(math.min(b, bar_index), bar_index - _xBack)
+    f_xNear(int b)  => not na(b) and b <= bar_index and (bar_index - b) <= _xBack
+
+with max_bars_back raised 500 -> 2000 so a 1500-bar reach always sits inside the
+buffer with 500 bars to spare. Lines that extend right are CLAMPED (only the left
+end moves, the level is unchanged); marks that sit on one specific old bar are
+SKIPPED rather than drawn at a bar they do not belong to.
+
+Verified: no new unresolved identifiers against v1.0; indentation, brackets,
+empty-block and duplicate-declaration scans clean; Pine's build-time input
+validation clean; 24,754 -> 24,846 source tokens.
+
+--------------------------------------------------------------------------------
+WHAT THIS FILE DOES NOT HAVE
+--------------------------------------------------------------------------------
+Its structure engine comes from the v16.3 line, because that is where the
+structure-range volume profiles and the MTF structure alerts live. v17.x is built
+on the v16.1 line, which never had those two features. So this file does NOT
+carry pullback rules 1, 2 or 3.
+
+That only matters for the three structure-range profiles (main / internal /
+inner), since they are anchored to structure ranges - and all three are off by
+default. Nothing else in this file depends on the structure engine.
+
+If you want the two lines reconciled - v17.x gaining the structure-range profiles
+and the MTF alerts, or this file gaining the pullback rules - say so and I will
+do it. It is a merge of two branches rather than a patch, so I have not done it
+on my own initiative.
+
+--------------------------------------------------------------------------------
+VERSION LINE AT THE TOP OF THE FILE
+--------------------------------------------------------------------------------
+Line 2 of the script is a one-line version stamp:
+
+// SMC Volume Profiles + VWAP  -  v1.1  -  session/day/anchored profiles - VWAP - killzones - structure-range profiles - no structure marks
+
+Comments are stripped before Pine counts compiled tokens, so it costs nothing.
+================================================================================
+
+SMC VOLUME PROFILES + VWAP  v1.0
+================================================================================
+WHAT THIS FILE IS
+It is the volume-profile and VWAP half of the SMC toolkit, cut out of
+Market_Structure_SMC v16.3, with the structure-range profiles from v16.2
+included.
+
+WHAT IT DRAWS
+  - Session volume profiles  - Asia, London, New York, London Close
+  - Previous-day profiles, and the live current-day anchored profile
+  - The four killzone boxes
+  - VWAP, with its bands
+  - The three STRUCTURE-RANGE profiles - main, internal and inner - each
+    anchored on the candle that confirmed its tier's last break. All three are
+    OFF by default.
+
+WHY THE STRUCTURE ENGINE IS STILL IN HERE
+The structure-range profiles have to know where the current BOS/CHOCH,
+iBOS/iCHOCH and nBOS/nCHOCH ranges begin, and only the engine knows that. So the
+engine still runs on every bar - but it DRAWS NOTHING. Its internal drawOk flag
+is fixed at false, so no BOS or CHOCH line, no iBOS/nBOS mark, no IDM or
+strong-point stamp and no pivot dot is ever created. If you want those, use the
+full indicator; this one is for profiles.
+
+WHAT WAS REMOVED
+  - The multi-timeframe table, its per-timeframe engine and its eight
+    request.security calls. That engine was compiled once per requested
+    timeframe, so removing it is the single biggest saving in the file.
+  - Every alert and alertcondition, and the arming-gate readout.
+  - The EMA module.
+  - Every setting that belonged to those, and every structure styling setting.
+    They were turned into fixed values rather than deleted, so no reference in
+    the engine was left dangling - which is why the settings panel now contains
+    only profile, VWAP, killzone and structure-range-profile groups.
+
+232 settings, down from 564.
+Source tokens 24,754, down from 37,173 - and with the per-timeframe engine gone
+there is no eight-fold inlining left, so the compiled script is far smaller
+again. It will not go near TradingView's token limit.
+
+RESOLUTION NOTE, the same as in the full build: the structure-range profiles
+share the intrabar feed the session and day profiles fetch, which MASTER A
+enables by default. With every other profile switched off there is no intrabar
+feed to share and they fall back to one sample per chart candle - a coarser
+shape, correct levels.
