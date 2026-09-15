@@ -1,6 +1,6 @@
 ================================================================================
-SMC STRUCTURE STRATEGY  -  v1.1
-Companion notes for SMC_Structure_Strategy_v1.1.txt
+SMC STRUCTURE STRATEGY  -  v1.2
+Companion notes for SMC_Structure_Strategy_v1.2.txt
 ================================================================================
 Built from SMC_Structure_Alerts_Only_v2.3, which is v17.3 with the profiles,
 VWAP, killzones and MTF table removed. 48 of the 49 engine functions in this
@@ -52,6 +52,77 @@ none of them was a defect - the script ran correctly. Here is each one.
 NOTHING ELSE CHANGED. The trading block - both rules, the stop, the target, the
 sizing, the session - is byte-for-byte identical to v1.0, and the structure
 engine is still 48 of 49 functions byte-identical to v17.3.
+================================================================================
+
+--------------------------------------------------------------------------------
+v1.2 - BOS ENTRIES (OPTIONAL) AND THE COUNTER TABLE
+--------------------------------------------------------------------------------
+
+1. "ALSO take trades on BOS, not just CHOCH"  -  OFF by default
+   ON = a main BOS starts a trade too. Bullish BOS -> long, bearish BOS -> short,
+   judged by the SAME two rules: 15m agrees -> rule 2, the limit on the pivot the
+   BOS candle just broke; 15m disagrees -> rule 1, the percentage pullback. Same
+   stop, same target, same sizing, same session window.
+
+   This was a small change because of how the engine is written: a BOS and a
+   CHOCH run through the SAME code path inside the engine - the only difference
+   is which event flag is set. The broken pivot and the new opposite level land
+   in exactly the same variables either way, so the strategy needed no new
+   plumbing at all, only a wider trigger.
+
+   A BOS is a continuation, so with this on you also trade WITH the 1m trend, not
+   only on its turns. Expect several times as many signals.
+
+2. THE COUNTER TABLE  -  ON by default, position selectable
+       CHOCH signals        how many main CHOCHs the strategy saw
+       BOS signals          same for BOS, or "off" when the switch is off
+       Setups armed         signals that passed the rules and got an order placed
+       Orders FILLED        those orders that actually traded
+       Armed, never filled  placed, then replaced or cancelled before price
+                            reached them
+       Exit - target        reached the R-multiple target
+       Exit - stop          hit the stop
+       Exit - opposite sig  cut short by the opposite signal (close and reverse)
+       Exit - time flat     closed by the force-flat hour
+
+   The numbers add up exactly:  ARMED = FILLED + NEVER FILLED + the one setup
+   that may still be live right now. That identity was checked over 600,000
+   simulated bars and it balanced to the unit, so if the table ever looks wrong,
+   it is telling you something real rather than miscounting.
+
+   WHAT TO LOOK FOR. If "armed" is large and "filled" is small, the pullback
+   percentage is too deep - price is not reaching your limit before the next
+   signal replaces it. If "target" and "stop" are both small while "opposite
+   sig" is large, your trades are being cut short by the next signal instead of
+   being allowed to finish, and the R-multiple target is not really being tested.
+
+--------------------------------------------------------------------------------
+WHAT THE FIRST BACKTEST ACTUALLY SHOWED
+--------------------------------------------------------------------------------
+Two trades over Aug 31 - Sep 16, and NEITHER reached its stop or its target.
+
+    Short  entry 4438.25  exit 4429.70   stop was 73 pts away, target 4365.26
+           closed by the 02:00 force-flat
+    Long   entry 4353.87  exit 4384.02   stop was 59 pts away, target 4412.69
+           closed by an opposite CHOCH, 51% of the way to target
+
+Position sizing was correct: 100 risk / 73-point stop = 1.37 oz, / 59 = 1.70 oz.
+
+The stop is the CHOCH* level, and on 1m gold that level sits 59-73 points away.
+Two things follow, and they explain both the small trade count and the odd exits:
+
+  . The target is just as far. A 1:1 target 60-70 points out takes a long time on
+    a 1-minute chart, and an opposite signal almost always arrives first. With
+    close-and-reverse ON, that ends the trade.
+  . The pullback entry rarely gets hit. 50% of a 60-point leg is a 30-point
+    retrace. Usually the next signal arrives first and replaces the order.
+
+TWO SETTINGS WORTH TRYING, one at a time:
+  1. Turn OFF "Opposite CHOCH: close and reverse". This is the bigger one. It
+     lets trades run to stop or target so the R-multiple means something.
+  2. Drop the pullback % to 25-30 so the limit sits nearer price and fills more
+     often.
+The counter table will now show you exactly what each change does.
 ================================================================================
 
 ================================================================================

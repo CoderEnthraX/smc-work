@@ -1,5 +1,5 @@
 //@version=6
-// SMC Structure Strategy  -  v1.1  -  1m main-tier CHOCH entries, two rules, 15m trend filter, R-multiple targets, IST session window  -  ASCII only
+// SMC Structure Strategy  -  v1.2  -  1m main-tier CHOCH entries, two rules, 15m trend filter, R-multiple targets, IST session window  -  ASCII only
 strategy("SMC Structure Strategy", "SMC STRAT", overlay = true,
      max_bars_back = 2000, max_lines_count = 500, max_labels_count = 500, dynamic_requests = true,
      initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1,
@@ -2250,7 +2250,10 @@ stRisk   = input.float(100.0, "  - risk per trade, account currency", minval = 0
 stQty    = input.float(1.0, "  - fixed quantity", minval = 0.000001, group = gStg)
 stCash   = input.float(1000.0, "  - fixed cash per trade", minval = 0.01, group = gStg)
 stRev    = input.bool(true, "Opposite CHOCH while in a trade: close and reverse", group = gStg, tooltip = "A Pine strategy holds ONE net position - it cannot run a long and a short side by side, each with its own stop. So the closest thing to taking both is to close the running trade at market on the opposite CHOCH and open the new one.\n\nIt rarely fires, because the stop IS the CHOCH* level and an opposite CHOCH is a close beyond it - the trade is usually stopped out first. It only survives when the stop buffer is wide enough.\n\nOFF = a new CHOCH is ignored while a trade is running.")
+stBosOn  = input.bool(false, "ALSO take trades on BOS, not just CHOCH", group = gStg, tooltip = "OFF (default) = only a main CHOCH starts a trade, exactly as before.\n\nON = a main BOS starts one too - bullish BOS for a long, bearish BOS for a short - judged by the SAME two rules. If the 15m trend agrees it is rule 2, the limit on the pivot the BOS candle just broke; if it does not, it is rule 1, the percentage pullback. Same stop, same target, same sizing, same session.\n\nA BOS is a continuation, so with this on you trade WITH the 1m trend as well as on its turns. Expect several times as many signals.")
 stShow   = input.bool(true, "Draw the entry, stop and target levels", group = gStg)
+stStatOn = input.bool(true, "Show the signal / trade counter table", group = gStg, tooltip = "Counts what the strategy actually did, so you can see whether signals are being missed or simply never filled.\n\nARMED is a setup accepted and an order placed. FILLED is that order actually trading. ARMED, NEVER FILLED is the gap between them - an order that was replaced or cancelled before price reached it.\n\nThe exit rows matter just as much: if TARGET and STOP are both small while OPPOSITE SIGNAL is large, your trades are being cut short by the next signal rather than being allowed to finish.")
+stStatPos = input.string("Bottom right", "  - table position", options = ["Top left", "Top center", "Top right", "Middle left", "Middle right", "Bottom left", "Bottom center", "Bottom right"], group = gStg)
 stTz     = input.string("Asia/Kolkata", "Session timezone", group = gStg, tooltip = "Asia/Kolkata is IST. Any exchange timezone name works.")
 stHrOn   = input.int(6, "Take entries from (hour)", minval = 0, maxval = 23, group = gStg)
 stHrOff  = input.int(23, "Stop taking entries at (hour)", minval = 0, maxval = 23, group = gStg, tooltip = "An open trade is NOT closed here - only new entries stop and any resting order is cancelled. If the end hour is smaller than the start hour the window runs past midnight.")
@@ -2276,6 +2279,17 @@ var int   stRule = 0
 var float stSl   = na
 var float stFix  = na
 var float stOpenSl = na
+var int stCntCho  = 0
+var int stCntBos  = 0
+var int stCntArm  = 0
+var int stCntFill = 0
+var int stCntCanc = 0
+var int stCntTgt  = 0
+var int stCntStop = 0
+var int stCntOpp  = 0
+var int stCntFlat = 0
+var int stClosed  = 0
+var int stWhy     = 0
 
 f_stQty(float ent, float rsk) =>
     float pv = syminfo.pointvalue <= 0 ? 1.0 : syminfo.pointvalue
@@ -2291,6 +2305,7 @@ f_stQty(float ent, float rsk) =>
 if strategy.position_size != 0 and strategy.position_size[1] == 0
     stOpenSl := stSl
     stDir    := 0
+    stCntFill += 1
 
 if stDir != 0 and strategy.position_size == 0
     float _live = na
@@ -2302,7 +2317,11 @@ if stDir != 0 and strategy.position_size == 0
         stSl := stDir == 1 ? _live - stSlBuf : _live + stSlBuf
 
 if stFlatNow
-    strategy.close_all(comment = "Time flat")
+    if strategy.position_size != 0
+        strategy.close_all(comment = "Time flat")
+        stWhy := 2
+    if stDir != 0
+        stCntCanc += 1
     strategy.cancel("L")
     strategy.cancel("S")
     stDir := 0
@@ -2311,16 +2330,26 @@ if not stWin
     strategy.cancel("L")
     strategy.cancel("S")
     if strategy.position_size == 0
+        if stDir != 0
+            stCntCanc += 1
         stDir := 0
 
-if (evChoUp or evChoDn) and stOn
-    bool _opp = (strategy.position_size > 0 and evChoDn) or (strategy.position_size < 0 and evChoUp)
+bool stSigUp = evChoUp or (stBosOn and evBosUp)
+bool stSigDn = evChoDn or (stBosOn and evBosDn)
+
+if (stSigUp or stSigDn) and stOn
+    if evChoUp or evChoDn
+        stCntCho += 1
+    if stBosOn and (evBosUp or evBosDn)
+        stCntBos += 1
+    bool _opp = (strategy.position_size > 0 and stSigDn) or (strategy.position_size < 0 and stSigUp)
     if _opp and stRev
-        strategy.close_all(comment = "Opposite CHOCH")
+        strategy.close_all(comment = "Opposite signal")
+        stWhy := 1
     bool _take = stWin and (strategy.position_size == 0 or (_opp and stRev))
     if _take
-        int   _d   = evChoUp ? 1 : -1
-        float _piv = evChoUp ? stCeilPrev : stFlorPrev
+        int   _d   = stSigUp ? 1 : -1
+        float _piv = stSigUp ? stCeilPrev : stFlorPrev
         float _opl = na
         if _d == 1 and not na(florS)
             _opl := florS.price
@@ -2329,8 +2358,11 @@ if (evChoUp or evChoDn) and stOn
         bool _agree = (_d == 1 and stT15 == 1) or (_d == -1 and stT15 == -1)
         bool _use   = _agree ? (stR2On and not na(_piv)) : stR1On
         if _use and not na(_opl)
+            if stDir != 0
+                stCntCanc += 1
             strategy.cancel("L")
             strategy.cancel("S")
+            stCntArm += 1
             stDir  := _d
             stRule := _agree ? 2 : 1
             stSl   := _d == 1 ? _opl - stSlBuf : _opl + stSlBuf
@@ -2362,12 +2394,27 @@ if stOn and strategy.position_size == 0 and stDir != 0 and stWin and not na(stEn
     else
         strategy.cancel("L")
         strategy.cancel("S")
+        stCntCanc += 1
         stDir := 0
 
 if strategy.position_size > 0 and not na(stOpenSl) and not na(stTgt)
     strategy.exit("L exit", "L", stop = stOpenSl, limit = stTgt)
 if strategy.position_size < 0 and not na(stOpenSl) and not na(stTgt)
     strategy.exit("S exit", "S", stop = stOpenSl, limit = stTgt)
+
+if strategy.closedtrades > stClosed
+    int _nCl = strategy.closedtrades - stClosed
+    for _i = 0 to _nCl - 1
+        if stWhy == 1
+            stCntOpp += 1
+        else if stWhy == 2
+            stCntFlat += 1
+        else if strategy.closedtrades.profit(strategy.closedtrades - 1 - _i) > 0
+            stCntTgt += 1
+        else
+            stCntStop += 1
+    stWhy    := 0
+    stClosed := strategy.closedtrades
 
 stCeilPrev := not na(ceilS) ? ceilS.price : stCeilPrev
 stFlorPrev := not na(florS) ? florS.price : stFlorPrev
@@ -2377,3 +2424,26 @@ plot(stShow and (stDir != 0 or strategy.position_size != 0) ? (strategy.position
 plot(stShow and (stDir != 0 or strategy.position_size != 0) ? stTgt : na, "Target", color = color.new(color.teal, 0), style = plot.style_linebr, linewidth = 1)
 plotshape(stShow and stDir != 0 and stDir != nz(stDir[1], 0) and stRule == 2, "Rule 2 signal", shape.triangleup, location.belowbar, color.new(color.blue, 0), size = size.tiny)
 plotshape(stShow and stDir != 0 and stDir != nz(stDir[1], 0) and stRule == 1, "Rule 1 signal", shape.triangledown, location.abovebar, color.new(color.purple, 0), size = size.tiny)
+
+f_stPos(string p) =>
+    p == "Top left" ? position.top_left : p == "Top center" ? position.top_center : p == "Top right" ? position.top_right : p == "Middle left" ? position.middle_left : p == "Middle right" ? position.middle_right : p == "Bottom left" ? position.bottom_left : p == "Bottom center" ? position.bottom_center : position.bottom_right
+
+f_stCell(table t, int r, string a, string b, color c) =>
+    table.cell(t, 0, r, a, text_color = color.silver, text_size = size.small, text_halign = text.align_left)
+    table.cell(t, 1, r, b, text_color = c, text_size = size.small, text_halign = text.align_right)
+
+var table stTbl = na
+if stStatOn and bar_index == last_bar_index
+    if na(stTbl)
+        stTbl := table.new(f_stPos(stStatPos), 2, 10, bgcolor = color.new(color.black, 15), border_color = color.new(color.gray, 60), border_width = 1)
+    table.cell(stTbl, 0, 0, "STRATEGY", text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 55), text_halign = text.align_left)
+    table.cell(stTbl, 1, 0, "count",    text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 55), text_halign = text.align_right)
+    f_stCell(stTbl, 1, "CHOCH signals",       str.tostring(stCntCho),  color.white)
+    f_stCell(stTbl, 2, "BOS signals",         stBosOn ? str.tostring(stCntBos) : "off", stBosOn ? color.white : color.gray)
+    f_stCell(stTbl, 3, "Setups armed",        str.tostring(stCntArm),  color.yellow)
+    f_stCell(stTbl, 4, "Orders FILLED",       str.tostring(stCntFill), color.lime)
+    f_stCell(stTbl, 5, "Armed, never filled", str.tostring(stCntCanc), color.orange)
+    f_stCell(stTbl, 6, "Exit - target",       str.tostring(stCntTgt),  color.teal)
+    f_stCell(stTbl, 7, "Exit - stop",         str.tostring(stCntStop), color.red)
+    f_stCell(stTbl, 8, "Exit - opposite sig", str.tostring(stCntOpp),  color.fuchsia)
+    f_stCell(stTbl, 9, "Exit - time flat",    str.tostring(stCntFlat), color.silver)
