@@ -114,6 +114,19 @@ PROOF THAT THE DEFAULTS DID NOT MOVE
   · Inlined-token model 35,705.
 
 --------------------------------------------------------------------------------
+VERSION LINE AT THE TOP OF THE FILE
+--------------------------------------------------------------------------------
+Line 2 of the script is now a one-line version stamp, so opening the code in the
+Pine editor tells you immediately what you are looking at:
+
+// SMC Market Structure — Alerts only  ·  v2.2  ·  full structure engine + every alert · pullback rules 1-3 (all off by default) · no profiles, VWAP, killzones or table
+
+Comments are stripped before Pine counts compiled tokens, so it costs nothing -
+the token figure above is unchanged by it. The code below it is byte-for-byte
+what was already shipped under this version number.
+================================================================================
+
+--------------------------------------------------------------------------------
 ONE SETTINGS NOTE
 --------------------------------------------------------------------------------
 Rule 3 has to be declared before the pullback counter, so it sits with rules 1

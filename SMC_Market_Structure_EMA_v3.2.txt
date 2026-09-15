@@ -1,4 +1,5 @@
 //@version=6
+// SMC Market Structure + EMA  ·  v3.2  ·  main + internal + inner structure · MTF table · EMA · pullback rules 1-3 (all off by default) · no volume profiles
 indicator("SMC Market Structure — 3CP + EMA", "SMC 3CP+EMA", overlay = true,
      max_bars_back = 2000, max_lines_count = 500, max_labels_count = 500, max_boxes_count = 150, dynamic_requests = true)
 

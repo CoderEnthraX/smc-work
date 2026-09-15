@@ -1,4 +1,5 @@
 //@version=6
+// Market Structure SMC  ·  v17.2  ·  main + internal + inner structure · volume profiles · VWAP · killzones · MTF table · EMA · pullback rules 1-3 (all off by default)
 indicator("SMC Market Structure — 3CP + Volume Profiles", "SMC 3CP+VP", overlay = true,
      max_bars_back = 2000, max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500, dynamic_requests = true)
 

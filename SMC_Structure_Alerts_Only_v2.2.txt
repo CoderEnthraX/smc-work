@@ -1,4 +1,5 @@
 //@version=6
+// SMC Market Structure — Alerts only  ·  v2.2  ·  full structure engine + every alert · pullback rules 1-3 (all off by default) · no profiles, VWAP, killzones or table
 indicator("SMC Market Structure — Alerts only", "SMC ALERTS", overlay = true,
      max_bars_back = 2000, max_lines_count = 500, max_labels_count = 500, dynamic_requests = true)
 
