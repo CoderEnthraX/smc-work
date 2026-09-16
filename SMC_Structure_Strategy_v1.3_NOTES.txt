@@ -1,6 +1,6 @@
 ================================================================================
-SMC STRUCTURE STRATEGY  -  v1.2
-Companion notes for SMC_Structure_Strategy_v1.2.txt
+SMC STRUCTURE STRATEGY  -  v1.3
+Companion notes for SMC_Structure_Strategy_v1.3.txt
 ================================================================================
 Built from SMC_Structure_Alerts_Only_v2.3, which is v17.3 with the profiles,
 VWAP, killzones and MTF table removed. 48 of the 49 engine functions in this
@@ -52,6 +52,67 @@ none of them was a defect - the script ran correctly. Here is each one.
 NOTHING ELSE CHANGED. The trading block - both rules, the stop, the target, the
 sizing, the session - is byte-for-byte identical to v1.0, and the structure
 engine is still 48 of 49 functions byte-identical to v17.3.
+================================================================================
+
+--------------------------------------------------------------------------------
+v1.3 - THE REASON ONLY TWO ORDERS EVER FILLED. THIS WAS THE BUG.
+--------------------------------------------------------------------------------
+Your table read: 55 CHOCH signals, 117 BOS signals, 133 setups armed, 2 FILLED,
+131 armed-but-never-filled. Changing the pullback to 25% did nothing. It was
+never going to - the orders were not failing to be reached, they were being
+thrown away before they could be.
+
+THE PROOF IS IN YOUR OWN FILLS. Every trade that ever filled:
+
+    size 1.37  =  6,080 USD  =  61% of the 10,000 account   stop was 73 pts
+    size 1.70  =  7,402 USD  =  74% of the account           stop was 59 pts
+    size 2.15  =  9,261 USD  =  93% of the account           stop was 46 pts
+
+Not one fill above the account value. And the cutoff lands exactly where it
+must: risk-based sizing works BACKWARDS from the stop, so a tighter stop means
+a BIGGER position.
+
+    stop  5 pts -> 20.00 units ->  86,000 USD  -> bigger than the account
+    stop 10 pts -> 10.00 units ->  43,000 USD  -> bigger than the account
+    stop 20 pts ->  5.00 units ->  21,500 USD  -> bigger than the account
+    stop 40 pts ->  2.50 units ->  10,750 USD  -> bigger than the account
+    stop 46 pts ->  2.17 units ->   9,348 USD  -> JUST fits
+    stop 73 pts ->  1.37 units ->   5,890 USD  -> fits
+
+TradingView will not open a position larger than the account allows, and it does
+not tell you - it discards the order in silence. On 1-minute gold nearly every
+CHOCH* stop is tighter than 46 points, so 131 of 133 setups were binned. Only
+the three widest stops in a fortnight happened to produce a position small
+enough to squeeze in.
+
+That is my mistake, squarely. I sized positions from the risk with no regard for
+what a 10,000 account can hold, and I left margin unset so TradingView applied
+its own hidden limit on top.
+
+THE FIX, two parts:
+
+  1. margin_long = 0 and margin_short = 0 in strategy(). TradingView no longer
+     applies a limit of its own, so it can no longer reject an order silently.
+     Sizing is entirely mine now, which is the only way to make it visible.
+
+  2. A "Max leverage (position value / equity)" setting, default 30, which is
+     normal for retail gold. The position is capped at equity x leverage. At 30x
+     on a 10,000 account that is 300,000 of position - every stop distance in
+     the table above now fills at its full, correct size.
+
+  3. A new table row, "Size capped (leverage)", counting setups where that cap
+     actually bit. If it climbs, raise the leverage; if you want to be more
+     conservative, lower it and accept that the tightest-stop trades will carry
+     less than your nominal risk.
+
+WHAT TO EXPECT NOW. Far more fills - on your seven-day window the 131 rejected
+setups become real trades. That is what you were seeing by eye and the strategy
+was not.
+
+READ THE RESULT WITH CARE. With margin at 0 there is no ceiling but the leverage
+setting, so a very tight stop can still ask for a large position. Watch the
+"Size capped" row, and set Commission and Slippage in the Properties tab before
+trusting any equity curve - both default to zero, and zero is never true.
 ================================================================================
 
 --------------------------------------------------------------------------------

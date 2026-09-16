@@ -1,8 +1,9 @@
 //@version=6
-// SMC Structure Strategy  -  v1.2  -  1m main-tier CHOCH entries, two rules, 15m trend filter, R-multiple targets, IST session window  -  ASCII only
+// SMC Structure Strategy  -  v1.3  -  1m main-tier CHOCH entries, two rules, 15m trend filter, R-multiple targets, IST session window  -  ASCII only
 strategy("SMC Structure Strategy", "SMC STRAT", overlay = true,
      max_bars_back = 2000, max_lines_count = 500, max_labels_count = 500, dynamic_requests = true,
      initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     margin_long = 0, margin_short = 0,
      pyramiding = 0, calc_on_every_tick = false)
 
 gStr = "Structure colour"
@@ -2249,6 +2250,7 @@ stSize   = input.string("Risk-based off the stop", "Position size", options = ["
 stRisk   = input.float(100.0, "  - risk per trade, account currency", minval = 0.01, group = gStg)
 stQty    = input.float(1.0, "  - fixed quantity", minval = 0.000001, group = gStg)
 stCash   = input.float(1000.0, "  - fixed cash per trade", minval = 0.01, group = gStg)
+stLev    = input.float(30.0, "Max leverage (position value / equity)", minval = 1.0, maxval = 500.0, step = 1.0, group = gStg, tooltip = "THE SINGLE MOST IMPORTANT SETTING IN THIS FILE, and the reason v1.2 only ever filled two orders.\n\nRisk-based sizing works backwards from the stop: risk 100 with a 10-point stop means 10 units of gold, which is about 43,000 USD of position. On a 10,000 account that is 4.3x leverage. TradingView will NOT open a position bigger than your equity unless leverage is allowed - it just discards the order in silence. That is exactly what happened: only stops wider than about 46 points produced a position small enough to fit, so 131 of 133 setups were thrown away.\n\nThis caps the position at equity x leverage. 30 is normal for retail gold. Raise it if you see the \"Size capped\" row climbing; lower it to be more conservative.\n\nNOTE: margin in strategy() is set to 0 so TradingView no longer applies its own hidden limit. THIS setting is now the only cap, which is why it matters.")
 stRev    = input.bool(true, "Opposite CHOCH while in a trade: close and reverse", group = gStg, tooltip = "A Pine strategy holds ONE net position - it cannot run a long and a short side by side, each with its own stop. So the closest thing to taking both is to close the running trade at market on the opposite CHOCH and open the new one.\n\nIt rarely fires, because the stop IS the CHOCH* level and an opposite CHOCH is a close beyond it - the trade is usually stopped out first. It only survives when the stop buffer is wide enough.\n\nOFF = a new CHOCH is ignored while a trade is running.")
 stBosOn  = input.bool(false, "ALSO take trades on BOS, not just CHOCH", group = gStg, tooltip = "OFF (default) = only a main CHOCH starts a trade, exactly as before.\n\nON = a main BOS starts one too - bullish BOS for a long, bearish BOS for a short - judged by the SAME two rules. If the 15m trend agrees it is rule 2, the limit on the pivot the BOS candle just broke; if it does not, it is rule 1, the percentage pullback. Same stop, same target, same sizing, same session.\n\nA BOS is a continuation, so with this on you trade WITH the 1m trend as well as on its turns. Expect several times as many signals.")
 stShow   = input.bool(true, "Draw the entry, stop and target levels", group = gStg)
@@ -2288,6 +2290,8 @@ var int stCntTgt  = 0
 var int stCntStop = 0
 var int stCntOpp  = 0
 var int stCntFlat = 0
+var int stCntCap  = 0
+var bool stCapFlag = false
 var int stClosed  = 0
 var int stWhy     = 0
 
@@ -2300,7 +2304,9 @@ f_stQty(float ent, float rsk) =>
         q := ent > 0 ? stCash / ent : 0.0
     else
         q := rsk > 0 ? stRisk / (rsk * pv) : 0.0
-    q
+    float _lim = ent > 0 and stLev > 0 ? strategy.equity * stLev / ent : 0.0
+    bool  _cap = _lim > 0 and q > _lim
+    [_cap ? _lim : q, _cap]
 
 if strategy.position_size != 0 and strategy.position_size[1] == 0
     stOpenSl := stSl
@@ -2363,6 +2369,7 @@ if (stSigUp or stSigDn) and stOn
             strategy.cancel("L")
             strategy.cancel("S")
             stCntArm += 1
+            stCapFlag := false
             stDir  := _d
             stRule := _agree ? 2 : 1
             stSl   := _d == 1 ? _opl - stSlBuf : _opl + stSlBuf
@@ -2383,7 +2390,10 @@ else if stDir != 0
 if stOn and strategy.position_size == 0 and stDir != 0 and stWin and not na(stEnt) and not na(stTgt) and not na(stSl)
     bool _sane = stDir == 1 ? stEnt > stSl : stEnt < stSl
     float _r = math.abs(stEnt - stSl)
-    float _q = f_stQty(stEnt, _r)
+    [_q, _qCap] = f_stQty(stEnt, _r)
+    if _qCap and not stCapFlag
+        stCntCap  += 1
+        stCapFlag := true
     if _sane and _q > 0 and _r > 0
         if stDir == 1
             strategy.entry("L", strategy.long, qty = _q, limit = stEnt)
@@ -2435,7 +2445,7 @@ f_stCell(table t, int r, string a, string b, color c) =>
 var table stTbl = na
 if stStatOn and bar_index == last_bar_index
     if na(stTbl)
-        stTbl := table.new(f_stPos(stStatPos), 2, 10, bgcolor = color.new(color.black, 15), border_color = color.new(color.gray, 60), border_width = 1)
+        stTbl := table.new(f_stPos(stStatPos), 2, 11, bgcolor = color.new(color.black, 15), border_color = color.new(color.gray, 60), border_width = 1)
     table.cell(stTbl, 0, 0, "STRATEGY", text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 55), text_halign = text.align_left)
     table.cell(stTbl, 1, 0, "count",    text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 55), text_halign = text.align_right)
     f_stCell(stTbl, 1, "CHOCH signals",       str.tostring(stCntCho),  color.white)
@@ -2447,3 +2457,4 @@ if stStatOn and bar_index == last_bar_index
     f_stCell(stTbl, 7, "Exit - stop",         str.tostring(stCntStop), color.red)
     f_stCell(stTbl, 8, "Exit - opposite sig", str.tostring(stCntOpp),  color.fuchsia)
     f_stCell(stTbl, 9, "Exit - time flat",    str.tostring(stCntFlat), color.silver)
+    f_stCell(stTbl, 10, "Size capped (leverage)", str.tostring(stCntCap), stCntCap > 0 ? color.orange : color.gray)
