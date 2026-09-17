@@ -1,5 +1,5 @@
 //@version=6
-// SMC Structure Strategy  -  v2.1  -  main-tier CHOCH/BOS entries on any timeframe, two rules, paired higher-timeframe filter, R-multiple targets, money-based sizing, IST session  -  ASCII only
+// SMC Structure Strategy  -  v2.2  -  main-tier CHOCH/BOS entries on any timeframe, two rules, paired higher-timeframe filter, money-based sizing, safety guards, IST session  -  ASCII only
 strategy("SMC Structure Strategy", "SMC STRAT", overlay = true,
      max_bars_back = 2000, max_lines_count = 500, max_labels_count = 500, dynamic_requests = true,
      initial_capital = 10000, currency = currency.USD, default_qty_type = strategy.fixed, default_qty_value = 1,
@@ -2269,6 +2269,18 @@ stWhOn   = input.bool(false, "Attach a webhook message to every order", group = 
 stWhMode = input.string("JSON", "Message format", options = ["JSON", "PineConnector", "Plain text"], group = gWh)
 stWhId   = input.string("", "License ID / account tag", group = gWh, tooltip = "PineConnector puts your licence ID first in every command. For JSON it is copied into the id field. Leave blank if your bridge does not need one.")
 
+gSaf = "24. Safety - every one of these is optional"
+stCancelSig = input.bool(true, "Cancel an unfilled order on ANY new signal", group = gSaf, tooltip = "ON (default): the moment a new CHOCH or BOS prints, a resting order that has not filled is pulled, even if the new signal does not itself produce a tradeable setup.\n\nOFF: the old order is only replaced when the new signal actually arms something. If the new signal is rejected - no pivot for rule 2, no opposite level - the old order keeps sitting there against a market that has already moved on.")
+stExpBars   = input.int(0, "Cancel an unfilled order after N bars  (0 = never)", minval = 0, maxval = 5000, group = gSaf, tooltip = "A setup that has waited this many bars without filling is abandoned. Stops a stale level sitting in the market long after the move that created it.")
+stMinStop   = input.float(0.0, "Skip the setup if the stop is CLOSER than this (price)", minval = 0.0, step = 0.01, group = gSaf, tooltip = "A stop a couple of points away on 1m gold is inside the spread. Risk-based sizing reacts by buying an enormous position for it, and the spread alone can take you out. Try 3 on gold. 0 = off.")
+stMaxStop   = input.float(0.0, "Skip the setup if the stop is FURTHER than this (price)", minval = 0.0, step = 0.01, group = gSaf, tooltip = "The other end: a very wide stop makes the position tiny and the target unreachable in the time you have. 0 = off.")
+stMaxTrades = input.int(0, "Max trades per day  (0 = no limit)", minval = 0, maxval = 200, group = gSaf, tooltip = "Counted from filled entries, reset at the start of each trading day in your session timezone. A hard brake on a choppy day.")
+stDayLoss   = input.float(0.0, "Stop for the day after losing this much  (0 = off)", minval = 0.0, group = gSaf, tooltip = "Adds up closed profit and loss for the day. Once the day is down by this amount it stops opening trades and starts fresh tomorrow. The most useful guard here - set it before you go live.")
+stDD        = input.float(0.0, "Stop PERMANENTLY after an equity drawdown of this %  (0 = off)", minval = 0.0, maxval = 100.0, group = gSaf, tooltip = "Measured from the highest equity the account has reached. Unlike the daily stop this one does not reset - it is the last line of defence.")
+stWkFlat    = input.bool(true, "Flatten and stop before the weekend", group = gSaf, tooltip = "Closes any open trade and takes no new ones from the cutoff below until the market reopens. Without it a Friday-night trade carries the weekend gap - and a gap does not respect your stop, it jumps straight past it.")
+stWkDay     = input.string("Friday", "  - cutoff day", options = ["Thursday", "Friday", "Saturday"], group = gSaf)
+stWkHr      = input.int(21, "  - cutoff hour", minval = 0, maxval = 23, group = gSaf)
+
 int    _stCs   = timeframe.in_seconds(timeframe.period)
 string stHtfTf = stHtf == "Auto - paired with the chart" ? (_stCs <= 60 ? "15" : _stCs <= 300 ? "60" : _stCs <= 900 ? "240" : _stCs <= 3600 ? "1D" : _stCs <= 14400 ? "1W" : "1M") : stHtf == "15m" ? "15" : stHtf == "1h" ? "60" : stHtf == "4h" ? "240" : stHtf == "1D" ? "1D" : stHtf == "1W" ? "1W" : "1M"
 bool   stHtfOk = timeframe.in_seconds(stHtfTf) > _stCs
@@ -2286,6 +2298,12 @@ bool stFlatNow = _stDead and not _deadPrev
 _deadPrev := _stDead
 int  _stDay  = dayofmonth(time, stTz)
 bool stNewDay = _stDay != nz(_stDay[1], _stDay)
+int  _stDow  = dayofweek(time, stTz)
+int  _wkCut  = stWkDay == "Thursday" ? dayofweek.thursday : stWkDay == "Saturday" ? dayofweek.saturday : dayofweek.friday
+bool stWkBlock = stWkFlat and ((_stDow == _wkCut and _sHm >= stWkHr) or (_wkCut != dayofweek.saturday and _stDow == dayofweek.saturday) or _stDow == dayofweek.sunday)
+var bool _wkPrev = false
+bool stWkNow = stWkBlock and not _wkPrev
+_wkPrev := stWkBlock
 
 var float stCeilPrev = na
 var float stFlorPrev = na
@@ -2311,6 +2329,13 @@ var int stWhy     = 0
 var float stSeqLoss = 0.0
 var bool  stSeqHalt = false
 var int   stCntSeqCap = 0
+var int   stArmBar = na
+var int   stDayTrades = 0
+var float stDayPnl = 0.0
+var bool  stDayHalt = false
+var float stPeakEq = na
+var int   stCntSkip = 0
+var int   stCntExp = 0
 
 f_stPv() =>
     syminfo.pointvalue <= 0 ? 1.0 : syminfo.pointvalue
@@ -2347,7 +2372,8 @@ f_stMsg(string act, float px, float sl, float tp, float q) =>
 if strategy.position_size != 0 and strategy.position_size[1] == 0
     stOpenSl   := stSl
     stDir      := 0
-    stCntFill  += 1
+    stCntFill   += 1
+    stDayTrades += 1
     stLastRisk := strategy.convert_to_account(math.abs(strategy.position_size) * math.abs(strategy.position_avg_price - stSl) * f_stPv())
 
 if strategy.closedtrades > stClosed
@@ -2362,6 +2388,7 @@ if strategy.closedtrades > stClosed
             stCntTgt += 1
         else
             stCntStop += 1
+        stDayPnl := stDayPnl + _pf
         if _pf > 0
             stSeqLoss := 0.0
             stSeqHalt := false
@@ -2393,8 +2420,20 @@ if stNewDay and stSeqHalt and stSeqCapAct == "Stop for the rest of the day"
     stSeqLoss := 0.0
     stSeqCapOn := false
 
+if stNewDay
+    stDayTrades := 0
+    stDayPnl    := 0.0
+    stDayHalt   := false
+
+stPeakEq := na(stPeakEq) ? strategy.equity : math.max(stPeakEq, strategy.equity)
+bool stDDHit = stDD > 0 and not na(stPeakEq) and stPeakEq > 0 and (stPeakEq - strategy.equity) / stPeakEq * 100.0 >= stDD
+if stDayLoss > 0 and stDayPnl <= -stDayLoss
+    stDayHalt := true
+if stMaxTrades > 0 and stDayTrades >= stMaxTrades
+    stDayHalt := true
+
 bool stOnce = stEntMode == "Send once - place it and leave it"
-bool stGo   = stOn and not stSeqHalt
+bool stGo   = stOn and not stSeqHalt and not stDayHalt and not stDDHit and not stWkBlock
 
 if stDir != 0 and strategy.position_size == 0 and not (stOnce and stPlaced)
     float _live = na
@@ -2404,6 +2443,23 @@ if stDir != 0 and strategy.position_size == 0 and not (stOnce and stPlaced)
         _live := ceilS.price
     if not na(_live)
         stSl := stDir == 1 ? _live - stSlBuf : _live + stSlBuf
+
+if stWkNow
+    if strategy.position_size != 0
+        strategy.close_all(comment = "Weekend flat", alert_message = f_stMsg("close", close, na, na, math.abs(strategy.position_size)))
+        stWhy := 2
+    if stDir != 0
+        stCntCanc += 1
+    strategy.cancel("L")
+    strategy.cancel("S")
+    stDir := 0
+
+if stExpBars > 0 and stDir != 0 and strategy.position_size == 0 and not na(stArmBar) and bar_index - stArmBar >= stExpBars
+    strategy.cancel("L")
+    strategy.cancel("S")
+    stCntExp  += 1
+    stCntCanc += 1
+    stDir := 0
 
 if stFlatNow
     if strategy.position_size != 0
@@ -2435,6 +2491,11 @@ if (stSigUp or stSigDn) and stGo
     if _opp and stRev
         strategy.close_all(comment = "Opposite signal", alert_message = f_stMsg("close", close, na, na, math.abs(strategy.position_size)))
         stWhy := 1
+    if stCancelSig and stDir != 0 and strategy.position_size == 0
+        strategy.cancel("L")
+        strategy.cancel("S")
+        stCntCanc += 1
+        stDir := 0
     bool _take = stWin and (strategy.position_size == 0 or (_opp and stRev))
     if _take
         int   _d   = stSigUp ? 1 : -1
@@ -2455,6 +2516,7 @@ if (stSigUp or stSigDn) and stGo
             stCapFlag := false
             stPlaced  := false
             stEntLock := na
+            stArmBar  := bar_index
             stDir  := _d
             stRule := _agree ? 2 : 1
             stSl   := _d == 1 ? _opl - stSlBuf : _opl + stSlBuf
@@ -2479,7 +2541,8 @@ if stGo and strategy.position_size == 0 and stDir != 0 and stWin and not na(stEn
     if _qCap and not stCapFlag
         stCntCap  += 1
         stCapFlag := true
-    bool _place = _sane and _q > 0 and _r > 0 and (not stOnce or not stPlaced)
+    bool _dOk = (stMinStop <= 0 or _r >= stMinStop) and (stMaxStop <= 0 or _r <= stMaxStop)
+    bool _place = _sane and _dOk and _q > 0 and _r > 0 and (not stOnce or not stPlaced)
     if _place
         stPlaced  := true
         stEntLock := stEnt
@@ -2489,9 +2552,11 @@ if stGo and strategy.position_size == 0 and stDir != 0 and stWin and not na(stEn
         else
             strategy.entry("S", strategy.short, qty = _q, limit = stEnt, alert_message = f_stMsg("sell", stEnt, stSl, stTgt, _q))
             strategy.exit("S exit", "S", stop = stSl, limit = stTgt, alert_message = f_stMsg("close", close, stSl, stTgt, _q))
-    else if not _sane or _q <= 0 or _r <= 0
+    else if not _sane or not _dOk or _q <= 0 or _r <= 0
         strategy.cancel("L")
         strategy.cancel("S")
+        if not _dOk
+            stCntSkip += 1
         stCntCanc += 1
         stDir := 0
 
@@ -2517,7 +2582,7 @@ f_stCell(table t, int r, string a, string b, color c) =>
 var table stTbl = na
 if stStatOn and bar_index == last_bar_index
     if na(stTbl)
-        stTbl := table.new(f_stPos(stStatPos), 2, 16, bgcolor = color.new(color.black, 15), border_color = color.new(color.gray, 60), border_width = 1)
+        stTbl := table.new(f_stPos(stStatPos), 2, 19, bgcolor = color.new(color.black, 15), border_color = color.new(color.gray, 60), border_width = 1)
     table.cell(stTbl, 0, 0, "STRATEGY", text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 55), text_halign = text.align_left)
     table.cell(stTbl, 1, 0, "value",    text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 55), text_halign = text.align_right)
     f_stCell(stTbl, 1,  "CHOCH signals",       str.tostring(stCntCho),  color.white)
@@ -2533,5 +2598,8 @@ if stStatOn and bar_index == last_bar_index
     f_stCell(stTbl, 11, "Risk NEXT trade",     str.tostring(math.round(stRiskNow * 100) / 100), stRiskNow > stRisk ? color.orange : color.white)
     f_stCell(stTbl, 12, "Last trade risk",     na(stLastRisk) ? "-" : str.tostring(math.round(stLastRisk * 100) / 100), color.aqua)
     f_stCell(stTbl, 13, "Losses carried",      stSeqMode == "Off" ? "off" : str.tostring(math.round(stSeqLoss * 100) / 100), stSeqLoss > 0 ? color.red : color.gray)
+    f_stCell(stTbl, 16, "Skipped - stop too tight/wide", str.tostring(stCntSkip), stCntSkip > 0 ? color.orange : color.gray)
+    f_stCell(stTbl, 17, "Expired unfilled", str.tostring(stCntExp), stCntExp > 0 ? color.orange : color.gray)
+    f_stCell(stTbl, 18, "BLOCKED NOW", stDDHit ? "drawdown" : stWkBlock ? "weekend" : stDayHalt ? "daily limit" : stSeqHalt ? "risk cap" : not stOn ? "disabled" : "-", (stDDHit or stWkBlock or stDayHalt or stSeqHalt) ? color.red : color.gray)
     f_stCell(stTbl, 15, "RULE 2 timeframe", stHtfOk ? stHtfTf : "off (not above chart)", stHtfOk ? color.aqua : color.gray)
     f_stCell(stTbl, 14, "Risk cap hit / HALT", stSeqMode == "Off" ? "off" : (str.tostring(stCntSeqCap) + (stSeqHalt ? "  HALTED" : "")), stSeqHalt ? color.red : color.gray)

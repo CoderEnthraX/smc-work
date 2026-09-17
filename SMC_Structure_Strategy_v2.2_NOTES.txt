@@ -1,0 +1,299 @@
+================================================================================
+SMC STRUCTURE STRATEGY  -  v2.2
+How the whole thing works, in plain English
+================================================================================
+
+WHAT IT IS
+This is a trading strategy built on the same market-structure engine as your
+v17.3 indicator. 48 of its 49 engine functions are byte-for-byte identical to
+v17.3, so the CHOCH and BOS it trades are the same ones your chart draws. There
+is no second engine and nothing can drift apart.
+
+It runs on whatever chart timeframe you put it on. It watches the MAIN structure
+tier only - iBOS / iCHOCH / nBOS / nCHOCH are computed but not traded.
+
+================================================================================
+1. WHEN IT DECIDES TO TRADE
+================================================================================
+A trade starts on a main CHOCH. If you switch on "ALSO take trades on BOS", a
+main BOS starts one too. Bullish signal means a long, bearish means a short.
+Every signal is confirmed at the CLOSE of the bar - nothing repaints.
+
+Then it picks ONE of two rules, based on what a higher timeframe is doing.
+
+RULE 2 - used when the higher timeframe AGREES
+    If the higher timeframe's main trend is bullish and you just got a bullish
+    signal (or both bearish), the order goes on the PIVOT THE CANDLE JUST BROKE.
+    For a bullish signal that pivot is below price, so it is a buy limit sitting
+    under the market waiting for a retest.
+
+RULE 1 - used when the higher timeframe DISAGREES
+    The order goes at a percentage pullback instead. The pullback is measured
+    from the live CHOCH* level up to the highest point the move has reached, and
+    50% means halfway between them.
+
+    It RATCHETS. Every new high pushes the level up and the waiting order moves
+    with it. A candle against the move leaves it exactly where it was. So you
+    are always buying a retrace of the move AS IT STANDS RIGHT NOW, not of a
+    move that finished ten candles ago.
+
+WHICH HIGHER TIMEFRAME - the pairing
+    1m chart  -> 15m        1h chart -> 1D
+    5m chart  -> 1h         4h chart -> 1W
+    15m chart -> 4h         1D chart -> 1M
+    "Auto" does this for you. Or pick one by hand. If what you pick is not ABOVE
+    the chart timeframe it is ignored and everything falls through to rule 1 -
+    you cannot build a higher-timeframe filter out of a faster timeframe.
+
+================================================================================
+2. THE STOP AND THE TARGET
+================================================================================
+STOP    the live CHOCH* level - the price that would flip the structure back
+        the other way - plus an optional buffer so a wick that just kisses the
+        level does not take you out.
+        While the order is still WAITING the stop follows that level as the
+        engine moves it. The moment the order fills the stop LOCKS and never
+        moves again.
+TARGET  a multiple of the distance from your entry to your stop. 1.0 is the
+        classic 1:1. Set 2, 3, 5 or anything between.
+
+================================================================================
+3. HOW BIG THE TRADE IS  -  and why a money stop works on every ticker
+================================================================================
+Default mode is RISK-BASED. You say "risk 50" and it works out the rest:
+
+    how much does ONE unit lose if my stop is hit, in the symbol's currency
+      -> convert that into the account currency
+      -> buy exactly enough units that the stop costs 50
+
+That currency conversion is the piece that makes 50 mean the same 50 on XAUUSD,
+EURUSD, USDJPY or an index. You never type a lot size.
+
+CHECK IT YOURSELF. The table has a "Last trade risk" row showing what the filled
+trade ACTUALLY had at risk, worked out from the real fill size and the real stop.
+It should read 50.
+
+MAX LEVERAGE matters more than it looks. A tight stop means a BIG position - a
+10-point stop on gold with 50 risk is about 21,000 of position. TradingView will
+not open a position bigger than the account allows, and it does not tell you, it
+just drops the order. That is what limited an early version to two trades in a
+fortnight. The leverage setting caps the position at equity x leverage; 30 is
+normal for retail gold and FX. Watch the "Size capped" row.
+
+Two other sizing modes exist if you prefer: fixed quantity, and fixed cash.
+
+================================================================================
+4. WHEN IT IS ALLOWED TO TRADE
+================================================================================
+All times are in your chosen timezone, Asia/Kolkata (IST) by default.
+
+    Entries taken         06:00 to 23:00
+    Force-flat            02:00 - any open trade is closed at market
+    Weekend               closes everything and stops from Friday 21:00
+
+An open trade is NOT closed at 23:00. Only NEW entries stop, and any waiting
+order is cancelled.
+
+The force-flat does not need a bar at exactly 02:00. It fires on the first bar in
+the dead zone between the flat hour and the open hour, so a Monday reopen at
+03:30 still flattens. That matters - the old version needed a bar in that exact
+hour, and a weekend or broker break meant it never ran.
+
+================================================================================
+5. THE SAFETY GUARDS  -  group 24, all optional
+================================================================================
+CANCEL ON ANY NEW SIGNAL (on by default)
+    The moment a new CHOCH or BOS prints, a waiting order that has not filled is
+    pulled - even if the new signal does not itself produce a tradeable setup.
+    Off, the old order only goes when the new signal actually arms something, so
+    a rejected signal leaves a stale order sitting against a market that has
+    already moved on.
+
+CANCEL AFTER N BARS
+    A setup that has waited this long without filling is abandoned.
+
+SKIP IF THE STOP IS TOO CLOSE / TOO FAR
+    Too close: a 2-point stop on 1m gold is inside the spread, and risk-based
+    sizing answers it by buying an enormous position. Try 3 on gold.
+    Too far: a very wide stop makes the position tiny and the target unreachable
+    in the time you have.
+
+MAX TRADES PER DAY - a brake on a choppy day that keeps handing out signals.
+
+STOP FOR THE DAY AFTER LOSING X - the most useful guard here. Set it before you
+    go live. It adds up closed profit and loss for the day, stops when the day is
+    down by that much, and starts fresh tomorrow.
+
+STOP PERMANENTLY AFTER AN EQUITY DRAWDOWN OF X% - the last line of defence,
+    measured from the highest equity reached. This one does not reset.
+
+WEEKEND FLAT - closes and stops from your cutoff until the market reopens.
+    Without it a Friday-night trade carries the weekend gap, and a gap does not
+    respect your stop, it jumps straight past it.
+
+The "BLOCKED NOW" row in the table tells you which of these is stopping trading
+at this moment, if any.
+
+================================================================================
+6. THE TWO LOSS-RECOVERY MODES  -  both OFF, and please read the warning
+================================================================================
+    RULE A   50 -> 100 -> 200 -> 400 ...   next risk = losses so far + base
+    RULE B   50 -> 100 -> 300 -> 900 ...   next risk = 2 x losses so far
+A win resets either to the base. Rule A is written as (losses + base) / RR so the
+WIN nets the base amount whatever target multiple you use.
+
+### THE WARNING ###
+Both of these make you BIGGER after losing. That is the most reliable way there
+is to empty an account. Rule B, uncapped, from a base of 50:
+
+    50 -> 100 -> 300 -> 900 -> 2700 -> 8100 -> 24300 -> 72900
+
+Seven losers in a row asks for 24,300 of risk. Seven in a row is not rare - at a
+45% win rate it happens about once in every 60 trades, and this strategy can take
+several trades a day. The sequence does not know or care how big your account is.
+
+That is why the HARD CAP defaults to 500 and "when the cap is reached" defaults
+to "stop for the rest of the day". Please do not remove the cap to let it run -
+the cap is the thing keeping the account alive. Backtest both against plain fixed
+risk over a long window before you trust either.
+
+================================================================================
+7. THE COUNTER TABLE  -  what each row means
+================================================================================
+CHOCH signals / BOS signals   how many the strategy saw
+Setups armed                  signals that passed the rules and got an order
+Orders FILLED                 those orders that actually traded
+Armed, never filled           placed, then cancelled or replaced before price
+                              reached them
+Exit - target / stop          finished on its own bracket
+Exit - opposite sig           cut short by the opposite signal
+Exit - time flat              closed by the force-flat or the weekend cutoff
+Size capped (leverage)        the leverage cap shrank the position
+Risk NEXT trade               what the next trade will risk
+Last trade risk               what the last filled trade ACTUALLY risked
+Losses carried                the recovery sequence's running loss
+Risk cap hit / HALT           recovery cap episodes, and whether it is halted
+RULE 2 timeframe              which higher timeframe is actually in use
+Skipped - stop too tight/wide the stop-distance guard rejected it
+Expired unfilled              the N-bar expiry cancelled it
+BLOCKED NOW                   what is stopping trading right now
+
+HOW TO READ IT
+  armed large, filled small     -> your pullback % is too deep
+  target and stop both small
+  while opposite sig is large   -> trades are cut short before the R target is
+                                   ever tested; try turning off close-and-reverse
+  size capped climbing          -> raise max leverage
+  ARMED always equals FILLED + NEVER FILLED + the one setup that may be live
+  right now. That identity was checked over 600,000 simulated bars.
+
+================================================================================
+8. THE SETTINGS PANEL
+================================================================================
+239 of the old 269 settings were turned into fixed values. They are still in the
+code and the structure engine still uses them - they simply do not clutter the
+panel any more. What is left:
+
+  20 Strategy          the two rules, pullback %, target, session hours, entry
+                       order handling, drawing, table
+  21 Position size     sizing mode, base risk, max leverage, recovery modes
+  22 Webhook           message on/off, format, licence ID
+  23 Engine rules      ALTERNATE, and pullback rules 1/2/3 - these change the
+                       SIGNALS themselves, which is why they stayed visible
+  24 Safety            everything in section 5
+
+ENTRY ORDER HANDLING - two modes, pick either
+  CONTINUOUS   the order is re-placed each bar at the recomputed level, so a
+               rule-1 entry ratchets with the move
+  SEND ONCE    the level is worked out once when the setup arms and the order is
+               left exactly there. The stop freezes too, so what was placed and
+               what is tracked cannot drift apart.
+  Neither changes how many webhook messages you get - see below.
+
+================================================================================
+9. CONNECTING A BROKER
+================================================================================
+TradingView's built-in broker panel CANNOT auto-trade a Pine strategy. Even with
+a broker connected, that panel is for clicking by hand. Automation only happens
+through alerts and webhooks.
+
+A STRATEGY ALERT FIRES WHEN AN ORDER FILLS, not when it is placed. Re-placing a
+resting limit sends nothing to your bridge. (I told you the opposite once - that
+was wrong.)
+
+FOUR ROUTES
+  1. Webhook -> bridge -> MT5 / cTrader. What you want. Third-party, paid.
+  2. Webhook -> your own script using the MT5 Python API or cTrader Open API.
+     Most control, most work.
+  3. Crypto-only services connect directly. Not relevant for gold or FX.
+  4. Semi-auto: alerts to your phone, you click. Honestly the best first step.
+
+DEMO STEPS
+  1. A paid TradingView plan - webhooks are not on Free.
+  2. An MT5 or cTrader DEMO account with your broker.
+  3. A bridge, in demo/paper mode.
+  4. In group 22: tick the webhook switch, pick the format, paste your ID.
+  5. ONE alert on the strategy, condition = the strategy, "Any alert() function
+     call", paste the bridge's webhook URL.
+  6. Run it 2-4 weeks on demo before any real money.
+
+================================================================================
+10. WHAT IT WILL NOT DO, AND WHAT TO WATCH
+================================================================================
+  . A Pine strategy holds ONE net position. It cannot run a long and a short at
+    once, each with its own stop. That is why "take the opposite trade as well"
+    became close-and-reverse.
+  . close_all runs at the NEXT bar's open. Reversals, the time-flat and the
+    weekend flat are one bar late by design.
+  . The leverage cap is in the script, not at your broker. Theirs may be lower
+    and will reject what the backtest happily took.
+  . Set COMMISSION and SLIPPAGE in the Properties tab and turn on BAR MAGNIFIER.
+    All three default to the flattering setting. Without the magnifier, when one
+    bar covers both your stop and your target TradingView assumes the stop - so
+    the reported win rate is pessimistic, not optimistic.
+  . Spread and latency are real. Bar close -> alert -> bridge -> broker is
+    typically 1-5 seconds, and gold's spread is 20-40 cents.
+
+================================================================================
+11. EVERY BUG FOUND ALONG THE WAY
+================================================================================
+Recorded because each one changes how you should read the older backtests.
+
+  v1.1  25 alertcondition() calls did nothing inside a strategy; the arm-status
+        table belonged to the alert file. Removed.
+  v1.2  Before release: a same-direction signal while in a trade armed a stale
+        setup that fired the instant the trade closed. And because the pending
+        stop follows the live level, that level could move past a resting order
+        and leave the stop on the WRONG SIDE of the entry - the order already
+        resting stayed live. Both fixed.
+  v1.3  THE BIG ONE. Risk-based sizing asked for positions bigger than the
+        account, and TradingView silently discarded them. 131 of 133 setups were
+        binned; only the three widest stops in a fortnight produced a position
+        small enough to fit. Fixed with margin 0 plus an explicit leverage cap.
+  v2.1  A permanent deadlock: "stop when the cap is reached" set a halt flag
+        cleared only by a WINNING trade - but the halt blocked all entries, so no
+        trade could open, so none could win. Once tripped it was dead for good.
+        Also: the force-flat needed a bar in the exact flat hour, so a weekend or
+        broker break meant it never ran.
+  v2.2  Caught before release: the day-trade counter was declared AFTER the
+        block that increments it, which would not have compiled.
+
+================================================================================
+12. HOW THIS VERSION WAS CHECKED
+================================================================================
+  . The whole order state machine was rebuilt outside Pine and replayed over
+    480,000 bars in FIVE configurations - continuous and send-once, with and
+    without cancel-on-signal, with the expiry and with the stop-distance band.
+    Five invariants on every bar: never both sides resting, never a pending
+    setup surviving a fill, never in a position without a locked stop, and the
+    bracket always on the correct side of the fill for both directions.
+    ZERO violations in all five.
+  . The counter identity - armed = filled + never-filled + one possibly live -
+    balanced exactly in all five.
+  . Send-once provably places at most one order per setup.
+  . 48 of 49 engine functions byte-identical to v17.3; the 49th differs only in
+    lines this file never reads.
+  . Pine's own build-time input validation, an undefined-identifier scan, a
+    use-before-declare scan, indentation, brackets, empty blocks, duplicate
+    declarations, table bounds - all clean. Pure 7-bit ASCII throughout.
+================================================================================
