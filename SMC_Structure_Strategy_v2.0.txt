@@ -1,142 +1,143 @@
 //@version=6
-// SMC Structure Strategy  -  v1.3  -  1m main-tier CHOCH entries, two rules, 15m trend filter, R-multiple targets, IST session window  -  ASCII only
+// SMC Structure Strategy  -  v2.0  -  1m main-tier CHOCH entries, two rules, 15m trend filter, R-multiple targets, IST session window  -  ASCII only
 strategy("SMC Structure Strategy", "SMC STRAT", overlay = true,
      max_bars_back = 2000, max_lines_count = 500, max_labels_count = 500, dynamic_requests = true,
-     initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 10000, currency = currency.USD, default_qty_type = strategy.fixed, default_qty_value = 1,
      margin_long = 0, margin_short = 0,
      pyramiding = 0, calc_on_every_tick = false)
 
 gStr = "Structure colour"
-whiteStruct = input.bool(false, "White BOS / CHOCH lines and text", group = gStr, tooltip = "One switch for the readability of the main structure marks on a dark or light chart.\n\nON  = every BOS, CHOCH, BOS* and CHOCH* line and label is drawn WHITE, whatever the individual colour pickers say.\nOFF = each one goes straight back to its own colour picker in groups 1 to 6 below. Nothing is overwritten; the switch only overrides while it is on.\n\nIt covers the six main style groups only. iBOS / iCHOCH and nBOS / nCHOCH keep their own colours, because they are meant to be distinguishable from main structure rather than matched to it.")
+whiteStruct = false
 
 gTog = "0. Master toggles"
 gA = "Alerts - enable, then create ONE alert using 'Any alert() function call'"
-aBB = input.bool(true,  "Bullish BOS alert",   group = gA)
+aBB = true
 
 gInt = "0. Internal + Inner structure - iBOS / iCHOCH - nBOS / nCHOCH"
-intDefOn = input.bool(true, "Internal marking - DEFAULT rule", tooltip = "Marks internal structure while the ALTERNATE rule is OFF. It is the BOS/CHOCH method run one level down, inside the current possible BOS*/CHOCH* range - the same rulebook, nothing else.\n\nRANGE ANCHOR: the range is only settled once the leg after the main break prints its extreme AND the 3-candle pullback confirms it - that is when the main engine adopts its new trend-side line and the BOS*/CHOCH* pair is complete. The candle that pivot sits on is the anchor, and internal structure exists only after it. Every pivot before it - the spike that started the impulse, any pullback made while price was still driving to the extreme - belongs to the impulse that BUILT the range and can never be an internal level. The anchor is LATCHED for the life of the range (v13.6): re-creating that line - the refill after a break, an equal-price retest, a pivot-2 promotion - never re-scopes the range and never deletes a level that formed inside it.\n\nLEVELS: the first 3-candle-pullback swing HIGH confirmed AFTER the anchor becomes the internal ceiling, the first confirmed swing LOW after it becomes the internal floor (adopt into an empty slot, exactly like the main engine). A pivot at the standing price re-anchors that level to the most recent touch. Only swings the 3-candle rule confirmed are ever eligible, and each must also pass the 'Internal pivot strength' test, so a candle in the middle of an impulse can never be a level.\n\nFIRST BREAK = iCHOCH: the internal trend starts NEUTRAL in every new range, so the first BODY close through either internal level prints iCHOCH and founds the internal trend in that direction - up through a pullback high, or down through a pullback low; both are iCHOCH.\n\nAFTER THAT, the main conditions unchanged: body close through the trend-side level -> iBOS; through the opposite level -> iCHOCH and the internal trend flips; the broken level empties and refills on the next 3CP swing; the OPPOSITE level re-anchors to the retracement swing between the broken pivot and the break candle; a WICK through with the body closing back inside is a SWEEP, not a break, and the swept wick is promoted to the level once price takes out the opposite reference (pivot-2 promotion); # on iBOS only.\n\nEvery confirmed main BOS/CHOCH resets all of it - levels, sweeps and the internal trend - so each range hunts its own first iCHOCH. A main event bar never prints an internal mark as well. Whether older ranges stay on the chart is set by the 'Keep previous iBOS / iCHOCH' checkbox below (display only). No IDM gate: an internal level is already inducement-level structure.", group = gInt)
-intAltOn = input.bool(true, "Internal marking - ALTERNATE rule", tooltip = "The same internal iBOS/iCHOCH engine with the exact same rules, applied while the ALTERNATE rule is ON.", group = gInt)
-inPivK   = input.int(1, "Internal pivot strength - candles before the swing", minval = 1, maxval = 5, group = gInt, tooltip = "How many candles immediately BEFORE a confirmed pivot must stay inside it for that pivot to be usable as an internal level: for a swing high, the previous N candles must not print a higher high.\n\nWhy it exists: the 3-candle rule confirms the leg OUT of an extreme, not the leg INTO it, and the tracker re-arms on the bar after each confirmation - so one sustained impulse also confirms several candles in the MIDDLE of that leg. Those are the marks that used to land on a single candle with no pivot there. Requiring N candles on the left rejects them, because a mid-impulse candle always has a higher one (a lower one for lows) right next to it.\n\n1 (default) = OFF. Since v13.0 the swing detector alternates high/low/high, so a candle in the middle of a leg can no longer be confirmed as a pivot at all - the job this filter was invented for in v10.5 is done properly at the source, and leaving it on could only ever throw away a swing the 3-candle rule legitimately confirmed. 2-5 = re-enable it, progressively stricter: only well-separated swings become levels, so fewer iBOS/iCHOCH marks - raise this if you want internal structure thinned out inside ranges and bases. The right-hand side of a pivot needs no setting: the 3-candle rule already guarantees it.")
-inHist   = input.bool(false, "Keep previous iBOS / iCHOCH  (untick = current BOS*/CHOCH* range only)", group = gInt, tooltip ="DISPLAY ONLY - the internal engine and every iBOS/iCHOCH classification are identical either way.\n\nTICKED (default): internal history stays on the chart like the main BOS/CHOCH marks, so the first iBOS of an older range is still visible after the next main event confirms. Limited by 'Max history to draw', and the newest 150 lines / 300 labels are kept so internal marks cannot exhaust TradingView's drawing budget.\n\nUNTICKED: only the CURRENT possible BOS*/CHOCH* range is marked - every confirmed main BOS/CHOCH erases the previous range's iBOS / iCHOCH / # marks and the new range starts clean.")
-inBosTxt = input.string("iBOS", "iBOS text", inline = "ii", group = gInt)
-inChoTxt = input.string("iCHOCH", "iCHOCH text", inline = "ii", group = gInt)
-inLc   = input.color(color.new(color.blue, 0), "Line ", inline = "ij", group = gInt)
-inTc   = input.color(color.new(color.blue, 0), "Text", inline = "ij", group = gInt)
-inLs   = input.string("Solid", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "ik", group = gInt)
-inW    = input.int(1, "Width", minval = 1, maxval = 5, inline = "ik", group = gInt)
-inTs   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "il", group = gInt)
-inShow = input.bool(true, "Show text", inline = "il", group = gInt)
-inStrOn  = input.bool(true, "Mark strong low / high after iBOS", inline = "im", group = gInt, tooltip = "The main engine's 'Mark strong low / high after BOS' rule, term for term, applied to internal breaks. On an internal iBOS the retracement swing that made the break possible - the swing the opposite internal level re-anchors to - is stamped: strong LOW under a bullish iBOS, strong HIGH above a bearish one.\n\nThree conditions, all shared with the main marker: the break must be an iBOS (an iCHOCH never stamps); the broken level's INDUCEMENT must have been taken, i.e. price traded through the last minor swing sitting just before that level's pivot candle - so a break whose pivot had no identifiable inducement stamps nothing, exactly as on the main engine; and the retracement swing must exist. The draw window is the main engine's too ('Max history to draw', measured on the break bar).\n\nText and size stay separate settings from the main marker, so you can style them independently.")
-inStrTxt = input.string("+", "", inline = "im", group = gInt)
-inStrSz  = input.string("Small", "", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "im", group = gInt)
+intDefOn = true
+intAltOn = true
+inPivK   = 1
+inHist   = false
+inBosTxt = "iBOS"
+inChoTxt = "iCHOCH"
+inLc   = color.new(color.blue, 0)
+inTc   = color.new(color.blue, 0)
+inLs   = "Solid"
+inW    = 1
+inTs   = "Small"
+inShow = true
+inStrOn  = true
+inStrTxt = "+"
+inStrSz  = "Small"
 
 gMS = "Market structure - mode & inducement (IDM)"
-altMode = input.bool(false, "ALTERNATE rule: BOS is valid only AFTER IDM", tooltip = "OFF = complete default structure. ON = a body close beyond the trend-side line only prints a valid BOS if that pivot's inducement (IDM) has been taken first; without IDM the break is ignored and the engine waits for the IDM, then the next body close beyond the pivot is the valid BOS. CHOCH flips are never gated.", group = gMS)
-showIdm = input.bool(false, "Mark IDM (inducement)", inline = "id", group = gMS)
-idmTxt  = input.string("IDM", "", inline = "id", group = gMS)
-idmSz   = input.string("Small", "", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "id", group = gMS)
-idmUpC  = input.color(color.new(#26a69a, 0), "Bullish", inline = "ic", group = gMS)
-idmDnC  = input.color(color.new(#ef5350, 0), "Bearish", inline = "ic", group = gMS)
-idmTc   = input.color(color.white, "Text", inline = "ic", group = gMS)
-showStr = input.bool(true, "Mark strong low / high after BOS", inline = "st", group = gMS)
-strTxt  = input.string("#", "", inline = "st", group = gMS)
-strSz   = input.string("Small", "", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "st", group = gMS)
+gEngR = "23. Engine rules - these change the signals themselves"
+altMode = input.bool(false, "ALTERNATE rule: BOS is valid only AFTER IDM", tooltip = "OFF = complete default structure. ON = a body close beyond the trend-side line only prints a valid BOS if that pivot's inducement (IDM) has been taken first; without IDM the break is ignored and the engine waits for the IDM, then the next body close beyond the pivot is the valid BOS. CHOCH flips are never gated.", group = gEngR)
+showIdm = false
+idmTxt  = "IDM"
+idmSz   = "Small"
+idmUpC  = color.new(#26a69a, 0)
+idmDnC  = color.new(#ef5350, 0)
+idmTc   = color.white
+showStr = true
+strTxt  = "#"
+strSz   = "Small"
 
 grpE = "Engine"
-onClose   = input.bool(true,  "Evaluate on bar close only (no intrabar repaint)", tooltip = "If true, market structure events (BOS/CHOCH) are only confirmed when the candle fully closes. If false, they trigger immediately in real-time but might repaint if the price drops back before closing.", group = grpE)
-histBars  = input.int(300, "Max history to draw (bars back from last)", minval = 100, maxval = 20000, tooltip = "TradingView keeps only ~500 drawings per script, so this focuses the drawing budget on the most recent N bars: structure older than this is computed but not drawn. The engine itself always runs on every bar of history.", group = grpE)
-showPiv   = input.bool(false, "Mark confirmed pivots (.)", inline = "pv", group = grpE)
-colPivHi  = input.color(color.new(color.red, 30),  "", inline = "pv", group = grpE)
-colPivLo  = input.color(color.new(color.teal, 30), "", inline = "pv", group = grpE)
-showSweep = input.bool(false, "Mark liquidity sweeps (x)", inline = "sw", group = grpE)
-colSweep  = input.color(color.gray, "", inline = "sw", group = grpE)
-paintBg   = input.bool(false, "Tint background by trend", group = grpE)
+onClose   = true
+histBars  = 500
+showPiv   = false
+colPivHi  = color.new(color.red, 30)
+colPivLo  = color.new(color.teal, 30)
+showSweep = false
+colSweep  = color.gray
+paintBg   = false
 
 g1 = "(1) Bullish BOS"
-b1_lc   = input.color(color.black, "Line ", inline = "1a", group = g1)
-b1_tc   = input.color(color.black, "Text", inline = "1a", group = g1)
-b1_ls   = input.string("Solid", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "1b", group = g1)
-b1_w    = input.int(1, "Width", minval = 1, maxval = 5, inline = "1b", group = g1)
-b1_txt  = input.string("BOS", "Label text", group = g1)
-b1_ts   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "1c", group = g1)
-b1_show = input.bool(true, "Show text", inline = "1c", group = g1)
-b1_tv   = input.string("Middle", "Vertical", options = ["Above", "Middle", "Below"], inline = "1d", group = g1)
-b1_th   = input.string("Center", "Horizontal", options = ["Left", "Center", "Right"], inline = "1d", group = g1)
+b1_lc   = color.black
+b1_tc   = color.black
+b1_ls   = "Solid"
+b1_w    = 1
+b1_txt  = "BOS"
+b1_ts   = "Small"
+b1_show = true
+b1_tv   = "Middle"
+b1_th   = "Center"
 
 g2 = "(2) Bearish BOS"
-b2_lc   = input.color(color.black, "Line ", inline = "2a", group = g2)
-b2_tc   = input.color(color.black, "Text", inline = "2a", group = g2)
-b2_ls   = input.string("Solid", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "2b", group = g2)
-b2_w    = input.int(1, "Width", minval = 1, maxval = 5, inline = "2b", group = g2)
-b2_txt  = input.string("BOS", "Label text", group = g2)
-b2_ts   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "2c", group = g2)
-b2_show = input.bool(true, "Show text", inline = "2c", group = g2)
-b2_tv   = input.string("Middle", "Vertical", options = ["Above", "Middle", "Below"], inline = "2d", group = g2)
-b2_th   = input.string("Center", "Horizontal", options = ["Left", "Center", "Right"], inline = "2d", group = g2)
+b2_lc   = color.black
+b2_tc   = color.black
+b2_ls   = "Solid"
+b2_w    = 1
+b2_txt  = "BOS"
+b2_ts   = "Small"
+b2_show = true
+b2_tv   = "Middle"
+b2_th   = "Center"
 
 g3 = "(3) Bullish CHOCH"
-c1_lc   = input.color(color.black, "Line ", inline = "3a", group = g3)
-c1_tc   = input.color(color.black, "Text", inline = "3a", group = g3)
-c1_ls   = input.string("Solid", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "3b", group = g3)
-c1_w    = input.int(1, "Width", minval = 1, maxval = 5, inline = "3b", group = g3)
-c1_txt  = input.string("CHOCH", "Label text", group = g3)
-c1_ts   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "3c", group = g3)
-c1_show = input.bool(true, "Show text", inline = "3c", group = g3)
-c1_tv   = input.string("Middle", "Vertical", options = ["Above", "Middle", "Below"], inline = "3d", group = g3)
-c1_th   = input.string("Center", "Horizontal", options = ["Left", "Center", "Right"], inline = "3d", group = g3)
+c1_lc   = color.black
+c1_tc   = color.black
+c1_ls   = "Solid"
+c1_w    = 1
+c1_txt  = "CHOCH"
+c1_ts   = "Small"
+c1_show = true
+c1_tv   = "Middle"
+c1_th   = "Center"
 
 g4 = "(4) Bearish CHOCH"
-c2_lc   = input.color(color.black, "Line ", inline = "4a", group = g4)
-c2_tc   = input.color(color.black, "Text", inline = "4a", group = g4)
-c2_ls   = input.string("Solid", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "4b", group = g4)
-c2_w    = input.int(1, "Width", minval = 1, maxval = 5, inline = "4b", group = g4)
-c2_txt  = input.string("CHOCH", "Label text", group = g4)
-c2_ts   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "4c", group = g4)
-c2_show = input.bool(true, "Show text", inline = "4c", group = g4)
-c2_tv   = input.string("Middle", "Vertical", options = ["Above", "Middle", "Below"], inline = "4d", group = g4)
-c2_th   = input.string("Center", "Horizontal", options = ["Left", "Center", "Right"], inline = "4d", group = g4)
+c2_lc   = color.black
+c2_tc   = color.black
+c2_ls   = "Solid"
+c2_w    = 1
+c2_txt  = "CHOCH"
+c2_ts   = "Small"
+c2_show = true
+c2_tv   = "Middle"
+c2_th   = "Center"
 
 g5 = "(5) Possible BOS (active extended line)"
-p1_lc   = input.color(color.black, "Line ", inline = "5a", group = g5)
-p1_tc   = input.color(color.black, "Text", inline = "5a", group = g5)
-p1_ls   = input.string("Dotted", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "5b", group = g5)
-p1_w    = input.int(1, "Width", minval = 1, maxval = 5, inline = "5b", group = g5)
-p1_txt  = input.string("BOS*", "Label text", group = g5)
-p1_ts   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "5c", group = g5)
-p1_show = input.bool(true, "Show text", inline = "5c", group = g5)
-p1_tv   = input.string("Middle", "Vertical", options = ["Above", "Middle", "Below"], inline = "5d", group = g5)
-p1_th   = input.string("Center", "Horizontal", options = ["Left", "Center", "Right"], inline = "5d", group = g5)
+p1_lc   = color.black
+p1_tc   = color.black
+p1_ls   = "Dotted"
+p1_w    = 1
+p1_txt  = "BOS*"
+p1_ts   = "Small"
+p1_show = true
+p1_tv   = "Middle"
+p1_th   = "Center"
 
 g6 = "(6) Possible CHOCH (active extended line)"
-p2_lc   = input.color(color.black, "Line ", inline = "6a", group = g6)
-p2_tc   = input.color(color.black, "Text", inline = "6a", group = g6)
-p2_ls   = input.string("Dotted", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "6b", group = g6)
-p2_w    = input.int(1, "Width", minval = 1, maxval = 5, inline = "6b", group = g6)
-p2_txt  = input.string("CHOCH*", "Label text", group = g6)
-p2_ts   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "6c", group = g6)
-p2_show = input.bool(true, "Show text", inline = "6c", group = g6)
-p2_tv   = input.string("Middle", "Vertical", options = ["Above", "Middle", "Below"], inline = "6d", group = g6)
-p2_th   = input.string("Center", "Horizontal", options = ["Left", "Center", "Right"], inline = "6d", group = g6)
+p2_lc   = color.black
+p2_tc   = color.black
+p2_ls   = "Dotted"
+p2_w    = 1
+p2_txt  = "CHOCH*"
+p2_ts   = "Small"
+p2_show = true
+p2_tv   = "Middle"
+p2_th   = "Center"
 
-aSB = input.bool(true,  "Bearish BOS alert",   group = gA)
-aBC = input.bool(true,  "Bullish CHOCH alert", group = gA)
-aSC = input.bool(true,  "Bearish CHOCH alert", group = gA)
-aSW = input.bool(false, "Liquidity sweep alert", group = gA)
-aIBB = input.bool(false, "Bullish iBOS alert",   group = gA)
-aISB = input.bool(false, "Bearish iBOS alert",   group = gA)
-aIBC = input.bool(false, "Bullish iCHOCH alert", group = gA)
-aISC = input.bool(false, "Bearish iCHOCH alert", group = gA)
-aAIB = input.bool(false, "Any iBOS alert",       group = gA)
-aAIC = input.bool(false, "Any iCHOCH alert",     group = gA)
-aAIE = input.bool(false, "Any internal structure event alert", group = gA)
-aRetPct  = input.float(50.0, "Retracement % for range alerts", minval = 1.0, maxval = 99.0, step = 0.1, group = gA, tooltip = "How far price must give back before the retracement alerts fire. ONE value, shared by all three of them - main, internal and inner.\n\nIT IS MEASURED BACK FROM THE EXTREME OF THE LEG (changed in v14.9):\n  20 = a shallow pullback, price returning 20% of the leg\n  50 = the midpoint\n  79 = a deep pullback, close to where the leg began\nIn a bullish leg the level sits that far BELOW the highest point reached since the break; in a bearish leg that far ABOVE the lowest point.\n\nBefore v14.9 the number was measured up from the far end of the range, so 20 meant an 80% give-back. 50 is the same under either reading, which is why the difference only shows once you set something else.\n\nTo get several levels from one indicator: set a value, create the alert, change it, create another. An alert freezes its settings when you create it, so each keeps its own percentage.")
-aMainRet = input.bool(false, "Price at N% of BOS*/CHOCH* range alert", group = gA, tooltip = "Fires when price gives back the set percentage of the MAIN leg - the move since the last BOS or CHOCH - measured back from that leg's extreme, on the tick it happens rather than at the close.\n\nIT DOES NOT WAIT FOR THE RANGE TO BE CONFIRMED. A break does not settle its range; the 3-candle pullback that confirms the next pivot does, and that is always later - those pullback candles are themselves the retracement. So the anchor is the highest point reached so far since the break (lowest in a bearish leg), and the alert is live from the break onward.\n\nIf price has not reached the level by the time the range is confirmed, the alert stays armed and fires on the first crossing afterwards.\n\nIt only fires on a move BACK from the extreme, never on a push in the trend direction, and never on the bar the level was established.")
-aIntRet  = input.bool(false, "Price at N% of internal iBOS/iCHOCH range alert", group = gA, tooltip = "The same rule on the INTERNAL leg - the move since the last iBOS or iCHOCH.\n\nThis is the tier the rule matters most for. Every internal break empties one internal level by design and it only refills when the 3-candle rule confirms the next pivot, a median of 16 bars later; the alert no longer waits for that. The anchor is the highest point reached since the internal event (lowest in a bearish leg), so an iBOS followed by a candle giving back the set percentage alerts on the touch.\n\nBetween a main BOS/CHOCH and the range's first iCHOCH there is no internal leg yet, so this stays silent until the internal trend exists.\n\nExpect more of these than the main one: internal legs are shorter and more frequent.")
+aSB = true
+aBC = true
+aSC = true
+aSW = false
+aIBB = false
+aISB = false
+aIBC = false
+aISC = false
+aAIB = false
+aAIC = false
+aAIE = false
+aRetPct  = 50.0
+aMainRet = false
+aIntRet  = false
 
-pbBodyOn  = input.bool(false, "PULLBACK RULE 1 - each of the 3 candles must have a body bigger than its own longest wick", group = gMS, tooltip = "Adds ONE extra demand on top of the normal three-candle pullback: every one of the three candles must have a body bigger than its own longest wick.\n\nbody        = |close - open|\nupper wick  = high - the higher of open/close\nlower wick  = the lower of open/close - low\nthe candle counts only while  body > the longer of those two wicks\n\nOFF (default) = the pullback rule is exactly what it has always been. Nothing changes anywhere.\nON  = a long-wicked or indecision candle no longer counts toward the three. It does NOT reset the count - the sequence simply keeps waiting, the same way a wrong-direction candle does today.\n\nThe point is to stop a wick-heavy candle from carrying a pullback it never really made. Expect noticeably fewer pivots, and therefore fewer BOS/CHOCH marks on every tier.\n\nIt applies to MAIN, INTERNAL and INNER together, and to the multi-timeframe engine, because all four run on the same pullback counter.")
-pbBodyRef = input.bool(false, "PULLBACK RULE 2 - the 3 candles close beyond the previous candle's BODY, not its wick (carries rule 1)", group = gMS, tooltip = "Changes WHAT the three candles have to close beyond, and carries the body rule above with it.\n\nNORMAL RULE: each candle must close beyond the previous pullback candle's WICK - below its low when hunting a high, above its high when hunting a low.\nTHIS RULE: each candle must close beyond the previous pullback candle's BODY instead - below its body bottom when hunting a high, above its body top when hunting a low. On a pullback candle the body edge is its close, so it becomes 'each candle closes beyond the last one's close'.\n\nAND it applies the body-bigger-than-its-longest-wick demand from the switch above to all three candles, whether or not that switch is ticked.\n\nSo it is LOOSER on where the close has to land and STRICTER on the quality of the candle. The two changes pull in opposite directions on purpose: the sequence is easier to keep alive through a normal retrace, but junk candles are thrown out of it.\n\nOFF (default) = the wick reference, exactly as it has always been.\nWITH BOTH TICKED = this one decides the reference level; the body demand is the same in both, so they do not fight.\n\nIt applies to MAIN, INTERNAL and INNER together, and to the multi-timeframe engine.")
+pbBodyOn  = input.bool(false, "PULLBACK RULE 1 - each of the 3 candles must have a body bigger than its own longest wick", group = gEngR, tooltip = "Adds ONE extra demand on top of the normal three-candle pullback: every one of the three candles must have a body bigger than its own longest wick.\n\nbody        = |close - open|\nupper wick  = high - the higher of open/close\nlower wick  = the lower of open/close - low\nthe candle counts only while  body > the longer of those two wicks\n\nOFF (default) = the pullback rule is exactly what it has always been. Nothing changes anywhere.\nON  = a long-wicked or indecision candle no longer counts toward the three. It does NOT reset the count - the sequence simply keeps waiting, the same way a wrong-direction candle does today.\n\nThe point is to stop a wick-heavy candle from carrying a pullback it never really made. Expect noticeably fewer pivots, and therefore fewer BOS/CHOCH marks on every tier.\n\nIt applies to MAIN, INTERNAL and INNER together, and to the multi-timeframe engine, because all four run on the same pullback counter.")
+pbBodyRef = input.bool(false, "PULLBACK RULE 2 - the 3 candles close beyond the previous candle's BODY, not its wick (carries rule 1)", group = gEngR, tooltip = "Changes WHAT the three candles have to close beyond, and carries the body rule above with it.\n\nNORMAL RULE: each candle must close beyond the previous pullback candle's WICK - below its low when hunting a high, above its high when hunting a low.\nTHIS RULE: each candle must close beyond the previous pullback candle's BODY instead - below its body bottom when hunting a high, above its body top when hunting a low. On a pullback candle the body edge is its close, so it becomes 'each candle closes beyond the last one's close'.\n\nAND it applies the body-bigger-than-its-longest-wick demand from the switch above to all three candles, whether or not that switch is ticked.\n\nSo it is LOOSER on where the close has to land and STRICTER on the quality of the candle. The two changes pull in opposite directions on purpose: the sequence is easier to keep alive through a normal retrace, but junk candles are thrown out of it.\n\nOFF (default) = the wick reference, exactly as it has always been.\nWITH BOTH TICKED = this one decides the reference level; the body demand is the same in both, so they do not fight.\n\nIt applies to MAIN, INTERNAL and INNER together, and to the multi-timeframe engine.")
 
-pbSwp2 = input.bool(false, "PULLBACK RULE 3 - two candles are enough once the pullback takes out the opposite live level (CHOCH* - iCHOCH*)", group = gMS, tooltip = "Lets a swing confirm on TWO counted pullback candles instead of three, but only when the pullback has already taken out the level on the other side.\n\nWHAT COUNTS AS TAKING IT OUT. Hunting a HIGH: a bar's LOW trades below the live level under price - the CHOCH* level for main structure, the iCHOCH* level for internal and inner. Hunting a LOW: a bar's HIGH trades above the live level over price - BOS* for main, iBOS* for internal and inner. The wick is enough; it does not have to close through.\n\nWHEN IT IS CHECKED. Only after the high or low being hunted is set. A new extreme restarts the hunt and clears the sweep, so the sweep always has to happen on the way back down from the high you are trying to confirm, never on the bar that made it.\n\nWHY. A pullback deep enough to run the opposite level has already proved itself. Waiting for a third candle after that just marks the structure late - and the high that deserved the level is often skipped entirely, because the level slot is filled by the next high that does manage three.\n\nOFF (default) = three candles always, exactly as it has always been.\n\nIt is separate from the other two pullback rules and stacks with them: a candle still has to pass rule 1's body test to be counted at all, if rule 1 is on. If a sweeping candle has a long wick it will fail rule 1 and this rule will never see it - run this one on its own first.\n\nApplies to MAIN, INTERNAL and INNER, each against its own pair of live levels, and to the multi-timeframe engine against its own.")
+pbSwp2 = input.bool(false, "PULLBACK RULE 3 - two candles are enough once the pullback takes out the opposite live level (CHOCH* - iCHOCH*)", group = gEngR, tooltip = "Lets a swing confirm on TWO counted pullback candles instead of three, but only when the pullback has already taken out the level on the other side.\n\nWHAT COUNTS AS TAKING IT OUT. Hunting a HIGH: a bar's LOW trades below the live level under price - the CHOCH* level for main structure, the iCHOCH* level for internal and inner. Hunting a LOW: a bar's HIGH trades above the live level over price - BOS* for main, iBOS* for internal and inner. The wick is enough; it does not have to close through.\n\nWHEN IT IS CHECKED. Only after the high or low being hunted is set. A new extreme restarts the hunt and clears the sweep, so the sweep always has to happen on the way back down from the high you are trying to confirm, never on the bar that made it.\n\nWHY. A pullback deep enough to run the opposite level has already proved itself. Waiting for a third candle after that just marks the structure late - and the high that deserved the level is often skipped entirely, because the level slot is filled by the next high that does manage three.\n\nOFF (default) = three candles always, exactly as it has always been.\n\nIt is separate from the other two pullback rules and stacks with them: a candle still has to pass rule 1's body test to be counted at all, if rule 1 is on. If a sweeping candle has a long wick it will fail rule 1 and this rule will never see it - run this one on its own first.\n\nApplies to MAIN, INTERNAL and INNER, each against its own pair of live levels, and to the multi-timeframe engine against its own.")
 
 lstyle(string s) => s == "Dashed" ? line.style_dashed : s == "Dotted" ? line.style_dotted : line.style_solid
 tsize(string s)  => s == "Tiny" ? size.tiny : s == "Small" ? size.small : s == "Large" ? size.large : s == "Huge" ? size.huge : size.normal
@@ -1400,12 +1401,11 @@ else
         if (nTrend == 1 and low <= nLvl) or (nTrend == -1 and high >= nLvl)
             rtNnRet    := true
 
-almGate  = input.bool(false, "Arm alerts only after price crosses a level", group = gA, tooltip = "OFF (default) = the alert system behaves exactly as it always has: every enabled event fires the moment it happens.\n\nON = the indicator stays SILENT until price reaches the level below. From that moment it is armed for good and every enabled alert fires normally. Marks are still drawn on the chart the whole time - only the alerts are held back.\n\nThis is what lets ONE alert do the work of two: create a single alert on 'Any alert() function call' and it stays quiet until your price is reached, then delivers whichever structure events you ticked above.\n\nLeave the level at 0 to disable the gate even while this box is ticked.\n\nARMS ON TOUCH, NOT ON CLOSE: the test reads the bar's wick, evaluated on every tick, so the arm trips the moment price trades at your level. It never waits for the candle to close.\n\nIT MUST BE REACHED, NOT MERELY BE ON ONE SIDE (v15.6): the level has to be approached. The previous bar's close decides which side price is on, and the arm then waits for the wick to come to the level from that side - up to it if price is below, down to it if price is above. Before v15.6 the test only asked whether the level lay on one side of the bar, so a level ABOVE price satisfied 'low <= level' on the first live bar and the gate opened having touched nothing at all. A gap straight through the level still arms, exactly as an ordinary TradingView price alert would.\n\nLIVE BARS ONLY (v13.6.1): the arm can only be tripped by a bar arriving in real time, after the alert has started running. Before this, TradingView's replay of the chart's history when the alert is created would trip the arm on any historical touch of your level, leaving the gate already open and the arm doing nothing. The consequence is that the gate cannot be observed on historical bars - on a chart it stays un-armed until live bars arrive.")
-almGateP = input.float(0.0, "  - Arm price level", step = 0.01, group = gA, tooltip = "The price that arms the alerts. 0 = gate disabled, so alerts behave normally even with the box above ticked. Wicks count, exactly like an ordinary TradingView price alert.")
-almGateD = input.string("Either", "  - Arms when price", options = ["Touches from below", "Touches from above", "Either"], group = gA, tooltip = "Which approach counts as a touch. The previous bar's close decides which side of the level price is currently on, and the direction says which of those approaches may arm the gate.\n\nTouches from below = price is below the level and its HIGH reaches up to it.\nTouches from above = price is above the level and its LOW reaches down to it.\nEither = whichever applies to where price actually is - this is the one to leave set unless you specifically want only one side.\n\nPick the option that does not match where price is and the gate will correctly wait: 'Touches from above' with the level ABOVE price waits for price to get above it first and then come back down to it. The readout at the bottom of the chart shows WAITING the whole time, so you can always see the gate is still shut.")
+almGate  = false
+almGateP = 0.0
+almGateD = "Either"
 bgcolor(paintBg ? (trendDir == 1 ? color.new(color.teal, 92) : trendDir == -1 ? color.new(color.red, 92) : na) : na)
 plot(trendDir, "Trend (1 = bull, -1 = bear, 0 = undefined)", display = display.data_window)
-
 
 f_tfPack(bool on) =>
     int trOut = 0
@@ -1680,66 +1680,63 @@ f_tfPack(bool on) =>
 
     [trOut, evOut, inOut, nnOut]
 
+almT1  = "Price crosses level"
 
+almOn2 = false
+almT2  = "Price crosses level"
+almP2  = 0.0
+almD2  = "Either"
 
-almT1  = input.string("Price crosses level", "  - Slot 1 trigger", options = ["Price crosses level", "Price at N% of BOS*/CHOCH* range", "Price at N% of internal range", "BOS", "CHOCH", "iBOS", "iCHOCH", "Any structure event", "Any internal structure event", "Price at N% of inner nBOS/nCHOCH range", "nBOS", "nCHOCH", "Any inner structure event"], group = gA, tooltip = "What arms slot 1. Slot 1's own on/off switch, price and direction are the three boxes above this one.")
+almOn3 = false
+almT3  = "Price crosses level"
+almP3  = 0.0
+almD3  = "Either"
 
-almOn2 = input.bool(false, "Arm slot 2", inline = "as2", group = gA)
-almT2  = input.string("Price crosses level", "", options = ["Price crosses level", "Price at N% of BOS*/CHOCH* range", "Price at N% of internal range", "BOS", "CHOCH", "iBOS", "iCHOCH", "Any structure event", "Any internal structure event", "Price at N% of inner nBOS/nCHOCH range", "nBOS", "nCHOCH", "Any inner structure event"], inline = "as2", group = gA)
-almP2  = input.float(0.0, "price", step = 0.01, inline = "as2b", group = gA)
-almD2  = input.string("Either", "", options = ["Touches from below", "Touches from above", "Either"], inline = "as2b", group = gA)
+almOn4 = false
+almT4  = "Price crosses level"
+almP4  = 0.0
+almD4  = "Either"
 
-almOn3 = input.bool(false, "Arm slot 3", inline = "as3", group = gA)
-almT3  = input.string("Price crosses level", "", options = ["Price crosses level", "Price at N% of BOS*/CHOCH* range", "Price at N% of internal range", "BOS", "CHOCH", "iBOS", "iCHOCH", "Any structure event", "Any internal structure event", "Price at N% of inner nBOS/nCHOCH range", "nBOS", "nCHOCH", "Any inner structure event"], inline = "as3", group = gA)
-almP3  = input.float(0.0, "price", step = 0.01, inline = "as3b", group = gA)
-almD3  = input.string("Either", "", options = ["Touches from below", "Touches from above", "Either"], inline = "as3b", group = gA)
+almOn5 = false
+almT5  = "Price crosses level"
+almP5  = 0.0
+almD5  = "Either"
 
-almOn4 = input.bool(false, "Arm slot 4", inline = "as4", group = gA)
-almT4  = input.string("Price crosses level", "", options = ["Price crosses level", "Price at N% of BOS*/CHOCH* range", "Price at N% of internal range", "BOS", "CHOCH", "iBOS", "iCHOCH", "Any structure event", "Any internal structure event", "Price at N% of inner nBOS/nCHOCH range", "nBOS", "nCHOCH", "Any inner structure event"], inline = "as4", group = gA)
-almP4  = input.float(0.0, "price", step = 0.01, inline = "as4b", group = gA)
-almD4  = input.string("Either", "", options = ["Touches from below", "Touches from above", "Either"], inline = "as4b", group = gA)
-
-almOn5 = input.bool(false, "Arm slot 5", inline = "as5", group = gA)
-almT5  = input.string("Price crosses level", "", options = ["Price crosses level", "Price at N% of BOS*/CHOCH* range", "Price at N% of internal range", "BOS", "CHOCH", "iBOS", "iCHOCH", "Any structure event", "Any internal structure event", "Price at N% of inner nBOS/nCHOCH range", "nBOS", "nCHOCH", "Any inner structure event"], inline = "as5", group = gA)
-almP5  = input.float(0.0, "price", step = 0.01, inline = "as5b", group = gA)
-almD5  = input.string("Either", "", options = ["Touches from below", "Touches from above", "Either"], inline = "as5b", group = gA)
-
-nnOn     = input.bool(true, "Show inner structure", group = gInt, tooltip = "A third level of the same rulebook. Internal structure lives inside the main BOS*/CHOCH* range; INNER structure lives inside the internal iBOS/iCHOCH range.\n\nANCHOR: the pivot candle the internal trend-side level stands on - the internal ceiling while the internal trend is bullish, the internal floor while it is bearish. While that side is empty, between an internal break and its refill, the inner engine stands down, exactly as internal stands down while the main trend-side line is empty.\n\nNEW RANGE: every confirmed iBOS or iCHOCH clears both inner levels and returns the inner trend to neutral, so each internal leg hunts its own first nCHOCH. An inner mark never prints on a bar that already confirmed an internal or main event.\n\nWHAT IT CAN AND CANNOT SEE: all three engines read pivots the same 3-candle rule confirmed on the CHART's timeframe. There is no finer pivot source, so inner structure is those same swings scoped to a narrower range rather than a genuinely smaller degree of trend. Inside a tight internal leg there are often only one or two qualifying pivots, so inner marks are sparse by nature. That is the honest limit of a third level built on one timeframe.")
-nnHist   = input.bool(false, "Keep previous nBOS / nCHOCH  (untick = current internal range only)", group = gInt, tooltip = "TICKED: inner history stays on the chart. UNTICKED: every confirmed internal event erases the previous inner range's marks. Display only - the engine and every classification are identical either way.")
-nnBosTxt = input.string("nBOS", "nBOS text", inline = "nn1", group = gInt)
-nnChoTxt = input.string("nCHOCH", "nCHOCH text", inline = "nn1", group = gInt)
-nnLc     = input.color(color.new(color.yellow, 0), "Line ", inline = "nn2", group = gInt)
-nnTc     = input.color(color.new(color.yellow, 0), "Text", inline = "nn2", group = gInt)
-nnLs     = input.string("Solid", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "nn3", group = gInt)
-nnW      = input.int(1, "Width", minval = 1, maxval = 5, inline = "nn3", group = gInt)
-nnTs     = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "nn4", group = gInt)
-nnShow   = input.bool(true, "Show text", inline = "nn4", group = gInt)
-nnStrOn  = input.bool(false, "Mark strong low / high after nBOS", inline = "nn5", group = gInt, tooltip = "The same rule as the main and internal stamps: on an inner nBOS the retracement swing that made the break possible is stamped, and only when that level's inducement had been taken. An nCHOCH never stamps.")
-nnStrTxt = input.string(".", "", inline = "nn5", group = gInt)
-nnStrSz  = input.string("Small", "", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "nn5", group = gInt)
-aNBB = input.bool(false, "Bullish nBOS alert",   inline = "nal1", group = gInt)
-aNSB = input.bool(false, "Bearish nBOS alert",   inline = "nal1", group = gInt)
-aNBC = input.bool(false, "Bullish nCHOCH alert", inline = "nal2", group = gInt)
-aNSC = input.bool(false, "Bearish nCHOCH alert", inline = "nal2", group = gInt)
-aANE = input.bool(false, "Any inner structure event alert", group = gInt)
-
+nnOn     = true
+nnHist   = false
+nnBosTxt = "nBOS"
+nnChoTxt = "nCHOCH"
+nnLc     = color.new(color.yellow, 0)
+nnTc     = color.new(color.yellow, 0)
+nnLs     = "Solid"
+nnW      = 1
+nnTs     = "Small"
+nnShow   = true
+nnStrOn  = false
+nnStrTxt = "."
+nnStrSz  = "Small"
+aNBB = false
+aNSB = false
+aNBC = false
+aNSC = false
+aANE = false
 
 gArm = "Arm status readout"
-armShow  = input.bool(true, "Show the ARMED / WAITING readout", group = gArm, tooltip = "A two-cell panel reporting the state of the alert arming gate, because otherwise it has no feedback at all and silence is indistinguishable from a broken alert.\n\nNO GATE  = no arm slot is enabled, so every ticked alert fires freely.\nWAITING  = a gate is set and price has not reached it. Alerts are held back.\nARMED    = price touched the level. The latch is open for good and every ticked event now fires, every time it happens.\n\nIT ALWAYS READS WAITING ON HISTORICAL BARS. The latch can only be tripped by a bar arriving LIVE (that is the v13.6.1 fix which stopped a historical touch from pre-opening the gate), so there is nothing for it to show on history. Watch it live and it flips the moment price touches your level.\n\nReading only: it changes no rule and no alert behaviour.")
-armPos   = input.string("Bottom right", "Position", options = ["Top left", "Top center", "Top right", "Middle left", "Middle right", "Bottom left", "Bottom center", "Bottom right"], group = gArm)
-armSize  = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large"], group = gArm)
-armShowP = input.bool(true, "List what every armed slot is waiting for", group = gArm, tooltip = "Appends every ENABLED slot to the WAITING text, so you can confirm at a glance that the script is holding the values you typed.\n\nA slot on the 'Price crosses level' trigger shows its price. A slot on any other trigger shows that trigger's name: BOS, CHOCH, iBOS, iCHOCH, nBOS, nCHOCH, ANY (any structure event), iANY (any internal event), nANY (any inner event), RET%, iRET% or nRET%.\n\nA price slot showing '-' is ticked but has no level typed into it, so it can never fire.\n\nThe five slots are OR-ed: whichever one arrives first opens the gate for good.")
-armTitle = input.string("ARM", "Panel label", group = gArm)
-armTxtA  = input.string("ARMED", "Armed", inline = "ar1", group = gArm)
-armTxtW  = input.string("WAITING", "Waiting", inline = "ar1", group = gArm)
-armTxtN  = input.string("NO GATE", "No gate", inline = "ar1", group = gArm)
-armColA  = input.color(color.new(color.lime, 0), "Armed", inline = "ar2", group = gArm)
-armColW  = input.color(color.new(color.orange, 0), "Waiting", inline = "ar2", group = gArm)
-armColN  = input.color(color.new(color.gray, 0), "No gate", inline = "ar2", group = gArm)
-armTitTc = input.color(color.silver, "Label text", inline = "ar3", group = gArm)
-armBg    = input.color(color.new(color.black, 20), "Background", inline = "ar3", group = gArm)
+armShow  = true
+armPos   = "Bottom right"
+armSize  = "Small"
+armShowP = true
+armTitle = "ARM"
+armTxtA  = "ARMED"
+armTxtW  = "WAITING"
+armTxtN  = "NO GATE"
+armColA  = color.new(color.lime, 0)
+armColW  = color.new(color.orange, 0)
+armColN  = color.new(color.gray, 0)
+armTitTc = color.silver
+armBg    = color.new(color.black, 20)
 
-aNnRet   = input.bool(false, "Price at N% of inner nBOS/nCHOCH range alert", group = gA, tooltip = "The third tier of the same retracement rule, on the INNER nBOS/nCHOCH leg.\n\nFires the moment price gives back the set percentage of the leg that began at the last inner event - measured BACK FROM THAT LEG'S EXTREME, on the tick it happens rather than at the close.\n\nInner legs are the shortest of the three, so this is the most frequent and the twitchiest of the retracement alerts. It also depends on inner structure having a trend: between an internal event and the inner range's first nCHOCH there is no inner leg, and this stays silent.\n\nIt does not require 'Show inner structure' to be ticked - that switch only controls the drawing. The engine always runs.")
+aNnRet   = false
 
 var array<line>  innLn = array.new<line>()
 var array<label> innLb = array.new<label>()
@@ -1869,7 +1866,6 @@ if almOk and ((rtMainRet and aMainRet) or (rtIntRet and aIntRet) or (rtNnRet and
     if rtNnRet and aNnRet
         array.push(almQB, "Price at " + str.tostring(aRetPct, "#.#") + "% retracement of the nBOS/nCHOCH leg - level " + str.tostring(nLvl, format.mintick) + " - " + rtTfTxt)
 
-
 f_armTag(bool on, int trig, float lvl) =>
     string t = ""
     if on
@@ -1883,106 +1879,106 @@ f_armPos(string p) =>
     p == "Top left" ? position.top_left : p == "Top center" ? position.top_center : p == "Top right" ? position.top_right : p == "Middle left" ? position.middle_left : p == "Middle right" ? position.middle_right : p == "Bottom left" ? position.bottom_left : p == "Bottom center" ? position.bottom_center : position.bottom_right
 
 g7  = "(7) Possible iBOS (internal active extended line)"
-ipOn     = input.bool(true, "Show the iBOS* / iCHOCH* lines", group = g7, tooltip = "Draws the two LIVE internal levels - the ones the internal engine is measuring price against right now - as extended lines, exactly the way the main engine draws BOS* and CHOCH*.\n\nWHICH LINE IS WHICH: the level whose break would print an iBOS carries the iBOS* style from this group; the level whose break would print an iCHOCH carries the iCHOCH* style from the group below. While the internal trend is bullish that means the internal ceiling is iBOS* and the internal floor is iCHOCH*; while it is bearish they swap; and while the internal trend is still neutral - every range starts that way, before its first iCHOCH - BOTH sides are iCHOCH*, because the first break either way is an iCHOCH.\n\nThey follow the level, not the bar: a pivot-2 promotion or a re-anchor moves the line the moment the engine moves the level.\n\nIt also obeys the 'Internal marking' switch for the rule in force. With internal marking off there are no internal marks and no internal lines either.\n\nCOST: one line and one label per side, rewritten on the last bar, so this can never eat the drawing budget the iBOS/iCHOCH history needs.")
-ip1_lc   = input.color(color.new(color.blue, 0), "Line ", inline = "7a", group = g7)
-ip1_tc   = input.color(color.new(color.blue, 0), "Text", inline = "7a", group = g7)
-ip1_ls   = input.string("Dotted", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "7b", group = g7)
-ip1_w    = input.int(1, "Width", minval = 1, maxval = 5, inline = "7b", group = g7)
-ip1_txt  = input.string("iBOS*", "Label text", group = g7)
-ip1_ts   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "7c", group = g7)
-ip1_show = input.bool(true, "Show text", inline = "7c", group = g7)
-ip1_tv   = input.string("Middle", "Vertical", options = ["Above", "Middle", "Below"], inline = "7d", group = g7)
-ip1_th   = input.string("Center", "Horizontal", options = ["Left", "Center", "Right"], inline = "7d", group = g7)
+ipOn     = true
+ip1_lc   = color.new(color.blue, 0)
+ip1_tc   = color.new(color.blue, 0)
+ip1_ls   = "Dotted"
+ip1_w    = 1
+ip1_txt  = "iBOS*"
+ip1_ts   = "Small"
+ip1_show = true
+ip1_tv   = "Middle"
+ip1_th   = "Center"
 
 g8  = "(8) Possible iCHOCH (internal active extended line)"
-ip2_lc   = input.color(color.new(color.blue, 40), "Line ", inline = "8a", group = g8)
-ip2_tc   = input.color(color.new(color.blue, 40), "Text", inline = "8a", group = g8)
-ip2_ls   = input.string("Dotted", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "8b", group = g8)
-ip2_w    = input.int(1, "Width", minval = 1, maxval = 5, inline = "8b", group = g8)
-ip2_txt  = input.string("iCHOCH*", "Label text", group = g8)
-ip2_ts   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "8c", group = g8)
-ip2_show = input.bool(true, "Show text", inline = "8c", group = g8)
-ip2_tv   = input.string("Middle", "Vertical", options = ["Above", "Middle", "Below"], inline = "8d", group = g8)
-ip2_th   = input.string("Center", "Horizontal", options = ["Left", "Center", "Right"], inline = "8d", group = g8)
+ip2_lc   = color.new(color.blue, 40)
+ip2_tc   = color.new(color.blue, 40)
+ip2_ls   = "Dotted"
+ip2_w    = 1
+ip2_txt  = "iCHOCH*"
+ip2_ts   = "Small"
+ip2_show = true
+ip2_tv   = "Middle"
+ip2_th   = "Center"
 
 g9  = "(9) Possible nBOS (inner active extended line)"
-npOn     = input.bool(true, "Show the nBOS* / nCHOCH* lines", group = g9, tooltip = "The same thing one tier further down: the two LIVE inner levels drawn as extended lines.\n\nThe level whose break would print an nBOS takes the nBOS* style from this group, the one whose break would print an nCHOCH takes the nCHOCH* style from the group below, and while the inner trend is neutral both sides are nCHOCH* because the first inner break either way is an nCHOCH.\n\nIt obeys 'Show inner structure' as well as this switch, so turning the inner module off takes its lines with it.\n\nInner levels are cleared by every confirmed internal or main event, so expect these two lines to vanish and re-form far more often than the internal pair - that is the inner engine restarting inside a fresh internal leg, exactly as the rulebook says it should.")
-np1_lc   = input.color(color.new(color.yellow, 0), "Line ", inline = "9a", group = g9)
-np1_tc   = input.color(color.new(color.yellow, 0), "Text", inline = "9a", group = g9)
-np1_ls   = input.string("Dotted", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "9b", group = g9)
-np1_w    = input.int(1, "Width", minval = 1, maxval = 5, inline = "9b", group = g9)
-np1_txt  = input.string("nBOS*", "Label text", group = g9)
-np1_ts   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "9c", group = g9)
-np1_show = input.bool(true, "Show text", inline = "9c", group = g9)
-np1_tv   = input.string("Middle", "Vertical", options = ["Above", "Middle", "Below"], inline = "9d", group = g9)
-np1_th   = input.string("Center", "Horizontal", options = ["Left", "Center", "Right"], inline = "9d", group = g9)
+npOn     = true
+np1_lc   = color.new(color.yellow, 0)
+np1_tc   = color.new(color.yellow, 0)
+np1_ls   = "Dotted"
+np1_w    = 1
+np1_txt  = "nBOS*"
+np1_ts   = "Small"
+np1_show = true
+np1_tv   = "Middle"
+np1_th   = "Center"
 
 g10 = "(10) Possible nCHOCH (inner active extended line)"
-np2_lc   = input.color(color.new(color.yellow, 40), "Line ", inline = "10a", group = g10)
-np2_tc   = input.color(color.new(color.yellow, 40), "Text", inline = "10a", group = g10)
-np2_ls   = input.string("Dotted", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "10b", group = g10)
-np2_w    = input.int(1, "Width", minval = 1, maxval = 5, inline = "10b", group = g10)
-np2_txt  = input.string("nCHOCH*", "Label text", group = g10)
-np2_ts   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "10c", group = g10)
-np2_show = input.bool(true, "Show text", inline = "10c", group = g10)
-np2_tv   = input.string("Middle", "Vertical", options = ["Above", "Middle", "Below"], inline = "10d", group = g10)
-np2_th   = input.string("Center", "Horizontal", options = ["Left", "Center", "Right"], inline = "10d", group = g10)
+np2_lc   = color.new(color.yellow, 40)
+np2_tc   = color.new(color.yellow, 40)
+np2_ls   = "Dotted"
+np2_w    = 1
+np2_txt  = "nCHOCH*"
+np2_ts   = "Small"
+np2_show = true
+np2_tv   = "Middle"
+np2_th   = "Center"
 
 gEqM = "(11) 50% line - main BOS* / CHOCH* range"
-eqMOn    = input.bool(true, "Show the 50% line of the BOS* / CHOCH* range", group = gEqM, tooltip = "The equilibrium of the range the main engine is currently working inside: halfway between the live BOS* line and the live CHOCH* line.\n\nIT NEEDS BOTH LINES. A confirmed BOS or CHOCH empties the broken side and it stays empty until the 3-candle rule confirms the next pivot - there is no complete range in between, so the line is not drawn until the pair is whole again. Nothing is wrong when it disappears for a few candles after a break; that is the same gap the BOS*/CHOCH* pair itself has.\n\nIt is a level, not a signal: no alert is attached to it. The retracement alerts in the alert group measure a different thing - the give-back from the leg's running extreme - and are unaffected by anything in this group.")
-eqMPct   = input.float(50.0, "Level, % of the range", minval = 0.1, maxval = 99.9, step = 0.1, group = gEqM, tooltip = "Where the line sits inside the range, MEASURED UP FROM THE LOWER of the two lines.\n\n50 = the midpoint, which is what equilibrium means and why it is the default. It reads the same whichever way the trend is running.\n\nOther values are not symmetrical: 25 is a quarter of the way up from the bottom of the range whether the trend is bullish or bearish, so pick the number by where you want the line on the chart, not by which side the trend is on. Set 61.8 or 38.2 if you want the range's fib levels instead.\n\nEach of the three tiers has its own percentage, so the main range can sit at 50 while the internal one sits at 61.8.")
-eqAnch   = input.string("Older level", "All three 50% lines start at", options = ["Older level", "Newer level", "Current bar"], group = gEqM, tooltip = "Where the left end of the 50% line is planted. It is one setting shared by the main, internal and inner lines, because mixing anchors between tiers only makes the chart harder to read.\n\nOLDER LEVEL (default) = the earlier of the two pivots that bound the range, so the line spans the whole range and lines up with the older of the two extended lines.\nNEWER LEVEL = the later pivot, so the line starts where the range became complete.\nCURRENT BAR = no left-hand tail at all; the line is only the forward extension.\n\nEvery option extends to the right, so the level itself is identical in all three - this changes nothing but the length of the tail.")
-eqM_lc   = input.color(color.new(color.gray, 0), "Line ", inline = "11a", group = gEqM)
-eqM_tc   = input.color(color.new(color.gray, 0), "Text", inline = "11a", group = gEqM)
-eqM_ls   = input.string("Dashed", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "11b", group = gEqM)
-eqM_w    = input.int(1, "Width", minval = 1, maxval = 5, inline = "11b", group = gEqM)
-eqM_txt  = input.string("EQ", "Label text", group = gEqM)
-eqM_pc   = input.bool(true, "Append the percentage to the label text", group = gEqM, tooltip = "Writes the percentage after your text, so the label reads 'EQ 50%' and cannot go stale when you change the number above. Untick it to keep exactly the text you typed.")
-eqM_ts   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "11c", group = gEqM)
-eqM_show = input.bool(true, "Show text", inline = "11c", group = gEqM)
-eqM_tv   = input.string("Middle", "Vertical", options = ["Above", "Middle", "Below"], inline = "11d", group = gEqM)
-eqM_th   = input.string("Center", "Horizontal", options = ["Left", "Center", "Right"], inline = "11d", group = gEqM)
+eqMOn    = true
+eqMPct   = 50.0
+eqAnch   = "Older level"
+eqM_lc   = color.new(color.gray, 0)
+eqM_tc   = color.new(color.gray, 0)
+eqM_ls   = "Dashed"
+eqM_w    = 1
+eqM_txt  = "EQ"
+eqM_pc   = true
+eqM_ts   = "Small"
+eqM_show = true
+eqM_tv   = "Middle"
+eqM_th   = "Center"
 
 gEqI = "(12) 50% line - internal iBOS* / iCHOCH* range"
-eqIOn    = input.bool(false, "Show the 50% line of the iBOS* / iCHOCH* range", group = gEqI, tooltip = "The same equilibrium one tier down: halfway between the two live INTERNAL levels, the pair the iBOS* / iCHOCH* lines are drawn on.\n\nOFF by default only because three equilibrium lines at once is a busy chart - the rule and the settings are identical to the main one.\n\nIt needs both internal levels, so it is absent between an internal break and the refill that follows it, and absent again for the whole stretch of a new main range before its first internal pivots are confirmed. It also obeys the 'Internal marking' switch for the rule in force.")
-eqIPct   = input.float(50.0, "Level, % of the range", minval = 0.1, maxval = 99.9, step = 0.1, group = gEqI, tooltip = "Where the line sits inside the internal range, measured up from the lower of the two internal levels. 50 = the midpoint. Independent of the main and inner percentages.")
-eqI_lc   = input.color(color.new(color.blue, 25), "Line ", inline = "12a", group = gEqI)
-eqI_tc   = input.color(color.new(color.blue, 25), "Text", inline = "12a", group = gEqI)
-eqI_ls   = input.string("Dashed", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "12b", group = gEqI)
-eqI_w    = input.int(1, "Width", minval = 1, maxval = 5, inline = "12b", group = gEqI)
-eqI_txt  = input.string("iEQ", "Label text", group = gEqI)
-eqI_pc   = input.bool(true, "Append the percentage to the label text", group = gEqI)
-eqI_ts   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "12c", group = gEqI)
-eqI_show = input.bool(true, "Show text", inline = "12c", group = gEqI)
-eqI_tv   = input.string("Middle", "Vertical", options = ["Above", "Middle", "Below"], inline = "12d", group = gEqI)
-eqI_th   = input.string("Center", "Horizontal", options = ["Left", "Center", "Right"], inline = "12d", group = gEqI)
+eqIOn    = false
+eqIPct   = 50.0
+eqI_lc   = color.new(color.blue, 25)
+eqI_tc   = color.new(color.blue, 25)
+eqI_ls   = "Dashed"
+eqI_w    = 1
+eqI_txt  = "iEQ"
+eqI_pc   = true
+eqI_ts   = "Small"
+eqI_show = true
+eqI_tv   = "Middle"
+eqI_th   = "Center"
 
 gEqN = "(13) 50% line - inner nBOS* / nCHOCH* range"
-eqNOn    = input.bool(false, "Show the 50% line of the nBOS* / nCHOCH* range", group = gEqN, tooltip = "The equilibrium of the INNER range - halfway between the two live inner levels, the pair the nBOS* / nCHOCH* lines are drawn on.\n\nOFF by default. Inner levels are cleared by every internal and every main event, so this is the shortest-lived of the three lines by a wide margin: expect it to appear and vanish repeatedly inside one internal leg. It obeys 'Show inner structure' as well as this switch.")
-eqNPct   = input.float(50.0, "Level, % of the range", minval = 0.1, maxval = 99.9, step = 0.1, group = gEqN, tooltip = "Where the line sits inside the inner range, measured up from the lower of the two inner levels. 50 = the midpoint. Independent of the main and internal percentages.")
-eqN_lc   = input.color(color.new(color.yellow, 25), "Line ", inline = "13a", group = gEqN)
-eqN_tc   = input.color(color.new(color.yellow, 25), "Text", inline = "13a", group = gEqN)
-eqN_ls   = input.string("Dashed", "Line style", options = ["Solid", "Dashed", "Dotted"], inline = "13b", group = gEqN)
-eqN_w    = input.int(1, "Width", minval = 1, maxval = 5, inline = "13b", group = gEqN)
-eqN_txt  = input.string("nEQ", "Label text", group = gEqN)
-eqN_pc   = input.bool(true, "Append the percentage to the label text", group = gEqN)
-eqN_ts   = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], inline = "13c", group = gEqN)
-eqN_show = input.bool(true, "Show text", inline = "13c", group = gEqN)
-eqN_tv   = input.string("Middle", "Vertical", options = ["Above", "Middle", "Below"], inline = "13d", group = gEqN)
-eqN_th   = input.string("Center", "Horizontal", options = ["Left", "Center", "Right"], inline = "13d", group = gEqN)
+eqNOn    = false
+eqNPct   = 50.0
+eqN_lc   = color.new(color.yellow, 25)
+eqN_tc   = color.new(color.yellow, 25)
+eqN_ls   = "Dashed"
+eqN_w    = 1
+eqN_txt  = "nEQ"
+eqN_pc   = true
+eqN_ts   = "Small"
+eqN_show = true
+eqN_tv   = "Middle"
+eqN_th   = "Center"
 
-mainKeep = input.int(0, "Max BOS / CHOCH marks to keep on the chart  (0 = no limit)", minval = 0, maxval = 500, group = grpE, tooltip = "How many of the most recent CONFIRMED main structure marks stay on the chart. 0, the default, is the behaviour every earlier version had: nothing is deleted on purpose and TradingView's own 500-drawing budget decides when the oldest ones fall off.\n\nSet a number and the script keeps that many BOS / CHOCH lines, deleting the oldest first, together with their labels and their # strong-point stamps. 3 gives you the last three breaks and nothing else; 20 gives you a working history without the wall of lines a long chart otherwise draws.\n\nDISPLAY ONLY. The engine still computes every break on every bar, every alert still fires, and the trend, the levels and the internal and inner engines are all completely unaffected. It only decides what is left on screen.\n\nThe live BOS* / CHOCH* pair is NOT counted or deleted by this - those two are the current levels, not history.\n\nIt is also the cheapest way to make room in the drawing budget: capping main marks frees drawings for the internal and inner tiers on a long chart.")
-intKeep  = input.int(0, "Max iBOS / iCHOCH marks to keep on the chart  (0 = no limit)", minval = 0, maxval = 150, group = gInt, tooltip = "The same cap for INTERNAL marks. 0 keeps the old behaviour, where the newest 150 internal lines and 300 internal labels are kept so the tier can never exhaust the drawing budget.\n\nAny other number keeps that many of the most recent iBOS / iCHOCH lines and deletes the rest oldest-first, along with their text and their + stamps. 150 is the ceiling because that is the internal tier's share of TradingView's 500-drawing budget.\n\nThis works WITH 'Keep previous iBOS / iCHOCH', not instead of it: that switch decides whether older RANGES are erased when a main event confirms, this one decides how many marks survive in total. Untick that box and this one rarely has anything left to do.\n\nDisplay only - every classification and every alert is identical either way.")
-nnKeep   = input.int(0, "Max nBOS / nCHOCH marks to keep on the chart  (0 = no limit)", minval = 0, maxval = 100, group = gInt, tooltip = "The same cap for INNER marks, whose own default budget is the newest 100 lines and 200 labels and the same display-only guarantee.\n\nThe inner tier prints the most marks of the three by some distance, so this is usually the first of the three caps worth setting. Its companion switch is 'Keep previous nBOS / nCHOCH'.")
+mainKeep = 0
+intKeep  = 0
+nnKeep   = 0
 
-aANB = input.bool(false, "Any nBOS alert",   inline = "nal3", group = gInt, tooltip = "One message for an inner nBOS in either direction, so a single ticked box covers both. The two directional boxes above stay independent - tick all three and a bullish nBOS delivers two messages, which is occasionally what you want and usually not.")
-aANC = input.bool(false, "Any nCHOCH alert", inline = "nal3", group = gInt, tooltip = "One message for an inner nCHOCH in either direction. The same note applies: it does not replace the two directional boxes, it sits alongside them.")
+aANB = false
+aANC = false
 
-mstTen  = input.bool(true, "> Structure - keep only the latest 10 marks per tier", group = gTog, tooltip = "One number for all three tiers: the ten most recent BOS/CHOCH, the ten most recent iBOS/iCHOCH and the ten most recent nBOS/nCHOCH stay on the chart. Everything older is deleted, oldest first, together with its label and its strong-point stamp.\n\nON  = ten each, and the three per-tier 'Max ... marks to keep' boxes are ignored.\nOFF = those three boxes decide, exactly as they do now.\n\nIT IS A DISPLAY RULE. The engine still computes every break on every bar, every alert still fires, and the trend, the levels and the three tiers are untouched. It is also the single biggest thing you can do for load time on a long chart: thirty drawings instead of several hundred.\n\nThe live BOS*/CHOCH*, iBOS*/iCHOCH* and nBOS*/nCHOCH* lines are never counted or deleted by it - those are the current levels, not history.")
-mstHist = input.bool(false, "> Structure - keep previous iBOS / iCHOCH and nBOS / nCHOCH", group = gTog, tooltip = "Forces the internal and inner history to stay on the chart.\n\nON  = a confirmed main BOS/CHOCH no longer erases the previous range's iBOS/iCHOCH marks, and a confirmed internal event no longer erases the previous range's nBOS/nCHOCH marks. Both 'Keep previous ...' checkboxes in the Internal + Inner group are ignored while it is on.\nOFF = those two checkboxes decide, exactly as they do now.\n\nIt can only ADD history, never remove it: if either checkbox is already ticked, this changes nothing for that tier.\n\nPairs with the ten-marks switch above - keep the history, but cap how much of it is drawn.")
-eqSrc   = input.string("Range (BOS*/CHOCH* pair)", "50% line measured from", options = ["Range (BOS*/CHOCH* pair)", "Live leg (from the break)"], group = gEqM, tooltip = "WHICH TWO PRICES THE 50% IS TAKEN BETWEEN. One setting, applied to all three tiers.\n\nRANGE (the original): halfway between the two live extended lines. It is the equilibrium of a settled range, and it cannot exist until the range is settled - a break empties the side it broke, and that side only refills once the 3-candle rule confirms the next pivot.\n\nLIVE LEG: halfway between the running extreme of the leg and the opposite level, from the moment the breaking candle closes. In a bullish leg that is the highest high since the BOS/CHOCH down to the CHOCH* floor, which the engine re-anchors on the break bar itself, so both ends exist immediately.\n\nWHY IT MATTERS: the 3-candle pullback often only confirms once price is already back under the midpoint, so a range 50% can appear below price and be useless for the decision it was meant to inform. The live leg gives you the level while the leg is still running.\n\nIT RATCHETS, IT DOES NOT DRIFT. A new extreme moves the level; a candle closing back the other way does not, because the extreme has not changed. What it is NOT is a settled level - it moves while the leg extends, by design.")
-eqSrcCl = input.string("New high / low (wick)", "Live leg anchor extends on", options = ["New high / low (wick)", "Close beyond the previous extreme"], group = gEqM, tooltip = "Only read while the setting above is on LIVE LEG. It decides what counts as the leg making a new extreme.\n\nNEW HIGH / LOW (WICK): any higher high in a bullish leg moves the anchor, wick included. This is the running extreme the retracement alerts already use, so the 50% line and those alerts agree.\n\nCLOSE BEYOND THE PREVIOUS EXTREME: the anchor only moves on a candle that CLOSES past the previous candle's high (past its low in a bearish leg). A wick through that closes back inside is ignored, so one spike cannot drag the level away. Fewer adjustments, and the level lags a genuine extension by one candle.\n\nNeither option ever moves the level back the other way.")
-almMax  = input.int(0, "Stop after N alert triggers  (0 = unlimited)", minval = 0, maxval = 1000, group = gA, tooltip = "HOW MANY MESSAGES THIS INDICATOR IS ALLOWED TO SEND BEFORE IT GOES QUIET.\n\n0, the default, is unlimited - the behaviour every earlier version had, where a ticked event keeps firing for as long as the alert exists.\n\nAny other number is a budget. Every message the indicator sends counts against it, whichever event produced it, and once the budget is spent nothing more is sent until you recreate the alert. Set it to 1 and you get a single notification and silence afterwards.\n\nONLY LIVE BARS COUNT. Replaying history never spends the budget, so an alert created on a long chart starts with the whole of it intact.\n\nIT IS ONE BUDGET FOR THE WHOLE INDICATOR, not one per event. With three events ticked and a budget of 3, one busy candle can spend all of it.\n\nTradingView cannot remember the count across alerts: delete an alert and create it again and the budget starts over.")
+mstTen  = true
+mstHist = false
+eqSrc   = "Range (BOS*/CHOCH* pair)"
+eqSrcCl = "New high / low (wick)"
+almMax  = 0
 
 var line  ipCeilLn = na
 var label ipCeilLb = na
@@ -2220,7 +2216,6 @@ if almOk and (evNBosUp or evNBosDn or evNChoUp or evNChoDn)
     if (evNChoUp or evNChoDn) and aANC
         array.push(almQC, "nCHOCH - " + nnTfTxt)
 
-
 if _intClrReq and not inHist and not mstHist
     f_intClear()
 if rqClear and not nnHist and not mstHist
@@ -2239,27 +2234,38 @@ while array.size(almQB) > 0
         almFired += 1
         alert(_almN, alert.freq_once_per_bar)
 
-gStg = "20. Strategy - entries, risk and session"
-stOn     = input.bool(true, "Enable trading", group = gStg, tooltip = "Master switch. Off leaves the structure engine running and drawing, but places no orders at all.")
-stR1On   = input.bool(true, "RULE 1 - pullback entry when 15m DISAGREES", group = gStg, tooltip = "The default rule. On a 1m main CHOCH whose direction the 15m main trend does NOT share, wait for price to give back the percentage set below and enter there with a limit order. This is the counter-trend rule, and it is meant to be.")
-stR2On   = input.bool(true, "RULE 2 - entry at the broken pivot when 15m AGREES", group = gStg, tooltip = "Takes priority over rule 1. When the 15m main trend agrees with the 1m CHOCH direction, the limit goes on the pivot the CHOCH candle just broke, not on a percentage pullback. For a bullish CHOCH that pivot sits below price, so it is a valid buy limit.")
-stPbPct  = input.float(50.0, "  - RULE 1 pullback %", minval = 1.0, maxval = 99.0, step = 0.5, group = gStg, tooltip = "Measured exactly the way the 50% line measures it: from the live CHOCH* level up to the running extreme of the leg. 50 is the midpoint.\n\nIt RATCHETS. Each new high moves the entry level up with it and the resting order is re-placed; a down candle leaves it where it is.")
-stRR     = input.float(1.0, "Target - R multiple of the entry-to-stop distance", minval = 0.1, maxval = 20.0, step = 0.1, group = gStg, tooltip = "1 = the classic 1:1. Set 2, 3, 5 or anything in between.")
-stSlBuf  = input.float(0.0, "Stop buffer beyond the CHOCH* level, in price", minval = 0.0, step = 0.01, group = gStg, tooltip = "Pushes the stop this far past the level so a wick that only kisses it does not take you out. 0 puts the stop exactly on the level.")
-stSize   = input.string("Risk-based off the stop", "Position size", options = ["Risk-based off the stop", "Fixed quantity", "Fixed cash per trade"], group = gStg, tooltip = "RISK-BASED sizes every trade so it loses the same cash at the stop, whatever the stop distance. That is what makes the R-multiple target mean the same thing on every trade.\nFIXED QUANTITY always trades the same size, so each trade risks a different amount.\nFIXED CASH divides the amount by the entry price.")
-stRisk   = input.float(100.0, "  - risk per trade, account currency", minval = 0.01, group = gStg)
-stQty    = input.float(1.0, "  - fixed quantity", minval = 0.000001, group = gStg)
-stCash   = input.float(1000.0, "  - fixed cash per trade", minval = 0.01, group = gStg)
-stLev    = input.float(30.0, "Max leverage (position value / equity)", minval = 1.0, maxval = 500.0, step = 1.0, group = gStg, tooltip = "THE SINGLE MOST IMPORTANT SETTING IN THIS FILE, and the reason v1.2 only ever filled two orders.\n\nRisk-based sizing works backwards from the stop: risk 100 with a 10-point stop means 10 units of gold, which is about 43,000 USD of position. On a 10,000 account that is 4.3x leverage. TradingView will NOT open a position bigger than your equity unless leverage is allowed - it just discards the order in silence. That is exactly what happened: only stops wider than about 46 points produced a position small enough to fit, so 131 of 133 setups were thrown away.\n\nThis caps the position at equity x leverage. 30 is normal for retail gold. Raise it if you see the \"Size capped\" row climbing; lower it to be more conservative.\n\nNOTE: margin in strategy() is set to 0 so TradingView no longer applies its own hidden limit. THIS setting is now the only cap, which is why it matters.")
-stRev    = input.bool(true, "Opposite CHOCH while in a trade: close and reverse", group = gStg, tooltip = "A Pine strategy holds ONE net position - it cannot run a long and a short side by side, each with its own stop. So the closest thing to taking both is to close the running trade at market on the opposite CHOCH and open the new one.\n\nIt rarely fires, because the stop IS the CHOCH* level and an opposite CHOCH is a close beyond it - the trade is usually stopped out first. It only survives when the stop buffer is wide enough.\n\nOFF = a new CHOCH is ignored while a trade is running.")
-stBosOn  = input.bool(false, "ALSO take trades on BOS, not just CHOCH", group = gStg, tooltip = "OFF (default) = only a main CHOCH starts a trade, exactly as before.\n\nON = a main BOS starts one too - bullish BOS for a long, bearish BOS for a short - judged by the SAME two rules. If the 15m trend agrees it is rule 2, the limit on the pivot the BOS candle just broke; if it does not, it is rule 1, the percentage pullback. Same stop, same target, same sizing, same session.\n\nA BOS is a continuation, so with this on you trade WITH the 1m trend as well as on its turns. Expect several times as many signals.")
-stShow   = input.bool(true, "Draw the entry, stop and target levels", group = gStg)
-stStatOn = input.bool(true, "Show the signal / trade counter table", group = gStg, tooltip = "Counts what the strategy actually did, so you can see whether signals are being missed or simply never filled.\n\nARMED is a setup accepted and an order placed. FILLED is that order actually trading. ARMED, NEVER FILLED is the gap between them - an order that was replaced or cancelled before price reached it.\n\nThe exit rows matter just as much: if TARGET and STOP are both small while OPPOSITE SIGNAL is large, your trades are being cut short by the next signal rather than being allowed to finish.")
-stStatPos = input.string("Bottom right", "  - table position", options = ["Top left", "Top center", "Top right", "Middle left", "Middle right", "Bottom left", "Bottom center", "Bottom right"], group = gStg)
-stTz     = input.string("Asia/Kolkata", "Session timezone", group = gStg, tooltip = "Asia/Kolkata is IST. Any exchange timezone name works.")
+gStg = "20. Strategy - entries, session, targets"
+stOn     = input.bool(true, "Enable trading", group = gStg)
+stR1On   = input.bool(true, "RULE 1 - pullback entry when 15m DISAGREES", group = gStg)
+stR2On   = input.bool(true, "RULE 2 - entry at the broken pivot when 15m AGREES", group = gStg)
+stBosOn  = input.bool(false, "ALSO take trades on BOS, not just CHOCH", group = gStg, tooltip = "OFF = only a main CHOCH starts a trade. ON = a main BOS starts one too, judged by the same two rules, same stop, same target, same sizing. A BOS is a continuation, so expect several times as many signals.")
+stPbPct  = input.float(50.0, "  - RULE 1 pullback %", minval = 1.0, maxval = 99.0, step = 0.5, group = gStg, tooltip = "Measured from the live CHOCH* level up to the running extreme of the leg. It RATCHETS: a new extreme moves the level and the resting order with it, a candle against the leg leaves it alone.")
+stRR     = input.float(1.0, "Target - R multiple of the entry-to-stop distance", minval = 0.1, maxval = 20.0, step = 0.1, group = gStg)
+stSlBuf  = input.float(0.0, "Stop buffer beyond the CHOCH* level, in price", minval = 0.0, step = 0.01, group = gStg)
+stRev    = input.bool(true, "Opposite signal while in a trade: close and reverse", group = gStg, tooltip = "A Pine strategy holds ONE net position, so taking both sides at once is not possible. This closes the running trade at market and opens the new one. OFF = the new signal is ignored until the current trade finishes.")
+stTz     = input.string("Asia/Kolkata", "Session timezone", group = gStg)
 stHrOn   = input.int(6, "Take entries from (hour)", minval = 0, maxval = 23, group = gStg)
-stHrOff  = input.int(23, "Stop taking entries at (hour)", minval = 0, maxval = 23, group = gStg, tooltip = "An open trade is NOT closed here - only new entries stop and any resting order is cancelled. If the end hour is smaller than the start hour the window runs past midnight.")
-stHrFlat = input.int(2, "Force-close any open trade at (hour)", minval = 0, maxval = 23, group = gStg, tooltip = "Fires once, on the first bar of that hour. Closes the position at market whether or not the target was reached, and clears any resting order.")
+stHrOff  = input.int(23, "Stop taking entries at (hour)", minval = 0, maxval = 23, group = gStg)
+stHrFlat = input.int(2, "Force-close any open trade at (hour)", minval = 0, maxval = 23, group = gStg)
+stShow   = input.bool(true, "Draw entry / stop / target levels", group = gStg)
+stStatOn = input.bool(true, "Show the counter table", group = gStg)
+stStatPos = input.string("Bottom right", "  - table position", options = ["Top left", "Top center", "Top right", "Middle left", "Middle right", "Bottom left", "Bottom center", "Bottom right"], group = gStg)
+
+gRsk = "21. Position size and risk"
+stSize   = input.string("Risk-based off the stop", "Position size", options = ["Risk-based off the stop", "Fixed quantity", "Fixed cash per trade"], group = gRsk, tooltip = "RISK-BASED is the one that makes a money stop-loss mean the same thing on every ticker. It works out how much one unit loses at your stop, converts that into the account currency, and buys exactly enough units that the stop costs your risk amount. Same 50 on XAUUSD, EURUSD, NAS100 or anything else.")
+stRisk   = input.float(50.0, "  - BASE risk per trade, in account currency", minval = 0.01, group = gRsk, tooltip = "The money you lose if the stop is hit. Position size is derived from it and the stop distance - you never set a lot size by hand.\n\nCheck the 'Last trade risk' row in the table: it shows what the filled trade ACTUALLY had at risk. It should match this number.")
+stQty    = input.float(1.0, "  - fixed quantity", minval = 0.000001, group = gRsk)
+stCash   = input.float(1000.0, "  - fixed cash per trade", minval = 0.01, group = gRsk)
+stLev    = input.float(30.0, "Max leverage (position value / equity)", minval = 1.0, maxval = 500.0, step = 1.0, group = gRsk, tooltip = "Caps the position at equity x leverage. Risk-based sizing on a tight stop asks for a big position - a 10-point stop on gold with 50 risk is about 21,000 of position. Without leverage the account cannot hold that and the order is silently dropped. 30 is normal for retail gold and FX. Watch the 'Size capped' row.")
+
+stSeqMode = input.string("Off", "Loss-recovery sizing", options = ["Off", "Rule A - recover losses + base profit", "Rule B - double the losses"], group = gRsk, tooltip = "OFF = every trade risks the base amount. Nothing recovers anything.\n\nRULE A: after a loss the next trade risks (losses so far + base), so ONE winner at 1:1 gets everything back plus the base amount. 50 -> 100 -> 200 -> 400 -> 800. A win resets to base.\n\nRULE B: after a loss the next trade risks DOUBLE the losses so far. 50 -> 100 -> 300 -> 900 -> 2700 -> 8100. A win resets to base.\n\nREAD THE WARNING IN THE NOTES FILE BEFORE USING EITHER. Both grow the position after losses, which is the fastest known way to empty an account. Rule B reaches 8,100 of risk after six losers in a row. The hard cap below exists for exactly that reason - do not remove it.")
+stSeqMax  = input.float(500.0, "  - HARD CAP on risk per trade", minval = 0.01, group = gRsk, tooltip = "The recovery sequence can never ask for more than this. Keep it small relative to the account. With the cap hit, either the risk is clamped or trading stops, depending on the switch below.")
+stSeqStop = input.bool(true, "  - stop trading once the cap is reached", group = gRsk, tooltip = "ON (recommended) = when the sequence wants more than the cap, the strategy stops opening trades instead of quietly taking a smaller risk that can no longer recover the losses. OFF = it clamps to the cap and carries on.")
+
+gWh = "22. Webhook message (broker bridge)"
+stWhOn   = input.bool(false, "Attach a webhook message to every order", group = gWh, tooltip = "Fills in the alert_message of each order so one 'Any alert() function call' alert can drive a bridge to MT5, cTrader or a broker API. See the notes file for the full set-up.")
+stWhMode = input.string("JSON", "Message format", options = ["JSON", "PineConnector", "Plain text"], group = gWh)
+stWhId   = input.string("", "License ID / account tag", group = gWh, tooltip = "PineConnector puts your licence ID first in every command. For JSON it is copied into the id field. Leave blank if your bridge does not need one.")
 
 bool _u15 = stOn and stR2On
 [_t15, _e15, _i15, _n15] = request.security(syminfo.tickerid, _u15 ? "15" : timeframe.period, f_tfPack(_u15))
@@ -2281,6 +2287,7 @@ var int   stRule = 0
 var float stSl   = na
 var float stFix  = na
 var float stOpenSl = na
+var float stLastRisk = na
 var int stCntCho  = 0
 var int stCntBos  = 0
 var int stCntArm  = 0
@@ -2294,24 +2301,85 @@ var int stCntCap  = 0
 var bool stCapFlag = false
 var int stClosed  = 0
 var int stWhy     = 0
+var float stSeqLoss = 0.0
+var bool  stSeqHalt = false
+var int   stCntSeqCap = 0
 
-f_stQty(float ent, float rsk) =>
-    float pv = syminfo.pointvalue <= 0 ? 1.0 : syminfo.pointvalue
+f_stPv() =>
+    syminfo.pointvalue <= 0 ? 1.0 : syminfo.pointvalue
+
+f_stQty(float ent, float rsk, float amt) =>
     float q = 0.0
     if stSize == "Fixed quantity"
         q := stQty
     else if stSize == "Fixed cash per trade"
         q := ent > 0 ? stCash / ent : 0.0
     else
-        q := rsk > 0 ? stRisk / (rsk * pv) : 0.0
+        float _per = strategy.convert_to_account(rsk * f_stPv())
+        q := _per > 0 ? amt / _per : 0.0
     float _lim = ent > 0 and stLev > 0 ? strategy.equity * stLev / ent : 0.0
     bool  _cap = _lim > 0 and q > _lim
     [_cap ? _lim : q, _cap]
 
+f_stMsg(string act, float px, float sl, float tp, float q) =>
+    string m = ""
+    if stWhOn
+        string _t = syminfo.ticker
+        string _q = str.tostring(q)
+        string _p = str.tostring(px, format.mintick)
+        string _s = str.tostring(sl, format.mintick)
+        string _g = str.tostring(tp, format.mintick)
+        if stWhMode == "PineConnector"
+            m := stWhId + "," + act + "," + _t + ",sl=" + _s + ",tp=" + _g + ",volume=" + _q
+        else if stWhMode == "Plain text"
+            m := act + " " + _t + " qty=" + _q + " entry=" + _p + " sl=" + _s + " tp=" + _g
+        else
+            m := '{"id":"' + stWhId + '","action":"' + act + '","symbol":"' + _t + '","qty":' + _q + ',"entry":' + _p + ',"sl":' + _s + ',"tp":' + _g + '}'
+    m
+
 if strategy.position_size != 0 and strategy.position_size[1] == 0
-    stOpenSl := stSl
-    stDir    := 0
-    stCntFill += 1
+    stOpenSl   := stSl
+    stDir      := 0
+    stCntFill  += 1
+    stLastRisk := strategy.convert_to_account(math.abs(strategy.position_size) * math.abs(strategy.position_avg_price - stSl) * f_stPv())
+
+if strategy.closedtrades > stClosed
+    int _nCl = strategy.closedtrades - stClosed
+    for _i = 0 to _nCl - 1
+        float _pf = strategy.closedtrades.profit(strategy.closedtrades - 1 - _i)
+        if stWhy == 1
+            stCntOpp += 1
+        else if stWhy == 2
+            stCntFlat += 1
+        else if _pf > 0
+            stCntTgt += 1
+        else
+            stCntStop += 1
+        if _pf > 0
+            stSeqLoss := 0.0
+            stSeqHalt := false
+        else
+            stSeqLoss := stSeqLoss + math.abs(_pf)
+    stWhy    := 0
+    stClosed := strategy.closedtrades
+
+float stRiskNow = stRisk
+if stSeqMode == "Rule A - recover losses + base profit"
+    stRiskNow := stSeqLoss > 0 ? (stSeqLoss + stRisk) / math.max(stRR, 0.1) : stRisk
+else if stSeqMode == "Rule B - double the losses"
+    stRiskNow := stSeqLoss > 0 ? 2.0 * stSeqLoss : stRisk
+var bool stSeqCapOn = false
+if stSeqMode != "Off" and stRiskNow > stSeqMax
+    if not stSeqCapOn
+        stCntSeqCap += 1
+        stSeqCapOn  := true
+    stRiskNow := stSeqMax
+    if stSeqStop
+        stSeqHalt := true
+else
+    stSeqCapOn := false
+
+bool stGo = stOn and not stSeqHalt
 
 if stDir != 0 and strategy.position_size == 0
     float _live = na
@@ -2324,7 +2392,7 @@ if stDir != 0 and strategy.position_size == 0
 
 if stFlatNow
     if strategy.position_size != 0
-        strategy.close_all(comment = "Time flat")
+        strategy.close_all(comment = "Time flat", alert_message = f_stMsg("close", close, na, na, math.abs(strategy.position_size)))
         stWhy := 2
     if stDir != 0
         stCntCanc += 1
@@ -2343,14 +2411,14 @@ if not stWin
 bool stSigUp = evChoUp or (stBosOn and evBosUp)
 bool stSigDn = evChoDn or (stBosOn and evBosDn)
 
-if (stSigUp or stSigDn) and stOn
+if (stSigUp or stSigDn) and stGo
     if evChoUp or evChoDn
         stCntCho += 1
     if stBosOn and (evBosUp or evBosDn)
         stCntBos += 1
     bool _opp = (strategy.position_size > 0 and stSigDn) or (strategy.position_size < 0 and stSigUp)
     if _opp and stRev
-        strategy.close_all(comment = "Opposite signal")
+        strategy.close_all(comment = "Opposite signal", alert_message = f_stMsg("close", close, na, na, math.abs(strategy.position_size)))
         stWhy := 1
     bool _take = stWin and (strategy.position_size == 0 or (_opp and stRev))
     if _take
@@ -2368,7 +2436,7 @@ if (stSigUp or stSigDn) and stOn
                 stCntCanc += 1
             strategy.cancel("L")
             strategy.cancel("S")
-            stCntArm += 1
+            stCntArm  += 1
             stCapFlag := false
             stDir  := _d
             stRule := _agree ? 2 : 1
@@ -2387,20 +2455,20 @@ else if stDir != 0
         float _r = math.abs(stEnt - stSl)
         stTgt := stDir == 1 ? stEnt + _r * stRR : stEnt - _r * stRR
 
-if stOn and strategy.position_size == 0 and stDir != 0 and stWin and not na(stEnt) and not na(stTgt) and not na(stSl)
+if stGo and strategy.position_size == 0 and stDir != 0 and stWin and not na(stEnt) and not na(stTgt) and not na(stSl)
     bool _sane = stDir == 1 ? stEnt > stSl : stEnt < stSl
     float _r = math.abs(stEnt - stSl)
-    [_q, _qCap] = f_stQty(stEnt, _r)
+    [_q, _qCap] = f_stQty(stEnt, _r, stRiskNow)
     if _qCap and not stCapFlag
         stCntCap  += 1
         stCapFlag := true
     if _sane and _q > 0 and _r > 0
         if stDir == 1
-            strategy.entry("L", strategy.long, qty = _q, limit = stEnt)
-            strategy.exit("L exit", "L", stop = stSl, limit = stTgt)
+            strategy.entry("L", strategy.long, qty = _q, limit = stEnt, alert_message = f_stMsg("buy", stEnt, stSl, stTgt, _q))
+            strategy.exit("L exit", "L", stop = stSl, limit = stTgt, alert_message = f_stMsg("close", close, stSl, stTgt, _q))
         else
-            strategy.entry("S", strategy.short, qty = _q, limit = stEnt)
-            strategy.exit("S exit", "S", stop = stSl, limit = stTgt)
+            strategy.entry("S", strategy.short, qty = _q, limit = stEnt, alert_message = f_stMsg("sell", stEnt, stSl, stTgt, _q))
+            strategy.exit("S exit", "S", stop = stSl, limit = stTgt, alert_message = f_stMsg("close", close, stSl, stTgt, _q))
     else
         strategy.cancel("L")
         strategy.cancel("S")
@@ -2408,23 +2476,9 @@ if stOn and strategy.position_size == 0 and stDir != 0 and stWin and not na(stEn
         stDir := 0
 
 if strategy.position_size > 0 and not na(stOpenSl) and not na(stTgt)
-    strategy.exit("L exit", "L", stop = stOpenSl, limit = stTgt)
+    strategy.exit("L exit", "L", stop = stOpenSl, limit = stTgt, alert_message = f_stMsg("close", close, stOpenSl, stTgt, math.abs(strategy.position_size)))
 if strategy.position_size < 0 and not na(stOpenSl) and not na(stTgt)
-    strategy.exit("S exit", "S", stop = stOpenSl, limit = stTgt)
-
-if strategy.closedtrades > stClosed
-    int _nCl = strategy.closedtrades - stClosed
-    for _i = 0 to _nCl - 1
-        if stWhy == 1
-            stCntOpp += 1
-        else if stWhy == 2
-            stCntFlat += 1
-        else if strategy.closedtrades.profit(strategy.closedtrades - 1 - _i) > 0
-            stCntTgt += 1
-        else
-            stCntStop += 1
-    stWhy    := 0
-    stClosed := strategy.closedtrades
+    strategy.exit("S exit", "S", stop = stOpenSl, limit = stTgt, alert_message = f_stMsg("close", close, stOpenSl, stTgt, math.abs(strategy.position_size)))
 
 stCeilPrev := not na(ceilS) ? ceilS.price : stCeilPrev
 stFlorPrev := not na(florS) ? florS.price : stFlorPrev
@@ -2432,8 +2486,6 @@ stFlorPrev := not na(florS) ? florS.price : stFlorPrev
 plot(stShow and stDir != 0 and strategy.position_size == 0 ? stEnt : na, "Pending entry", color = color.new(color.orange, 0), style = plot.style_linebr, linewidth = 1)
 plot(stShow and (stDir != 0 or strategy.position_size != 0) ? (strategy.position_size != 0 ? stOpenSl : stSl) : na, "Stop", color = color.new(color.red, 0), style = plot.style_linebr, linewidth = 1)
 plot(stShow and (stDir != 0 or strategy.position_size != 0) ? stTgt : na, "Target", color = color.new(color.teal, 0), style = plot.style_linebr, linewidth = 1)
-plotshape(stShow and stDir != 0 and stDir != nz(stDir[1], 0) and stRule == 2, "Rule 2 signal", shape.triangleup, location.belowbar, color.new(color.blue, 0), size = size.tiny)
-plotshape(stShow and stDir != 0 and stDir != nz(stDir[1], 0) and stRule == 1, "Rule 1 signal", shape.triangledown, location.abovebar, color.new(color.purple, 0), size = size.tiny)
 
 f_stPos(string p) =>
     p == "Top left" ? position.top_left : p == "Top center" ? position.top_center : p == "Top right" ? position.top_right : p == "Middle left" ? position.middle_left : p == "Middle right" ? position.middle_right : p == "Bottom left" ? position.bottom_left : p == "Bottom center" ? position.bottom_center : position.bottom_right
@@ -2445,16 +2497,20 @@ f_stCell(table t, int r, string a, string b, color c) =>
 var table stTbl = na
 if stStatOn and bar_index == last_bar_index
     if na(stTbl)
-        stTbl := table.new(f_stPos(stStatPos), 2, 11, bgcolor = color.new(color.black, 15), border_color = color.new(color.gray, 60), border_width = 1)
+        stTbl := table.new(f_stPos(stStatPos), 2, 15, bgcolor = color.new(color.black, 15), border_color = color.new(color.gray, 60), border_width = 1)
     table.cell(stTbl, 0, 0, "STRATEGY", text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 55), text_halign = text.align_left)
-    table.cell(stTbl, 1, 0, "count",    text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 55), text_halign = text.align_right)
-    f_stCell(stTbl, 1, "CHOCH signals",       str.tostring(stCntCho),  color.white)
-    f_stCell(stTbl, 2, "BOS signals",         stBosOn ? str.tostring(stCntBos) : "off", stBosOn ? color.white : color.gray)
-    f_stCell(stTbl, 3, "Setups armed",        str.tostring(stCntArm),  color.yellow)
-    f_stCell(stTbl, 4, "Orders FILLED",       str.tostring(stCntFill), color.lime)
-    f_stCell(stTbl, 5, "Armed, never filled", str.tostring(stCntCanc), color.orange)
-    f_stCell(stTbl, 6, "Exit - target",       str.tostring(stCntTgt),  color.teal)
-    f_stCell(stTbl, 7, "Exit - stop",         str.tostring(stCntStop), color.red)
-    f_stCell(stTbl, 8, "Exit - opposite sig", str.tostring(stCntOpp),  color.fuchsia)
-    f_stCell(stTbl, 9, "Exit - time flat",    str.tostring(stCntFlat), color.silver)
+    table.cell(stTbl, 1, 0, "value",    text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 55), text_halign = text.align_right)
+    f_stCell(stTbl, 1,  "CHOCH signals",       str.tostring(stCntCho),  color.white)
+    f_stCell(stTbl, 2,  "BOS signals",         stBosOn ? str.tostring(stCntBos) : "off", stBosOn ? color.white : color.gray)
+    f_stCell(stTbl, 3,  "Setups armed",        str.tostring(stCntArm),  color.yellow)
+    f_stCell(stTbl, 4,  "Orders FILLED",       str.tostring(stCntFill), color.lime)
+    f_stCell(stTbl, 5,  "Armed, never filled", str.tostring(stCntCanc), color.orange)
+    f_stCell(stTbl, 6,  "Exit - target",       str.tostring(stCntTgt),  color.teal)
+    f_stCell(stTbl, 7,  "Exit - stop",         str.tostring(stCntStop), color.red)
+    f_stCell(stTbl, 8,  "Exit - opposite sig", str.tostring(stCntOpp),  color.fuchsia)
+    f_stCell(stTbl, 9,  "Exit - time flat",    str.tostring(stCntFlat), color.silver)
     f_stCell(stTbl, 10, "Size capped (leverage)", str.tostring(stCntCap), stCntCap > 0 ? color.orange : color.gray)
+    f_stCell(stTbl, 11, "Risk NEXT trade",     str.tostring(math.round(stRiskNow * 100) / 100), stRiskNow > stRisk ? color.orange : color.white)
+    f_stCell(stTbl, 12, "Last trade risk",     na(stLastRisk) ? "-" : str.tostring(math.round(stLastRisk * 100) / 100), color.aqua)
+    f_stCell(stTbl, 13, "Losses carried",      stSeqMode == "Off" ? "off" : str.tostring(math.round(stSeqLoss * 100) / 100), stSeqLoss > 0 ? color.red : color.gray)
+    f_stCell(stTbl, 14, "Risk cap hit / HALT", stSeqMode == "Off" ? "off" : (str.tostring(stCntSeqCap) + (stSeqHalt ? "  HALTED" : "")), stSeqHalt ? color.red : color.gray)

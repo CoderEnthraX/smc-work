@@ -1,6 +1,6 @@
 ================================================================================
-SMC STRUCTURE STRATEGY  -  v1.3
-Companion notes for SMC_Structure_Strategy_v1.3.txt
+SMC STRUCTURE STRATEGY  -  v2.0
+Companion notes for SMC_Structure_Strategy_v2.0.txt
 ================================================================================
 Built from SMC_Structure_Alerts_Only_v2.3, which is v17.3 with the profiles,
 VWAP, killzones and MTF table removed. 48 of the 49 engine functions in this
@@ -52,6 +52,77 @@ none of them was a defect - the script ran correctly. Here is each one.
 NOTHING ELSE CHANGED. The trading block - both rules, the stop, the target, the
 sizing, the session - is byte-for-byte identical to v1.0, and the structure
 engine is still 48 of 49 functions byte-identical to v17.3.
+================================================================================
+
+--------------------------------------------------------------------------------
+v2.0 - CLEAN PANEL, MONEY-BASED SIZING, RECOVERY MODES, WEBHOOKS
+--------------------------------------------------------------------------------
+
+1. THE SETTINGS PANEL IS NOW ONLY THE STRATEGY
+   239 of the 269 settings were turned into fixed values. They are still IN the
+   code and still doing their job - the structure engine runs exactly as before -
+   they simply no longer appear in the panel. 30 settings remain, in four groups:
+   20 Strategy, 21 Position size and risk, 22 Webhook, 23 Engine rules.
+
+   The four ENGINE RULES (ALTERNATE, pullback rules 1/2/3) are kept visible
+   because they change the signals themselves. They had to stay declared where
+   they were - method update() reads two of them at line 283, long before the
+   end of the file - so only their group label moved. The panel groups by name,
+   not by position in the code, so they appear in group 23 regardless.
+
+2. MONEY STOP-LOSS THAT IS THE SAME ON EVERY TICKER
+   You saw 50 behave like 2 on some symbols. That is the point of this change.
+
+   Sizing now does: how much does ONE unit lose at my stop, in the SYMBOL's
+   currency, converted into the ACCOUNT currency - then buy exactly enough units
+   that the stop costs the risk amount.
+
+       per unit  = stop distance x syminfo.pointvalue
+       converted = strategy.convert_to_account(per unit)
+       qty       = risk / converted
+
+   strategy.convert_to_account() is the part that was missing. The strategy also
+   now declares currency = currency.USD, so "50" means 50 US dollars on XAUUSD,
+   EURUSD, USDJPY, an index or anything else - you never set a lot size by hand.
+
+   VERIFY IT YOURSELF. The table has a "Last trade risk" row showing what the
+   filled trade ACTUALLY had at risk, computed from the real fill size and the
+   real stop. It should read 50. If it does not, tell me the ticker.
+
+3. TWO LOSS-RECOVERY MODES  -  both OFF by default
+   Exactly as you described them:
+
+       RULE A   50 -> 100 -> 200 -> 400 -> 800 ...   next = losses + base
+       RULE B   50 -> 100 -> 300 -> 900 -> 2700 ...  next = 2 x losses
+
+   A win resets either one to the base. Rule A is written as
+   (losses + base) / RR so it stays honest if you move the target off 1:1 - the
+   WIN always nets the base amount, which is what you actually asked for.
+
+   ### PLEASE READ THIS PART ###
+   Both of these increase your size after losing. That is the single most
+   reliable way to empty a trading account, and it is worth being blunt about it
+   rather than shipping it quietly. Rule B uncapped, starting from 50:
+
+       50 -> 100 -> 300 -> 900 -> 2700 -> 8100 -> 24300 -> 72900
+
+   Seven losers in a row and it is asking for 24,300 of risk. Seven losers in a
+   row is not rare - at a 45% win rate it happens roughly once in every 60 trades,
+   and this strategy can take several trades a day. The sequence does not care
+   that your account is 10,000; it will simply ask, and when it cannot get it, the
+   losses that came before are permanent.
+
+   That is why the HARD CAP defaults to 500 and "stop trading once the cap is
+   reached" defaults to ON. When the sequence wants more than the cap, the
+   strategy STOPS rather than quietly taking a risk too small to recover
+   anything. Please do not remove that cap to "let it work" - the cap IS the
+   thing keeping the account alive. Backtest both modes against plain fixed risk
+   over a long window before you believe either one.
+
+4. WEBHOOK MESSAGES
+   Every order now carries an alert_message, in JSON, PineConnector or plain text
+   format, with the action, symbol, quantity, entry, stop and target filled in.
+   Set-up steps are in the reply that came with this file.
 ================================================================================
 
 --------------------------------------------------------------------------------
