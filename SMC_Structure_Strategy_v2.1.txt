@@ -1,5 +1,5 @@
 //@version=6
-// SMC Structure Strategy  -  v2.0  -  1m main-tier CHOCH entries, two rules, 15m trend filter, R-multiple targets, IST session window  -  ASCII only
+// SMC Structure Strategy  -  v2.1  -  main-tier CHOCH/BOS entries on any timeframe, two rules, paired higher-timeframe filter, R-multiple targets, money-based sizing, IST session  -  ASCII only
 strategy("SMC Structure Strategy", "SMC STRAT", overlay = true,
      max_bars_back = 2000, max_lines_count = 500, max_labels_count = 500, dynamic_requests = true,
      initial_capital = 10000, currency = currency.USD, default_qty_type = strategy.fixed, default_qty_value = 1,
@@ -2243,6 +2243,8 @@ stPbPct  = input.float(50.0, "  - RULE 1 pullback %", minval = 1.0, maxval = 99.
 stRR     = input.float(1.0, "Target - R multiple of the entry-to-stop distance", minval = 0.1, maxval = 20.0, step = 0.1, group = gStg)
 stSlBuf  = input.float(0.0, "Stop buffer beyond the CHOCH* level, in price", minval = 0.0, step = 0.01, group = gStg)
 stRev    = input.bool(true, "Opposite signal while in a trade: close and reverse", group = gStg, tooltip = "A Pine strategy holds ONE net position, so taking both sides at once is not possible. This closes the running trade at market and opens the new one. OFF = the new signal is ignored until the current trade finishes.")
+stEntMode = input.string("Continuous - follow the level", "Entry order handling", options = ["Continuous - follow the level", "Send once - place it and leave it"], group = gStg, tooltip = "CONTINUOUS (default): while a setup is waiting, the limit is re-placed every bar at the recomputed level, so a rule-1 entry RATCHETS up with each new extreme of the leg.\n\nSEND ONCE: the level is worked out once when the setup is armed and the order is left exactly there. No ratchet, no chasing - what you saw when the signal printed is what you get.\n\nNeither one changes how many webhook messages you get. A TradingView strategy alert fires when an order FILLS, not when it is placed, so re-placing a resting limit sends nothing to your bridge. Choose on behaviour, not on message count.")
+stHtf    = input.string("Auto - paired with the chart", "Higher timeframe for RULE 2", options = ["Auto - paired with the chart", "15m", "1h", "4h", "1D", "1W", "1M"], group = gStg, tooltip = "Which timeframe has to AGREE for rule 2 to be used instead of rule 1.\n\nAUTO pairs it with whatever chart you are on:\n  1m chart  -> 15m\n  5m chart  -> 1h\n  15m chart -> 4h\n  1h chart  -> 1D\n  4h chart  -> 1W\n  1D chart  -> 1M\n\nOr pick one by hand. If the timeframe you pick is not ABOVE the chart timeframe it is ignored and every signal falls through to rule 1 - a filter cannot be built from a timeframe faster than the chart.")
 stTz     = input.string("Asia/Kolkata", "Session timezone", group = gStg)
 stHrOn   = input.int(6, "Take entries from (hour)", minval = 0, maxval = 23, group = gStg)
 stHrOff  = input.int(23, "Stop taking entries at (hour)", minval = 0, maxval = 23, group = gStg)
@@ -2260,25 +2262,30 @@ stLev    = input.float(30.0, "Max leverage (position value / equity)", minval = 
 
 stSeqMode = input.string("Off", "Loss-recovery sizing", options = ["Off", "Rule A - recover losses + base profit", "Rule B - double the losses"], group = gRsk, tooltip = "OFF = every trade risks the base amount. Nothing recovers anything.\n\nRULE A: after a loss the next trade risks (losses so far + base), so ONE winner at 1:1 gets everything back plus the base amount. 50 -> 100 -> 200 -> 400 -> 800. A win resets to base.\n\nRULE B: after a loss the next trade risks DOUBLE the losses so far. 50 -> 100 -> 300 -> 900 -> 2700 -> 8100. A win resets to base.\n\nREAD THE WARNING IN THE NOTES FILE BEFORE USING EITHER. Both grow the position after losses, which is the fastest known way to empty an account. Rule B reaches 8,100 of risk after six losers in a row. The hard cap below exists for exactly that reason - do not remove it.")
 stSeqMax  = input.float(500.0, "  - HARD CAP on risk per trade", minval = 0.01, group = gRsk, tooltip = "The recovery sequence can never ask for more than this. Keep it small relative to the account. With the cap hit, either the risk is clamped or trading stops, depending on the switch below.")
-stSeqStop = input.bool(true, "  - stop trading once the cap is reached", group = gRsk, tooltip = "ON (recommended) = when the sequence wants more than the cap, the strategy stops opening trades instead of quietly taking a smaller risk that can no longer recover the losses. OFF = it clamps to the cap and carries on.")
+stSeqCapAct = input.string("Stop for the rest of the day", "  - when the cap is reached", options = ["Clamp to the cap and carry on", "Stop for the rest of the day", "Stop permanently"], group = gRsk, tooltip = "CLAMP: take the cap as the risk and keep going. The sequence can no longer recover everything, but it keeps trading.\n\nSTOP FOR THE DAY (default): stop opening trades, then clear the carried losses and start fresh at the next trading day. This is the sane default - it draws a line under a bad run instead of chasing it.\n\nSTOP PERMANENTLY: no more trades until you reload the strategy. Use it if you want the backtest to show you exactly where the sequence broke.")
 
 gWh = "22. Webhook message (broker bridge)"
 stWhOn   = input.bool(false, "Attach a webhook message to every order", group = gWh, tooltip = "Fills in the alert_message of each order so one 'Any alert() function call' alert can drive a bridge to MT5, cTrader or a broker API. See the notes file for the full set-up.")
 stWhMode = input.string("JSON", "Message format", options = ["JSON", "PineConnector", "Plain text"], group = gWh)
 stWhId   = input.string("", "License ID / account tag", group = gWh, tooltip = "PineConnector puts your licence ID first in every command. For JSON it is copied into the id field. Leave blank if your bridge does not need one.")
 
-bool _u15 = stOn and stR2On
-[_t15, _e15, _i15, _n15] = request.security(syminfo.tickerid, _u15 ? "15" : timeframe.period, f_tfPack(_u15))
+int    _stCs   = timeframe.in_seconds(timeframe.period)
+string stHtfTf = stHtf == "Auto - paired with the chart" ? (_stCs <= 60 ? "15" : _stCs <= 300 ? "60" : _stCs <= 900 ? "240" : _stCs <= 3600 ? "1D" : _stCs <= 14400 ? "1W" : "1M") : stHtf == "15m" ? "15" : stHtf == "1h" ? "60" : stHtf == "4h" ? "240" : stHtf == "1D" ? "1D" : stHtf == "1W" ? "1W" : "1M"
+bool   stHtfOk = timeframe.in_seconds(stHtfTf) > _stCs
+bool   _u15    = stOn and stR2On and stHtfOk
+[_t15, _e15, _i15, _n15] = request.security(syminfo.tickerid, _u15 ? stHtfTf : timeframe.period, f_tfPack(_u15))
 int stT15 = nz(_t15, 0)
 
 int   _sHr  = hour(time, stTz)
 int   _sMin = minute(time, stTz)
 float _sHm  = _sHr + _sMin / 60.0
 bool  stWin = stHrOn < stHrOff ? (_sHm >= stHrOn and _sHm < stHrOff) : (_sHm >= stHrOn or _sHm < stHrOff)
-var bool _flatPrev = false
-bool _inFlatHr = _sHm >= stHrFlat and _sHm < stHrFlat + 1
-bool stFlatNow = _inFlatHr and not _flatPrev
-_flatPrev := _inFlatHr
+bool _stDead = stHrFlat < stHrOn ? (_sHm >= stHrFlat and _sHm < stHrOn) : (_sHm >= stHrFlat or _sHm < stHrOn)
+var bool _deadPrev = false
+bool stFlatNow = _stDead and not _deadPrev
+_deadPrev := _stDead
+int  _stDay  = dayofmonth(time, stTz)
+bool stNewDay = _stDay != nz(_stDay[1], _stDay)
 
 var float stCeilPrev = na
 var float stFlorPrev = na
@@ -2369,19 +2376,27 @@ if stSeqMode == "Rule A - recover losses + base profit"
 else if stSeqMode == "Rule B - double the losses"
     stRiskNow := stSeqLoss > 0 ? 2.0 * stSeqLoss : stRisk
 var bool stSeqCapOn = false
+var bool stPlaced = false
+var float stEntLock = na
 if stSeqMode != "Off" and stRiskNow > stSeqMax
     if not stSeqCapOn
         stCntSeqCap += 1
         stSeqCapOn  := true
     stRiskNow := stSeqMax
-    if stSeqStop
+    if stSeqCapAct != "Clamp to the cap and carry on"
         stSeqHalt := true
 else
     stSeqCapOn := false
 
-bool stGo = stOn and not stSeqHalt
+if stNewDay and stSeqHalt and stSeqCapAct == "Stop for the rest of the day"
+    stSeqHalt := false
+    stSeqLoss := 0.0
+    stSeqCapOn := false
 
-if stDir != 0 and strategy.position_size == 0
+bool stOnce = stEntMode == "Send once - place it and leave it"
+bool stGo   = stOn and not stSeqHalt
+
+if stDir != 0 and strategy.position_size == 0 and not (stOnce and stPlaced)
     float _live = na
     if stDir == 1 and not na(florS)
         _live := florS.price
@@ -2438,6 +2453,8 @@ if (stSigUp or stSigDn) and stGo
             strategy.cancel("S")
             stCntArm  += 1
             stCapFlag := false
+            stPlaced  := false
+            stEntLock := na
             stDir  := _d
             stRule := _agree ? 2 : 1
             stSl   := _d == 1 ? _opl - stSlBuf : _opl + stSlBuf
@@ -2450,7 +2467,7 @@ if strategy.position_size != 0 and not na(stOpenSl)
     float _r = math.abs(stEnt - stOpenSl)
     stTgt := strategy.position_size > 0 ? stEnt + _r * stRR : stEnt - _r * stRR
 else if stDir != 0
-    stEnt := stRule == 2 ? stFix : f_retLvl(trendDir, mAnch, mOrig, stPbPct)
+    stEnt := stOnce and stPlaced and not na(stEntLock) ? stEntLock : (stRule == 2 ? stFix : f_retLvl(trendDir, mAnch, mOrig, stPbPct))
     if not na(stEnt) and not na(stSl)
         float _r = math.abs(stEnt - stSl)
         stTgt := stDir == 1 ? stEnt + _r * stRR : stEnt - _r * stRR
@@ -2462,14 +2479,17 @@ if stGo and strategy.position_size == 0 and stDir != 0 and stWin and not na(stEn
     if _qCap and not stCapFlag
         stCntCap  += 1
         stCapFlag := true
-    if _sane and _q > 0 and _r > 0
+    bool _place = _sane and _q > 0 and _r > 0 and (not stOnce or not stPlaced)
+    if _place
+        stPlaced  := true
+        stEntLock := stEnt
         if stDir == 1
             strategy.entry("L", strategy.long, qty = _q, limit = stEnt, alert_message = f_stMsg("buy", stEnt, stSl, stTgt, _q))
             strategy.exit("L exit", "L", stop = stSl, limit = stTgt, alert_message = f_stMsg("close", close, stSl, stTgt, _q))
         else
             strategy.entry("S", strategy.short, qty = _q, limit = stEnt, alert_message = f_stMsg("sell", stEnt, stSl, stTgt, _q))
             strategy.exit("S exit", "S", stop = stSl, limit = stTgt, alert_message = f_stMsg("close", close, stSl, stTgt, _q))
-    else
+    else if not _sane or _q <= 0 or _r <= 0
         strategy.cancel("L")
         strategy.cancel("S")
         stCntCanc += 1
@@ -2497,7 +2517,7 @@ f_stCell(table t, int r, string a, string b, color c) =>
 var table stTbl = na
 if stStatOn and bar_index == last_bar_index
     if na(stTbl)
-        stTbl := table.new(f_stPos(stStatPos), 2, 15, bgcolor = color.new(color.black, 15), border_color = color.new(color.gray, 60), border_width = 1)
+        stTbl := table.new(f_stPos(stStatPos), 2, 16, bgcolor = color.new(color.black, 15), border_color = color.new(color.gray, 60), border_width = 1)
     table.cell(stTbl, 0, 0, "STRATEGY", text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 55), text_halign = text.align_left)
     table.cell(stTbl, 1, 0, "value",    text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 55), text_halign = text.align_right)
     f_stCell(stTbl, 1,  "CHOCH signals",       str.tostring(stCntCho),  color.white)
@@ -2513,4 +2533,5 @@ if stStatOn and bar_index == last_bar_index
     f_stCell(stTbl, 11, "Risk NEXT trade",     str.tostring(math.round(stRiskNow * 100) / 100), stRiskNow > stRisk ? color.orange : color.white)
     f_stCell(stTbl, 12, "Last trade risk",     na(stLastRisk) ? "-" : str.tostring(math.round(stLastRisk * 100) / 100), color.aqua)
     f_stCell(stTbl, 13, "Losses carried",      stSeqMode == "Off" ? "off" : str.tostring(math.round(stSeqLoss * 100) / 100), stSeqLoss > 0 ? color.red : color.gray)
+    f_stCell(stTbl, 15, "RULE 2 timeframe", stHtfOk ? stHtfTf : "off (not above chart)", stHtfOk ? color.aqua : color.gray)
     f_stCell(stTbl, 14, "Risk cap hit / HALT", stSeqMode == "Off" ? "off" : (str.tostring(stCntSeqCap) + (stSeqHalt ? "  HALTED" : "")), stSeqHalt ? color.red : color.gray)

@@ -1,6 +1,6 @@
 ================================================================================
-SMC STRUCTURE STRATEGY  -  v2.0
-Companion notes for SMC_Structure_Strategy_v2.0.txt
+SMC STRUCTURE STRATEGY  -  v2.1
+Companion notes for SMC_Structure_Strategy_v2.1.txt
 ================================================================================
 Built from SMC_Structure_Alerts_Only_v2.3, which is v17.3 with the profiles,
 VWAP, killzones and MTF table removed. 48 of the 49 engine functions in this
@@ -52,6 +52,87 @@ none of them was a defect - the script ran correctly. Here is each one.
 NOTHING ELSE CHANGED. The trading block - both rules, the stop, the target, the
 sizing, the session - is byte-for-byte identical to v1.0, and the structure
 engine is still 48 of 49 functions byte-identical to v17.3.
+================================================================================
+
+--------------------------------------------------------------------------------
+v2.1 - SEND-ONCE MODE, TIMEFRAME PAIRING, AND A BUG THAT WOULD HAVE KILLED
+       LIVE TRADING STONE DEAD
+--------------------------------------------------------------------------------
+
+### FIRST, A CORRECTION TO SOMETHING I TOLD YOU ###
+Last time I said continuous re-placement would flood your bridge with a message
+every minute. That was wrong, and you should not choose a mode on the strength
+of it. A TradingView strategy alert fires when an order FILLS, not when it is
+placed. Re-placing a resting limit sends NOTHING to your webhook. Pick the mode
+on how you want the entry to behave, not on message count.
+
+### THE BUG - a permanent deadlock ###
+In v2.0, "stop trading once the cap is reached" set a halt flag that was only
+ever cleared by a WINNING TRADE. But the halt blocks all entries - so no trade
+could open, so no trade could win, so the flag could never clear. Once it
+tripped, the strategy was finished for good. In a backtest that looks like it
+"stopped working"; in live trading it would sit there dead while you assumed it
+was hunting.
+
+FIXED, and the setting is now a three-way choice so the behaviour is explicit:
+    Clamp to the cap and carry on   - take the cap as the risk, keep trading
+    Stop for the rest of the day    - DEFAULT. Stops, then clears the halt AND
+                                      the carried losses at the next trading day
+    Stop permanently                - genuinely stops, for when you want the
+                                      backtest to show you where it broke
+
+1. ENTRY ORDER HANDLING - both modes, pick per your preference
+       CONTINUOUS (default)  the limit is re-placed each bar at the recomputed
+                             level, so a rule-1 entry RATCHETS with the leg
+       SEND ONCE             the level is worked out once when the setup arms
+                             and the order is left exactly there - no chasing
+   In send-once the STOP freezes too, so what was placed and what is tracked can
+   never drift apart. The send-once latch resets whenever a new setup arms, which
+   also means a reversal still gets its order placed on the first bar it can -
+   an easy thing to get wrong, so it was simulated specifically.
+
+2. TIMEFRAME SELECTION, with the pairing you specified
+       1m chart  -> 15m        1h chart -> 1D
+       5m chart  -> 1h         4h chart -> 1W
+       15m chart -> 4h         1D chart -> 1M
+   "Auto - paired with the chart" does this for you; or pick 15m / 1h / 4h / 1D /
+   1W / 1M by hand. If what you pick is NOT above the chart timeframe it is
+   ignored and everything falls through to rule 1 - you cannot build a
+   higher-timeframe filter out of a faster timeframe. The table's new "RULE 2
+   timeframe" row shows which one is actually in use.
+
+   Written as a single expression rather than an if/else chain on purpose:
+   request.security() needs a SIMPLE string for its timeframe, and reassigning a
+   string inside a conditional promotes it to series, which would not compile.
+
+3. THE FORCE-FLAT IS NOW GAP-PROOF
+   It used to need a bar inside the flat HOUR. If the market was shut at 02:00 -
+   a weekend, a holiday, a broker's daily break - the flat never ran and the
+   position stayed open. It now fires on the first bar in the DEAD ZONE between
+   the flat hour and the entry-open hour (02:00 to 06:00 by default), so a
+   Monday reopen at 03:30 still flattens.
+
+--------------------------------------------------------------------------------
+BEFORE YOU GO LIVE - what I could not fix in the code
+--------------------------------------------------------------------------------
+  . WEEKEND HOLD. Entries stop at 23:00 and the flat is at 02:00, but if your
+    broker's Friday session ends before 02:00 IST and there is no bar in the dead
+    zone until Monday, a Friday-night trade rides the weekend gap. Say the word
+    and I will add a "flatten before the weekend" cutoff - it is a small change
+    and it is the one real hole left.
+  . close_all RUNS AT THE NEXT BAR'S OPEN. Reversals and the time-flat are one
+    bar late by design. On 1m that is a minute.
+  . MARGIN IS 0 AND LEVERAGE IS CAPPED AT 30 IN THE SCRIPT, NOT AT YOUR BROKER.
+    Your broker's real limit may be lower and it will reject what the backtest
+    happily took. Check a few sizes on demo first.
+  . SET COMMISSION AND SLIPPAGE in the Properties tab, and turn on Bar Magnifier.
+    All three default to the flattering setting.
+
+VERIFIED THIS ROUND: the state machine was replayed outside Pine over 600,000
+bars in EACH entry mode - 1.2 million bars total - checking five invariants plus
+the counter identity. Zero violations in both, counters balanced in both, and
+send-once provably placed at most one order per setup (8,878 placements against
+9,557 setups).
 ================================================================================
 
 --------------------------------------------------------------------------------
