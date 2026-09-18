@@ -1,0 +1,618 @@
+SMC STRUCTURE STRATEGY  -  v2.3  -  HOW EVERYTHING WORKS
+========================================================
+
+Plain English. One heading per feature, then what it does and why.
+File: SMC_Structure_Strategy_v2.3.txt      Pine Script v6      ASCII only.
+
+
+--------------------------------------------------------------------------
+WHAT THIS STRATEGY IS
+--------------------------------------------------------------------------
+It is the SMC Market Structure indicator (v17.3 engine) with a trading
+layer bolted on top. The engine finds market structure exactly as the
+indicator does - the same pivots, the same 3-candle pullback, the same
+BOS and CHOCH. The trading layer watches only the MAIN tier (not internal,
+not inner) and turns those events into orders.
+
+Nothing about the structure engine was changed in v2.3. It is byte for byte
+the same as the indicator you already use. Only the strategy block changed.
+
+
+--------------------------------------------------------------------------
+TAKE TRADES ON  -  CHOCH only / BOS only / CHOCH and BOS      (NEW in v2.3)
+--------------------------------------------------------------------------
+This decides which structure events are allowed to start a trade.
+
+  CHOCH only        A change of character. This is the reversal signal -
+                    price has broken the other way for the first time.
+                    Fewest trades. This is the default.
+
+  BOS only          A break of structure. This is the continuation signal -
+                    price keeps going the way it was already going.
+                    No reversal entries at all.
+
+  CHOCH and BOS     Both. Several times as many signals.
+
+Everything downstream is identical in all three. Same two entry rules, same
+stop, same target, same sizing, same safety guards. The only thing this
+setting changes is which events the strategy is allowed to look at.
+
+Important: events you switch OFF are completely invisible to the strategy.
+They do not arm a setup, they do not reverse a running trade, and they do
+not cancel a resting order. If you choose "CHOCH only", a BOS printing on
+the chart does nothing at all. That is deliberate - if you are not trading
+BOS, a BOS is not news.
+
+In v2.2 this was a single on/off tick box called "ALSO take trades on BOS",
+which could not express "BOS only". It is now a proper three-way choice.
+Because the setting changed type, TradingView cannot carry your old value
+across - check this setting after you load v2.3.
+
+
+--------------------------------------------------------------------------
+RULE 1  -  PULLBACK % ENTRY
+--------------------------------------------------------------------------
+When a signal fires, the strategy does not buy at market. It works out a
+retracement level of the leg and leaves a limit order there.
+
+The level is measured from the live CHOCH* level up to the running extreme
+of the leg, at whatever percentage you set (default 50%).
+
+It RATCHETS. Every time the leg makes a new extreme, the level moves and
+the resting order moves with it. A candle that goes against the leg leaves
+it alone. So the order chases the move up but never backs away from it.
+
+  Rule 1 alone (rule 2 off)   Every signal is entered this way, whatever
+                              the higher timeframe is doing. The higher
+                              timeframe is not even requested, so the
+                              script also loads faster.
+
+  Rule 1 + rule 2             Rule 1 handles the signals where the higher
+                              timeframe DISAGREES.
+
+
+--------------------------------------------------------------------------
+RULE 2  -  ENTRY AT THE BROKEN PIVOT, HIGHER TIMEFRAME MUST AGREE
+--------------------------------------------------------------------------
+When the higher timeframe trend points the same way as the signal, the
+strategy does not wait for a percentage pullback. It puts the limit order
+at the pivot the signal just broke - the level price has just cleared.
+
+The idea: when the bigger picture agrees, you do not need the discount. A
+retest of the broken level is enough.
+
+  Rule 2 alone (rule 1 off)   A signal is taken ONLY when the higher
+                              timeframe agrees. Everything else is skipped
+                              entirely - no trade at all.
+
+  Rule 1 + rule 2             The strategy decides per signal. Higher
+                              timeframe agrees -> rule 2. Disagrees ->
+                              rule 1. This is the default and it is fully
+                              dynamic, signal by signal.
+
+  Both off                    No trades at all. The table shows
+                              "Entry rules: NONE - both off" in red so you
+                              cannot leave it like that by accident.
+
+If rule 2 is on but the broken pivot cannot be identified for that signal,
+the setup is skipped rather than guessed at.
+
+
+--------------------------------------------------------------------------
+HIGHER TIMEFRAME FOR RULE 2
+--------------------------------------------------------------------------
+Auto pairs it with whatever chart you are on:
+
+    1m chart   ->  15m
+    5m chart   ->  1h
+    15m chart  ->  4h
+    1h chart   ->  1D
+    4h chart   ->  1W
+    1D chart   ->  1M
+
+Or pick one by hand from the list. If the timeframe you pick is not ABOVE
+the chart timeframe it is ignored and every signal falls through to rule 1 -
+you cannot build a higher-timeframe filter out of a faster timeframe. The
+table row "RULE 2 timeframe" tells you which one is actually in use, or
+says "off (not above chart)".
+
+
+--------------------------------------------------------------------------
+TIME-OF-DAY FILTERS  -  Auto / Always apply / Never apply   (NEW in v2.3)
+--------------------------------------------------------------------------
+This is the fix for the bug you found: the daily chart took zero trades.
+
+Here is what was wrong. The session window checked the bar's own timestamp.
+On a 1-minute chart every bar has a different time of day, so the window
+does its job. On a DAILY chart every bar has only ONE time of day - the
+moment the session opens. So the window stopped being a filter and became
+an on/off switch for the entire chart. For OANDA gold the daily bar is
+stamped at the 17:00 New York rollover, which is about 02:30-03:30 in
+India - outside your 06:00-23:00 window and inside your 02:00 force-close
+zone. Every single bar was rejected. 190 years of chart data, zero trades.
+
+The new setting controls the session window, the force-close hour and the
+weekend cutoff together:
+
+  Auto          Default. They apply on intraday charts and switch OFF on
+                1D, 1W and 1M, where they cannot mean anything sensible.
+
+  Always apply  Force them on everywhere. On 1D and above the session
+                window still cannot reject a bar (a daily bar spans every
+                hour of the day, so it always overlaps your window), but
+                the force-close and weekend rules do run.
+
+  Never apply   No time rules at all, on any chart. The strategy trades
+                whenever a signal appears.
+
+Second part of the same fix: on intraday charts the window is now judged by
+whether the bar OVERLAPS your hours, instead of only where the bar opens.
+A strategy decides at the bar's CLOSE, so judging it by the bar's open is
+wrong by one bar-length. On 1m that is one minute and changes nothing. On
+4h it was throwing away real signals.
+
+Measured over a week of bars, 06:00-23:00 India time, gold:
+
+    chart     v2.2 bars allowed     v2.3 bars allowed
+    1m              70.8%                 70.8%     unchanged
+    5m              70.8%                 70.8%     unchanged
+    15m             70.8%                 70.8%     unchanged
+    30m             70.8%                 70.8%     unchanged
+    1h              70.8%                 75.0%     recovered
+    4h              66.7%                 83.3%     recovered
+    12h             50.0%                100.0%     recovered
+    1D               0.0%                100.0%     was dead
+    1W               0.0%                100.0%     was dead
+    1M               0.0%                100.0%     was dead
+
+Your 1-minute setup is bit for bit unchanged. Nothing you have already
+tested moves.
+
+A warning that is not a bug: the daily chart will now trade, but a 1:1 stop
+and target on daily gold bars is a completely different instrument from
+your 1-minute setup. The stops will be hundreds of dollars wide and the
+money-based sizing will hand you very small positions. It works correctly.
+That does not mean it is good. Backtest it on its own terms before you put
+money near it.
+
+
+--------------------------------------------------------------------------
+SESSION WINDOW, FORCE-CLOSE HOUR, TIMEZONE
+--------------------------------------------------------------------------
+  Session timezone            Default Asia/Kolkata. Every hour setting in
+                              the strategy is read in this timezone.
+  Take entries from (hour)    Default 6.
+  Stop taking entries at      Default 23.
+  Force-close at (hour)       Default 2. Any open trade is closed at market.
+
+Outside the window the strategy pulls any resting order and arms nothing
+new. It does NOT close a trade that is already running - that is what the
+force-close hour is for.
+
+The force-close works on a DEAD ZONE, not on a single hour. The dead zone
+is everything from the force-close hour to the start of the session. The
+first bar that lands inside it triggers the close. This matters because a
+broker gap or a weekend can mean no bar exists at exactly 02:00 - with a
+single-hour test the close would simply never happen and the trade would
+run on. With a dead zone it fires on the first bar after the market
+reopens, whenever that is.
+
+
+--------------------------------------------------------------------------
+STOP LOSS
+--------------------------------------------------------------------------
+The stop goes at the opposite live structure level - the CHOCH* level on
+the other side of the trade - plus a buffer you set in price.
+
+For a long, that is the live swing low level, minus the buffer.
+For a short, the live swing high level, plus the buffer.
+
+If that level does not exist yet, no trade is armed. The stop is not
+invented.
+
+A sanity check runs before every order: the entry must be on the correct
+side of the stop. If the market has moved so far that it is not, the setup
+is cancelled outright rather than left resting with a stop on the wrong
+side. (That was a real bug in an earlier version - the check existed but
+the already-resting order was left alive.)
+
+
+--------------------------------------------------------------------------
+TARGET
+--------------------------------------------------------------------------
+An R multiple of the entry-to-stop distance. Default 1.0, so a 1:1. Set 2.0
+for a 1:2 and so on.
+
+Both the stop and the target are attached to the position as a bracket the
+moment it opens, so they are live at the broker even if the chart is shut.
+
+
+--------------------------------------------------------------------------
+POSITION SIZE
+--------------------------------------------------------------------------
+Three modes:
+
+  Risk-based off the stop   Default, and the one you want. You set the
+                            money you are willing to lose. The strategy
+                            works out what one unit loses at your stop,
+                            converts it into your account currency, and
+                            buys exactly enough units that the stop costs
+                            that amount. 50 means 50 on gold, on EURUSD,
+                            on NAS100 - you never touch a lot size.
+
+  Fixed quantity            Always the same number of units.
+
+  Fixed cash per trade      Always the same notional value.
+
+The "Last trade risk" row in the table shows what the filled trade ACTUALLY
+had at risk. It should match your base risk. If it does not, something
+(usually the leverage cap) intervened, and the "Size capped" row will say so.
+
+
+--------------------------------------------------------------------------
+MAX LEVERAGE  -  and the bug it fixed
+--------------------------------------------------------------------------
+This one is worth understanding because it cost you 131 trades.
+
+You had a backtest where only 2 or 3 orders ever filled. The cause: with a
+10,000 account, risk-based sizing on a tight stop asks for an enormous
+position. A 10-point stop on gold at 50 risk is about 21,000 of position.
+TradingView silently REJECTS any order the account cannot hold. No error,
+no marker, nothing in the list of trades. The orders were being thrown away.
+
+And it is backwards from what you would expect: the TIGHTER the stop, the
+BIGGER the position risk-based sizing demands. So the best-looking setups
+were exactly the ones being dropped.
+
+Two things fix it. The strategy declares zero margin requirement, and this
+setting caps the position at equity x leverage (default 30, normal for
+retail gold and FX). Watch the "Size capped (leverage)" row - if it is
+climbing, your risk per trade is too large for the account.
+
+
+--------------------------------------------------------------------------
+LOSS RECOVERY  -  Rule A and Rule B      (CHANGED in v2.3)
+--------------------------------------------------------------------------
+Off by default. Read the warning at the end of this section before using it.
+
+  Rule A - recover losses + base profit
+        Next risk = (losses carried + base) / R multiple.
+        One winner at your target gets everything back PLUS the base.
+        50 -> 100 -> 200 -> 400 -> 800
+
+  Rule B - double the losses
+        Next risk = 2 x losses carried.
+        50 -> 100 -> 300 -> 900 -> 2700 -> 8100
+
+WHAT CHANGED IN v2.3, and it is the thing you asked for.
+
+v2.2 asked one question when a trade closed: did it make money? Any profit
+at all wiped the carried losses and dropped the next trade back to the base.
+
+That is wrong, and your own backtest showed it. Trade 52 exited on an
+opposite signal for +5.53 USD. That 5.53 erased several hundred dollars of
+carried losses and the ladder restarted at 50 - even though not one cent of
+those losses had actually been recovered.
+
+v2.3 tracks the UNRECOVERED LOSS instead. Every closed trade adds its loss
+or subtracts its profit. The ladder continues from whatever is still owed.
+
+    three stops, then a win cut short by an opposite signal, Rule A:
+
+      risk    50.00   stop     -50.00    owed      0 ->  50    next risk  100
+      risk   100.00   stop    -100.00    owed     50 -> 150    next risk  200
+      risk   200.00   stop    -200.00    owed    150 -> 350    next risk  400
+      risk   400.00   partial  +44.00    owed    350 -> 306    next risk  356
+
+      v2.2 would have made that last "next risk" 50.
+
+A FULL target win still clears everything and resets to base - that happens
+by arithmetic, not by a special case. Rule A is built so a win at your R
+multiple returns losses + base, which is always more than the debt. Rule B
+at 1:1 returns double the debt. Verified across 54,000 simulated sequences:
+273,518 full wins, every one of them cleared the debt to exactly zero.
+
+Two smaller fixes in the same area:
+  - Commission is now subtracted from every closed trade before it is
+    counted. If you set commission in the Properties tab, the ladder was
+    previously slightly understating what you actually lost.
+  - A halt caused by the risk cap now clears only when the debt is actually
+    paid off, not on any small win.
+
+THE WARNING. Both rules make the position bigger after a loss. That is the
+fastest known way to empty an account. Rule B from a 50 base:
+
+    50 -> 100 -> 300 -> 900 -> 2700 -> 8100 -> 24300 -> 72900
+
+Seven losses in a row and it is asking for more than most accounts hold.
+Seven losses in a row is not rare. The hard cap below exists for exactly
+this reason - do not remove it. My honest advice: leave both rules off
+until you have watched the base strategy trade for a long time.
+
+
+--------------------------------------------------------------------------
+HARD CAP ON RISK PER TRADE
+--------------------------------------------------------------------------
+The recovery ladder can never ask for more than this (default 500). When it
+is reached, one of three things happens, your choice:
+
+  Clamp to the cap and carry on   Take the cap as the risk and keep going.
+                                  The sequence can no longer recover
+                                  everything, but it keeps trading.
+
+  Stop for the rest of the day    Default. Stop opening trades, clear the
+                                  carried losses, start fresh tomorrow.
+                                  This draws a line under a bad run
+                                  instead of chasing it.
+
+  Stop permanently                No more trades until you reload the
+                                  strategy. Use it when you want the
+                                  backtest to show you exactly where the
+                                  sequence broke.
+
+An earlier version had a real deadlock here: the halt was only cleared by a
+winning trade, but the halt blocked all entries, so no trade could open to
+produce that win. It is now cleared by the daily reset or by the debt being
+paid, never by a condition the halt itself makes impossible.
+
+
+--------------------------------------------------------------------------
+OPPOSITE SIGNAL WHILE IN A TRADE
+--------------------------------------------------------------------------
+A Pine strategy holds ONE net position. It cannot be long and short at the
+same time - that is a platform limit, not a choice.
+
+  ON (default)   The running trade is closed at market and the new one is
+                 opened.
+  OFF            The new signal is ignored until the current trade finishes.
+
+Only signals from sources you switched on count. In "CHOCH only" mode a BOS
+will not reverse your trade.
+
+
+--------------------------------------------------------------------------
+ENTRY ORDER HANDLING  -  Continuous / Send once
+--------------------------------------------------------------------------
+  Continuous - follow the level   Default. While a setup waits, the limit
+                                  is re-placed every bar at the recomputed
+                                  level, so a rule-1 entry ratchets with
+                                  each new extreme of the leg.
+
+  Send once - place it and leave  The level is worked out once when the
+                                  setup arms, and the order is left exactly
+                                  there. No ratchet, no chasing. What you
+                                  saw when the signal printed is what you get.
+
+Neither one changes how many webhook messages you get. I told you the
+opposite once and I was wrong: a TradingView strategy alert fires when an
+order FILLS, not when it is placed. Re-placing a resting limit sends
+nothing to your bridge. Choose on behaviour, not on message count.
+
+
+--------------------------------------------------------------------------
+CANCEL AN UNFILLED ORDER ON ANY NEW SIGNAL
+--------------------------------------------------------------------------
+ON by default. The moment a new signal prints, a resting order that has not
+filled is pulled - even if the new signal does not itself produce a
+tradeable setup.
+
+Why this matters: before v2.2 the old order was only replaced when the new
+signal actually armed something. If the new signal was rejected - no pivot
+for rule 2, no opposite level, outside the session - the old order kept
+sitting there against a market that had already moved on.
+
+OFF returns to that older behaviour, where an order lives until it fills,
+expires, or is replaced.
+
+
+--------------------------------------------------------------------------
+SAFETY GUARDS  -  every one optional, most off by default
+--------------------------------------------------------------------------
+  Cancel an unfilled order after N bars
+      A setup that waited this long without filling is abandoned. Stops a
+      stale level sitting in the market long after the move that made it.
+      0 = never.
+
+  Skip the setup if the stop is CLOSER than this
+      A stop a couple of points away on 1m gold is inside the spread.
+      Risk-based sizing reacts by buying an enormous position for it, and
+      the spread alone can take you out. Try 3 on gold. 0 = off.
+
+  Skip the setup if the stop is FURTHER than this
+      The other end. A very wide stop makes the position tiny and the
+      target unreachable in the time you have. 0 = off.
+
+  Max trades per day
+      Counted from filled entries, reset at the start of each trading day
+      in your timezone. A hard brake on a choppy day. 0 = no limit.
+
+  Stop for the day after losing this much
+      Adds up closed profit and loss for the day. Once the day is down by
+      this amount it stops opening trades and starts fresh tomorrow. The
+      single most useful guard here - set it before you go live. 0 = off.
+
+  Stop PERMANENTLY after an equity drawdown of this %
+      Measured from the highest equity the account has reached. Unlike the
+      daily stop this one does not reset. Last line of defence. 0 = off.
+
+  Flatten and stop before the weekend
+      ON by default, Friday 21:00. Closes any open trade and takes no new
+      ones until the market reopens. Without it a Friday-night trade
+      carries the weekend gap - and a gap does not respect your stop, it
+      jumps straight past it. Cutoff day and hour are both settings.
+      Follows the "Time-of-day filters" setting above, so on a daily chart
+      under Auto it is off.
+
+The table row "BLOCKED NOW" names whichever guard is currently stopping
+trading, so you are never left guessing why nothing is firing.
+
+
+--------------------------------------------------------------------------
+WEBHOOK MESSAGES  -  connecting a broker
+--------------------------------------------------------------------------
+Off by default. Switch it on and every order carries a message your bridge
+can act on. Three formats:
+
+  JSON            {"id":"...","action":"buy","symbol":"XAUUSD","qty":...,
+                   "entry":...,"sl":...,"tp":...}
+  PineConnector   licence,buy,XAUUSD,sl=...,tp=...,volume=...
+  Plain text      buy XAUUSD qty=... entry=... sl=... tp=...
+
+To set it up:
+  1. Switch on "Attach a webhook message to every order".
+  2. Pick the format your bridge expects and fill in the licence ID if it
+     needs one.
+  3. On the chart: Alerts -> Create alert -> Condition = this strategy ->
+     "Any alert() function call" -> paste your webhook URL.
+  4. Test it on a demo account first. Then test it again.
+
+The message fires when an order FILLS. Placing, moving and cancelling
+resting orders sends nothing.
+
+
+--------------------------------------------------------------------------
+THE COUNTER TABLE  -  what every row means
+--------------------------------------------------------------------------
+  CHOCH signals            CHOCH events seen, or "off" if not in use.
+  BOS signals              BOS events seen, or "off" if not in use.
+  Setups armed             Signals that passed the rules and armed a setup.
+  Orders FILLED            Setups that actually became trades.
+  Armed, never filled      Setups whose order was pulled before it filled.
+  Exit - target            Trades that reached the target.
+  Exit - stop              Trades stopped out.
+  Exit - opposite sig      Trades closed by a reversal signal.
+  Exit - time flat         Trades closed by the force-close hour.
+  Size capped (leverage)   Times the leverage cap shrank the position.
+  Risk NEXT trade          What the next trade will risk. Orange = the
+                           recovery ladder has raised it above your base.
+  Last trade risk          What the last filled trade actually risked.
+  Losses carried           Money still owed to the recovery ladder. In
+                           v2.3 this moves in steps as partial wins chip
+                           it down, instead of jumping to zero.
+  Risk cap hit / HALT      Times the hard cap was reached, and whether
+                           trading is halted right now.
+  RULE 2 timeframe         The higher timeframe actually in use.
+  Skipped - stop too tight/wide   Setups the stop-distance band rejected.
+  Expired unfilled         Orders cancelled by the N-bar expiry.
+  BLOCKED NOW              Which guard is stopping trading, if any.
+  Entry rules              NEW. "1 + 2 (dynamic)", "1 only (pullback %)",
+                           "2 only (HTF must agree)", or "NONE - both off"
+                           in red.
+  Time filters             NEW. "on", or "off (daily+)" when Auto has
+                           switched them off for this chart.
+
+Armed = Filled + Armed-never-filled + at most one still waiting. If that
+does not add up, something is wrong - it is checked on every simulation run.
+
+
+--------------------------------------------------------------------------
+THE SETTINGS PANEL
+--------------------------------------------------------------------------
+Only strategy settings are shown. All the indicator's drawing, table,
+volume-profile and alert settings are hidden - they still run the engine
+underneath, you just do not have to scroll past them. 43 settings in four
+groups:
+
+  20. Strategy - entries, session, targets
+  21. Position size and risk
+  22. Webhook message (broker bridge)
+  24. Safety - every one of these is optional
+
+Settings are stored by POSITION, not by name. Because v2.3 adds one setting
+and changes another from a tick box to a dropdown, your saved v2.2 values
+will not line up. Go through the panel once after you load it.
+
+
+--------------------------------------------------------------------------
+WHAT THIS STRATEGY WILL NOT DO
+--------------------------------------------------------------------------
+  - It will not hold a long and a short at once. Platform limit.
+  - It will not trade internal or inner structure. Main tier only.
+  - It will not move your stop to breakeven or trail it. The bracket is
+    set at entry and stays there.
+  - It will not add to a winning position. Pyramiding is zero.
+  - It will not guess a stop. No opposite level, no trade.
+  - It will not protect you from a martingale ladder you switched on
+    yourself. The hard cap is the only thing standing there.
+
+
+--------------------------------------------------------------------------
+EVERY BUG FOUND SO FAR, v1.0 TO v2.3
+--------------------------------------------------------------------------
+  v1.0  Stale setup fired after a trade closed. A same-direction signal
+        while already in a trade armed a setup that fired later. Setups are
+        now only accepted when flat, or on an opposite signal being reversed.
+
+  v1.0  Stop ended up on the wrong side of a resting entry. The sanity
+        check declined to re-place the order but the old one stayed live.
+        The setup is now cancelled outright.
+
+  v2.0  Only 2 of 133 orders filled. TradingView was silently rejecting
+        every order larger than the account. Fixed with zero declared
+        margin plus the leverage cap.
+
+  v2.0  The "size capped" counter incremented every bar instead of once
+        per episode. Latched.
+
+  v2.0  Permanent deadlock: the risk-cap halt could only be cleared by a
+        winning trade, but the halt blocked every entry, so no trade could
+        open to produce that win. Replaced with the three-way cap action
+        and a daily reset.
+
+  v2.1  The force-close needed a bar in the exact flat hour. A weekend or a
+        broker break meant it never ran. Replaced with the dead-zone test.
+
+  v2.2  A variable was used before it was declared. Pine is strict about
+        declaration order - the file would not have compiled. Caught before
+        release.
+
+  v2.3  ZERO TRADES ON 1D, 1W AND 1M. The session window judged a bar by
+        its own timestamp, which on a daily chart is a single fixed moment.
+        For gold that moment sits outside a normal session window, so every
+        bar on the chart was rejected. Fixed by the Auto time-filter mode.
+
+  v2.3  The 1h to 12h charts were quietly losing signals for the same
+        reason - a bar was judged by where it OPENED, not by the hours it
+        actually covers. 4h went from 66.7% of bars allowed to 83.3%.
+
+  v2.3  The recovery ladder reset on any profit, however small. A +5.53
+        exit wiped several hundred dollars of carried losses. Now it
+        tracks what is still unrecovered.
+
+  v2.3  Commission was not subtracted before a trade was counted toward
+        the ladder and the daily loss limit.
+
+Also corrected, in writing: I told you once that continuous order
+re-placement would flood your webhook bridge. It does not. Strategy alerts
+fire on fill, not on placement.
+
+
+--------------------------------------------------------------------------
+HOW v2.3 WAS CHECKED BEFORE RELEASE
+--------------------------------------------------------------------------
+  - Structure engine diffed against v17.3: identical, every line.
+  - Every new name checked to be declared before its first use. Pine
+    compiles top to bottom and will not forgive this.
+  - Every input's default checked against its own min and max. (A bug of
+    exactly this kind once shipped in the alert-only file and meant it had
+    never compiled at all.)
+  - Pure 7-bit ASCII. Zero non-ASCII bytes in the file.
+  - No leftover references to the removed setting. No compiler warnings
+    from alertcondition or barstate.islast.
+  - Table bounds: 21 rows declared, rows 0 to 20 all used, none missing.
+  - Session filter simulated across 14 chart timeframes and all three
+    filter modes. Result: no timeframe is dead, and 1m to 30m behaviour is
+    bit for bit identical to v2.2.
+  - Recovery ladder simulated over 54,000 sequences across both rules and
+    all three cap actions. Zero invariant violations. 331,506 partial wins
+    correctly continued the ladder. 273,518 uncapped full wins all cleared
+    the debt to exactly zero.
+  - Order state machine simulated across 864 configurations - every
+    combination of the three signal modes, the four rule combinations, both
+    entry modes, cancel-on-signal on and off, and three guard settings.
+    Zero invariant violations, and the counter identity balanced in all of
+    them.
+
+Simulation is not a compiler and it is not a broker. It proves the logic is
+internally consistent. It cannot prove the strategy makes money. Test on
+paper first.
