@@ -1,0 +1,423 @@
+SETTING UP SMC STRUCTURE STRATEGY v3.2  ->  WEBHOOKTRADE  ->  FXPRO
+===================================================================
+
+A complete, in-order checklist. Do the phases in order - each one produces
+a number the next one needs. Do not skip phase 1, it decides your settings.
+
+A note on honesty: the TradingView side, the strategy settings and the
+testing protocol below are exact. On the WebhookTrade side I describe what
+each screen is FOR rather than inventing button names, because their layout
+changes and I would rather you trust this document.
+
+
+===================================================================
+PHASE 0  -  WHAT YOU NEED BEFORE YOU START
+===================================================================
+
+  [ ] A PAID TradingView plan. Webhook alerts do not exist on the free
+      plan. Essential or above.
+
+  [ ] An FxPro DEMO MT5 account. Not live. You will move to live in
+      phase 6, not before.
+
+  [ ] Your MT5 login details written down:
+        - account number (the login, a number)
+        - password (the MASTER password, not the investor password -
+          investor is read-only and cannot place trades)
+        - server name, exactly as MT5 shows it, e.g. "FxPro-MT5"
+
+  [ ] The strategy file: SMC_Structure_Strategy_v3.2.txt
+
+  [ ] 30 quiet minutes. Do not set this up five minutes before London open.
+
+
+===================================================================
+PHASE 1  -  READ THE NUMBERS OFF MT5 FIRST
+===================================================================
+Everything downstream depends on these four facts. Get them now.
+
+  1. Open MT5 and log into your FxPro demo account.
+
+  2. Find gold in the Market Watch panel (left side). If you cannot see
+     it: right-click in Market Watch -> Symbols -> search "XAU" -> add it.
+
+  3. WRITE DOWN THE EXACT SPELLING. This is the one that catches people.
+     It may be:
+           XAUUSD          plain
+           XAUUSD.s        suffixed account type
+           XAUUSD.r
+           GOLD
+     If it is not exactly "XAUUSD", tell me - the strategy currently sends
+     the chart's name and I will add a symbol override for you. A symbol
+     mismatch means the bridge finds nothing and NOTHING TRADES, with no
+     error message anywhere.
+
+  4. Right-click the symbol -> Specification. Write down:
+           Contract size        expect 100     (ounces per lot)
+           Volume step          expect 0.01    (the lot step)
+           Volume minimum       expect 0.01
+           Volume maximum
+           Profit currency      expect USD
+
+  5. Check your commission. You told me 28 per lot per side, 56 round
+     turn. Confirm it on your FxPro account type - it varies by account.
+
+  YOU NOW HAVE:  symbol name, contract size, lot step, minimum lot,
+                 commission per lot per side.
+
+
+===================================================================
+PHASE 2  -  LOAD THE STRATEGY AND SET IT UP
+===================================================================
+
+  1. TradingView -> open the chart you will trade. Use the same broker
+     feed you are comfortable with; OANDA:XAUUSD is fine.
+
+  2. Bottom panel -> Pine Editor -> Open -> New blank strategy.
+
+  3. Delete everything in the editor. Paste the whole contents of
+     SMC_Structure_Strategy_v3.2.txt.
+
+  4. Save (give it a name). Then "Add to chart".
+
+  5. It should compile with no errors. If it does not, stop and tell me
+     the exact error text and line number.
+
+  Now open the strategy settings (the gear icon) and go group by group.
+
+
+  GROUP 20  -  Strategy, entries, session, targets
+  ------------------------------------------------
+     Enable trading                     ON
+     RULE 1 - pullback % entry          ON
+     RULE 2 - broken pivot, HTF agrees  ON
+        (both on = it picks per signal. Rule 1 alone takes every signal
+         on the pullback. Rule 2 alone takes only signals the higher
+         timeframe agrees with.)
+     Take trades on                     CHOCH only   (start here)
+     RULE 1 pullback %                  50
+     Target - R multiple                1.0
+     Stop buffer                        0    (raise if you get wicked out)
+     Opposite signal: close and reverse ON
+     Entry order handling               Continuous
+     Higher timeframe for RULE 2        Auto
+     Time-of-day filters                Auto
+     Session timezone                   Asia/Kolkata
+     Take entries from / Stop at        6 / 23
+     Force-close at                     2
+     Draw levels / Show table           ON / ON
+
+  GROUP 21  -  Position size and risk
+  ------------------------------------
+     Position size                      Risk-based off the stop
+     BASE risk per trade                50        (start SMALLER on live)
+     Round the size to lot step         0.01      <- from phase 1 step 4
+     Never let rounding raise risk >    25 %
+     Max leverage                       30
+
+  GROUP 22  -  Webhook message
+  -----------------------------
+     Attach a webhook message           ON
+     Message format                     JSON      (may change - phase 3)
+     License ID / account tag           leave blank for now
+     Minimum lot your broker accepts    0.01      <- from phase 1 step 4
+     Quantity to send                   Lots      <- CRITICAL. See below.
+
+     WHY "Lots" MATTERS: Pine sizes in ounces. A trade might be 8 ounces.
+     MetaTrader expects LOTS. 8 lots of gold is 800 ounces - a hundred
+     times the position you meant, on a live account. "Lots" divides by
+     the contract size so 8 ounces goes out as 0.08. Never change this
+     without knowing exactly why.
+
+  GROUP 23  -  Commission
+  ------------------------
+     Commission model                   Auto - per lot from the ticker
+     Charge per LOT, one side           28        <- from phase 1 step 5
+     Push target out to cover commission ON
+
+  GROUP 24  -  Safety
+  --------------------
+     Cancel unfilled order on new signal  ON
+     Cancel unfilled order after N bars   0   (try 20 later)
+     Skip if stop CLOSER than             3   (gold, 1m - stops spread trades)
+     Skip if stop FURTHER than            0
+     Max trades per day                   5   (while testing)
+     Stop for the day after losing        150 (3 x your risk)
+     Stop PERMANENTLY after drawdown %    20
+     Flatten and stop before the weekend  ON, Friday, 21
+
+
+  NOW CHECK THE TABLE ON THE CHART. Three rows must be right before you
+  go any further:
+
+     "Commission model"   must show    28/lot x2, lot=100
+                          if lot= is not 100, the ticker was not
+                          recognised - tell me.
+
+     "Entry rules"        must show    1 + 2 (dynamic)
+                          if it says NONE in red, both rules are off.
+
+     "Time filters"       shows on / off (daily+). On a 1m chart: on.
+
+  Let it run on the chart for a while. Look at the Strategy Tester ->
+  List of Trades. If there are no trades at all, something is blocking -
+  read the "BLOCKED NOW" row in the table.
+
+
+===================================================================
+PHASE 3  -  WEBHOOKTRADE ACCOUNT AND BROKER CONNECTION
+===================================================================
+
+  1. Go to webhooktrade.com and create an account.
+
+  2. Check the PRICING page before anything else. I have seen conflicting
+     claims - one source says there is a free start, a competitor's page
+     says roughly a 3-day trial with no permanent free tier. Find out what
+     it actually costs before you invest an evening in it.
+
+  3. Connect your broker. You will be asked for:
+           platform      MetaTrader 5
+           login         your FxPro DEMO account number
+           password      the MASTER password
+           server        exactly as MT5 shows it, e.g. FxPro-MT5
+
+     UNDERSTAND WHAT YOU ARE DOING HERE. You are giving a third party
+     full trading control of that account, permanently, until you change
+     the password. This is why phase 3 uses a DEMO account. Do not put
+     live credentials in until phase 6.
+
+  4. Wait for the connection to show as connected / online. If it fails,
+     it is almost always the server name or the wrong password type
+     (investor instead of master).
+
+  5. Find their JSON GENERATOR. Build a sample BUY order in it, with a
+     stop loss, a take profit and a lot size.
+
+  6. COPY WHAT IT PRODUCES AND SEND IT TO ME.
+
+     This is the one step you cannot skip. WebhookTrade expects its own
+     field names. The strategy currently sends mine:
+
+        {"id":"","action":"buy","side":"long","symbol":"XAUUSD",
+         "qty":0.08,"entry":4300.000,"sl":4295.000,"tp":4305.600}
+
+     Theirs will use different names. If they do not match, their server
+     either rejects the message or misreads it - and misreading is worse
+     than rejecting. Send me their sample and I will add a "WebhookTrade"
+     option to the Message format list so it comes out exactly right.
+
+     Do not guess and do not hand-edit the Pine file. Send me the sample.
+
+  7. Copy your personal WEBHOOK URL from their dashboard. It is a long
+     https:// address. Treat it like a password - anyone who has it can
+     send orders to your account.
+
+
+===================================================================
+PHASE 4  -  CREATE THE ALERT IN TRADINGVIEW
+===================================================================
+Only ONE alert. Not one per direction. Not four. One.
+
+  1. On the chart, press Alt+A (or right-click -> Add alert).
+
+  2. CONDITION: select "SMC Structure Strategy" from the dropdown.
+     Not a price, not an indicator - the strategy itself.
+
+  3. In the second dropdown choose ORDER FILLS.
+
+     Not "alert() function calls". That option is for indicators. The
+     strategy attaches its message to each order, and those arrive
+     through Order fills. Older notes of mine said otherwise; they were
+     wrong and are corrected.
+
+  4. MESSAGE box: delete whatever is there and put exactly:
+
+           {{strategy.order.alert_message}}
+
+     Nothing else. No text around it. That placeholder is replaced with
+     the real message for whichever order just filled - buy, sell or
+     close. This is why one alert covers everything.
+
+  5. NOTIFICATIONS tab: tick "Webhook URL" and paste the URL from
+     phase 3 step 7. Untick email and popup if you do not want the noise
+     (or leave email on while testing - useful evidence).
+
+  6. EXPIRATION: set it to open-ended if your plan allows. Otherwise put
+     the furthest date it will accept and write the expiry date in your
+     calendar. An expired alert stops trading silently.
+
+  7. Name it something you will recognise: "SMC v3.2 XAUUSD 1m LIVE".
+
+  8. Create.
+
+  9. Verify it is in the Alerts panel with a green/active state.
+
+
+===================================================================
+PHASE 5  -  TEST ON DEMO. TWO WEEKS. NO SHORTCUTS.
+===================================================================
+
+  THE FIRST SIGNAL - watch this one all the way through, with your own
+  eyes, end to end:
+
+     [ ] TradingView Alerts panel -> Alert log shows it fired
+     [ ] WebhookTrade dashboard -> signal log shows it ARRIVED
+     [ ] WebhookTrade shows it was ACCEPTED, not an error
+     [ ] MT5 -> Trade tab -> a position actually opened
+     [ ] The SYMBOL is right
+     [ ] The DIRECTION is right
+     [ ] The LOT SIZE is right - this is the big one. If the strategy
+         table says 0.08 lots, MT5 must show 0.08. If MT5 shows 8.00,
+         STOP EVERYTHING and fix "Quantity to send".
+     [ ] The STOP LOSS is set at the broker, at the right price
+     [ ] The TAKE PROFIT is set at the broker, at the right price
+
+  Then watch it CLOSE:
+     [ ] The close message arrived
+     [ ] The position actually closed in MT5
+     [ ] No leftover position sitting open
+
+  EVERY DAY for two weeks:
+     [ ] Alert still active in TradingView
+     [ ] WebhookTrade still shows the broker connected
+     [ ] Number of MT5 trades roughly matches TradingView's List of Trades
+     [ ] No orphan positions in MT5 that TradingView thinks are closed
+
+  Expect the live fills to be slightly WORSE than the backtest. The
+  strategy enters on a limit; the bridge sends a market order after the
+  fill is confirmed, so price has already moved. That gap is normal and
+  it is the honest cost of this design. What you are checking for is
+  whether it is a sensible gap or a disaster.
+
+
+===================================================================
+PHASE 6  -  GOING LIVE
+===================================================================
+Only after two clean weeks on demo.
+
+  1. In WebhookTrade, connect your LIVE FxPro account (or switch the
+     existing connection). Same details, live account number.
+
+  2. LOWER YOUR RISK for the first month. If you tested at 50, go live
+     at 10 or 20. You are testing the plumbing with real money, not
+     trying to make money yet.
+
+  3. Keep these safety settings on while you are new to it:
+        Max trades per day            3 to 5
+        Stop for the day after losing 3 x your risk
+        Flatten before the weekend    ON
+
+  4. LEAVE THE LOSS-RECOVERY MODES OFF. Rule A and Rule B multiply the
+     position after a loss. Rule B goes 50 -> 100 -> 300 -> 900 -> 2700
+     -> 8100 -> 24300. Seven losses in a row is not rare. Leave them off
+     until you have months of live data.
+
+  5. Sit and WATCH the first live trade open and close. Do not go out.
+
+  6. Check every day for the first two weeks, then weekly.
+
+
+===================================================================
+PHASE 7  -  WHAT BREAKS, AND HOW YOU WILL KNOW
+===================================================================
+
+  THE ALERT DIES.
+     You have had this before - the "Calculation error" that stopped an
+     alert after a few days. Symptom: complete silence, no trades, no
+     warning. Only fix is to look at the Alerts panel. Check it daily.
+
+  YOUR PASSWORD CHANGES.
+     Change your MT5 password and the WebhookTrade connection dies
+     instantly. Symptom: alerts fire, nothing reaches MT5.
+
+  THE SYMBOL CHANGES.
+     Switching FxPro account type can change the gold symbol suffix.
+     Symptom: alerts fire, WebhookTrade receives them, MT5 does nothing.
+
+  WEBHOOKTRADE GOES DOWN.
+     Your open trades are safe - the stop and target sit at the BROKER,
+     not in the bridge. New entries just will not happen.
+
+  THE BRIDGE MISSES A CLOSE.
+     The dangerous one. An open position in MT5 that TradingView thinks
+     is closed, so it may take the next signal on top of it. This is why
+     the daily "orphan position" check is on the list. If you find one,
+     close it by hand.
+
+  A SIGNAL ARRIVES WHILE MT5 IS MID-ROLLOVER.
+     Around the daily rollover, orders can be rejected. Occasional
+     misses near that time are normal.
+
+
+===================================================================
+THINGS THAT NEED NOTHING FROM YOU
+===================================================================
+The strategy cancels resting orders constantly - on a new signal, on the
+session ending, on the expiry timer, at the weekend cutoff. NONE of that
+reaches your broker and none of it needs to.
+
+Messages are sent only when an order FILLS, never when it is placed. So
+while a setup waits, the limit order exists only inside TradingView. Your
+broker has never heard of it. When the strategy cancels it, there was
+nothing at the broker to cancel.
+
+  armed      -> nothing sent
+  cancelled  -> nothing sent
+  FILLED     -> one message, broker opens the trade
+
+ONE THING NOT TO DO: never configure the bridge to place PENDING orders
+(buy limit, sell limit, buy stop, sell stop). Then a real resting order
+exists at the broker, and the strategy has no way to cancel it, because
+cancellations do not fire alerts. You would collect stale pending orders
+the strategy believes it killed hours ago. Market orders on fill only.
+
+
+===================================================================
+TROUBLESHOOTING
+===================================================================
+
+  Alert fires, WebhookTrade shows nothing
+      -> Wrong webhook URL, or the alert is on "alert() function calls"
+         instead of "Order fills", or the message box does not contain
+         exactly {{strategy.order.alert_message}}
+
+  WebhookTrade receives it but errors
+      -> Message format mismatch. This is phase 3 step 6. Send me their
+         JSON sample.
+
+  WebhookTrade accepts it, MT5 does nothing
+      -> Symbol name mismatch, or the broker connection has dropped, or
+         the lot size is below FxPro's minimum
+
+  MT5 opens a position 100x too big
+      -> "Quantity to send" is on Raw units. Set it to Lots. Close the
+         position by hand first.
+
+  MT5 opens a position but no stop loss
+      -> The bridge is not reading the sl field. Format mismatch again.
+         Do not trade live until this works - an unprotected position is
+         how accounts die.
+
+  Trades in TradingView, none in MT5
+      -> Alert expired, or webhook not ticked in Notifications, or
+         broker disconnected
+
+  Strategy shows zero trades at all
+      -> Read the "BLOCKED NOW" table row. It names the guard that is
+         stopping you: weekend, daily limit, drawdown, risk cap, or
+         disabled.
+
+  Far fewer trades than the backtest
+      -> Check "Skipped - stop too tight/wide" and "Armed, never filled"
+         in the table. Tight-stop skips and unfilled limits are both
+         normal and both visible there.
+
+
+===================================================================
+THE ONE-LINE SUMMARY
+===================================================================
+Phase 1 gives you four numbers. Phase 2 puts them in the strategy.
+Phase 3 connects the bridge and gives me their JSON format. Phase 4 is
+one alert. Phase 5 is two weeks on demo. Phase 6 is live at small size.
+
+The step people skip is phase 5. Do not be that person.
