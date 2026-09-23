@@ -1,0 +1,1583 @@
+SMC STRUCTURE STRATEGY  -  v4.0  -  HOW EVERYTHING WORKS
+========================================================
+
+Plain English. One heading per feature, then what it does and why.
+File: SMC_Structure_Strategy_v4.0.txt      Pine Script v6      ASCII only.
+
+v4.0 is the result of a complete audit of v3.3 - every line of the strategy
+read again, then every rule tested in a simulator built for the purpose,
+comparing a TradingView backtest against a simulated live FxPro account.
+It found eleven real bugs. All are fixed. The section "WHAT THE v4.0 AUDIT
+FOUND" below explains each one in plain words.
+
+THE FIRST THING TO KNOW: your saved settings carry straight over from v3.3.
+v4.0 adds exactly one new setting and it sits at the very END of the panel
+(group 26), so nothing above it moves. You do not need to re-check the
+panel this time.
+
+THE SECOND THING: set the new "Broker spread" setting (group 26). It is the
+single change that does the most to make live results match the backtest -
+see "GETTING LIVE TO MATCH THE BACKTEST" below.
+
+
+--------------------------------------------------------------------------
+WHAT THIS STRATEGY IS
+--------------------------------------------------------------------------
+It is the SMC Market Structure indicator (v17.3 engine) with a trading
+layer bolted on top. The engine finds market structure exactly as the
+indicator does - the same pivots, the same 3-candle pullback, the same
+BOS and CHOCH. The trading layer watches only the MAIN tier (not internal,
+not inner) and turns those events into orders.
+
+Nothing about the structure engine was changed in v2.3. It is byte for byte
+the same as the indicator you already use. Only the strategy block changed.
+
+
+--------------------------------------------------------------------------
+WHAT THE v4.0 AUDIT FOUND  -  and what each fix means for you
+--------------------------------------------------------------------------
+Eleven bugs. Listed roughly in order of how much money they could cost.
+
+ 1. TRADES THE STRATEGY NEVER SAW, AND TOOK TWICE.
+    When an entry filled AND hit its stop or target inside the same bar,
+    the position was already flat by the time the strategy looked. It
+    never registered the trade. The setup stayed armed, so in continuous
+    mode it put the same order back and could take the SAME signal a
+    second time. "Max trades per day" also undercounted. In simulation
+    this was 4.5% of all trades on 1-minute gold. Fixed: fills are now
+    counted from TradingView's own trade counter, which cannot miss one.
+
+ 2. RULE B COULD STOP TRADING FOREVER.
+    After a partial win left a small debt - even a floating-point crumb
+    like 0.00000000001 - Rule B risked "double the debt", which is far
+    below the smallest lot. The order rounded to nothing, the setup was
+    skipped, and since no trade could happen, the debt could never be
+    paid. Simulated: an account owing 0.30 under Rule B took ZERO trades
+    in two weeks. Fixed: debt under half a cent counts as paid, and
+    Rule B never risks less than your base amount. Your sequences
+    (50 -> 100 -> 300 -> 900) are unchanged.
+
+ 3. COMMISSION WAS COUNTED TWICE.
+    TradingView's per-trade profit already has the Properties commission
+    taken off. v3.x took it off again. Once you set commission in
+    Properties - as these notes told you to - every trade looked worse
+    than it was: the daily loss limit tripped early and the recovery
+    ladder sized up for losses that did not exist. With a 120 daily loss
+    limit, v3.3 took 31 trades in a test where the correct count was 45.
+    (The v3.x notes said "it never adds both". That was wrong. It did.)
+
+ 4. THE HIGHER TIMEFRAME REPAINTED LIVE.
+    Rule 1 versus rule 2 is decided by the higher timeframe's trend. In
+    the backtest that came from CLOSED higher-timeframe bars; live, it
+    came from the bar still forming - so the same signal could take a
+    different rule live than it did in your backtest. Fixed: the trend
+    now always comes from the last closed higher-timeframe bar, the
+    standard TradingView method, so live and backtest see the same value.
+
+ 5. EVERY TIME RULE FIRED ONE BAR LATE.
+    Session start and end, the 02:00 force-close, the weekend cutoff and
+    the news windows were all judged at the last instant INSIDE a bar
+    instead of the instant the strategy actually acts. On 1m that was a
+    minute. On 1h the force-close happened at 03:00, not 02:00. On 4h
+    the weekend flatten came three hours after your cutoff, and a news
+    window on 4h never fired at all. Fixed - see the timing table in
+    "TIME-OF-DAY FILTERS".
+
+ 6. THE BROKER'S TARGET AND TRADINGVIEW'S TARGET COULD DRIFT APART.
+    The target sent to FxPro was fixed at entry, but TradingView kept
+    recalculating its own copy every bar from the actual fill price. On a
+    gapped fill, or in percent-commission mode, TradingView then exited
+    at a different price than your broker. Fixed: the bracket is frozen
+    at fill to exactly the values your broker was sent.
+
+ 7. A HALT BLOCKED THE PROTECTIVE EXIT.
+    With the daily loss limit, max trades, the risk cap or the drawdown
+    stop active, an opposite signal would NOT close a running trade -
+    even though outside session hours it would. A halt is meant to stop
+    new risk, not to stop you getting out. Fixed: the opposite-signal
+    exit now works whenever it is switched on.
+
+ 8. A PENDING SETUP COULD SURVIVE A TREND FLIP.
+    The rule-1 pullback level is worked out from the main trend. If the
+    trend flipped against a pending setup (easiest in "BOS only" mode),
+    a pending BUY was re-priced from the new DOWN leg - a sell-side level
+    used as a buy price. Fixed: a pending setup is cancelled the moment
+    the trend turns against it.
+
+ 9. A STALE SETUP COULD WAKE UP THE NEXT DAY.
+    A setup armed on the same bar the daily loss limit was hit stayed
+    armed, and with the time filters off it was placed the next morning
+    from yesterday's levels. Fixed: while entries are blocked, nothing
+    stays armed.
+
+10. THE STRATEGY STILL FIRED THE INDICATOR'S OWN ALERTS.
+    Inherited from the indicator: every BOS and CHOCH also sent a text
+    alert like "Bullish BOS - XAUUSD - 1 - 4312.5". If your TradingView
+    alert was set to "Order fills and alert() function calls" - one of
+    the three options in the dropdown - those texts went to your broker
+    bridge next to the real orders. Fixed: switched off. Now either
+    alert option is safe.
+
+11. TINY ORDERS COULD BE SENT AS "qty 0".
+    With lot rounding off, a near-empty position was printed in the
+    webhook as zero. Fixed: the message carries 8 decimals, and an order
+    too small to express is never placed.
+
+None of these changed how structure is found. The BOS/CHOCH engine is the
+same engine as the v17.3 indicator, line for line - the only edits in that
+part of the file switch off bug 10's alerts.
+
+
+--------------------------------------------------------------------------
+TAKE TRADES ON  -  CHOCH only / BOS only / CHOCH and BOS      (NEW in v2.3)
+--------------------------------------------------------------------------
+This decides which structure events are allowed to start a trade.
+
+  CHOCH only        A change of character. This is the reversal signal -
+                    price has broken the other way for the first time.
+                    Fewest trades. This is the default.
+
+  BOS only          A break of structure. This is the continuation signal -
+                    price keeps going the way it was already going.
+                    No reversal entries at all.
+
+  CHOCH and BOS     Both. Several times as many signals.
+
+Everything downstream is identical in all three. Same two entry rules, same
+stop, same target, same sizing, same safety guards. The only thing this
+setting changes is which events the strategy is allowed to look at.
+
+Important: events you switch OFF are completely invisible to the strategy.
+They do not arm a setup, they do not reverse a running trade, and they do
+not cancel a resting order. If you choose "CHOCH only", a BOS printing on
+the chart does nothing at all. That is deliberate - if you are not trading
+BOS, a BOS is not news.
+
+In v2.2 this was a single on/off tick box called "ALSO take trades on BOS",
+which could not express "BOS only". It is now a proper three-way choice.
+Because the setting changed type, TradingView cannot carry your old value
+across - check this setting after you load v2.3.
+
+
+--------------------------------------------------------------------------
+RULE 1  -  PULLBACK % ENTRY
+--------------------------------------------------------------------------
+When a signal fires, the strategy does not buy at market. It works out a
+retracement level of the leg and leaves a limit order there.
+
+The level is measured from the live CHOCH* level up to the running extreme
+of the leg, at whatever percentage you set (default 50%).
+
+It RATCHETS. Every time the leg makes a new extreme, the level moves and
+the resting order moves with it. A candle that goes against the leg leaves
+it alone. So the order chases the move up but never backs away from it.
+
+  Rule 1 alone (rule 2 off)   Every signal is entered this way, whatever
+                              the higher timeframe is doing. The higher
+                              timeframe is not even requested, so the
+                              script also loads faster.
+
+  Rule 1 + rule 2             Rule 1 handles the signals where the higher
+                              timeframe DISAGREES.
+
+
+--------------------------------------------------------------------------
+RULE 2  -  ENTRY AT THE BROKEN PIVOT, HIGHER TIMEFRAME MUST AGREE
+--------------------------------------------------------------------------
+When the higher timeframe trend points the same way as the signal, the
+strategy does not wait for a percentage pullback. It puts the limit order
+at the pivot the signal just broke - the level price has just cleared.
+
+The idea: when the bigger picture agrees, you do not need the discount. A
+retest of the broken level is enough.
+
+  Rule 2 alone (rule 1 off)   A signal is taken ONLY when the higher
+                              timeframe agrees. Everything else is skipped
+                              entirely - no trade at all.
+
+  Rule 1 + rule 2             The strategy decides per signal. Higher
+                              timeframe agrees -> rule 2. Disagrees ->
+                              rule 1. This is the default and it is fully
+                              dynamic, signal by signal.
+
+  Both off                    No trades at all. The table shows
+                              "Entry rules: NONE - both off" in red so you
+                              cannot leave it like that by accident.
+
+If rule 2 is on but the broken pivot cannot be identified for that signal,
+the setup is skipped rather than guessed at.
+
+
+--------------------------------------------------------------------------
+HIGHER TIMEFRAME FOR RULE 2
+--------------------------------------------------------------------------
+Auto pairs it with whatever chart you are on:
+
+    1m chart   ->  15m
+    5m chart   ->  1h
+    15m chart  ->  4h
+    1h chart   ->  1D
+    4h chart   ->  1W
+    1D chart   ->  1M
+
+Or pick one by hand from the list. If the timeframe you pick is not ABOVE
+the chart timeframe it is ignored and every signal falls through to rule 1 -
+you cannot build a higher-timeframe filter out of a faster timeframe. The
+table row "RULE 2 timeframe" tells you which one is actually in use, or
+says "off (not above chart)".
+
+CONFIRMED BARS ONLY (v4.0). The higher timeframe's trend is taken from its
+last CLOSED bar. On a 1-minute chart with a 15-minute filter, the trend that
+decides rule 1 versus rule 2 is the one the last completed 15-minute bar
+settled on - never the one the current 15-minute bar is still making up its
+mind about. That is what makes the choice identical in your backtest and
+live. The cost: a new higher-timeframe trend is picked up when its bar
+closes, not while it is forming. That is the honest price of a filter that
+does not change its mind after the fact.
+
+
+--------------------------------------------------------------------------
+TIME-OF-DAY FILTERS  -  Auto / Always apply / Never apply   (NEW in v2.3)
+--------------------------------------------------------------------------
+This is the fix for the bug you found: the daily chart took zero trades.
+
+Here is what was wrong. The session window checked the bar's own timestamp.
+On a 1-minute chart every bar has a different time of day, so the window
+does its job. On a DAILY chart every bar has only ONE time of day - the
+moment the session opens. So the window stopped being a filter and became
+an on/off switch for the entire chart. For OANDA gold the daily bar is
+stamped at the 17:00 New York rollover, which is about 02:30-03:30 in
+India - outside your 06:00-23:00 window and inside your 02:00 force-close
+zone. Every single bar was rejected. 190 years of chart data, zero trades.
+
+The new setting controls the session window, the force-close hour and the
+weekend cutoff together:
+
+  Auto          Default. They apply on intraday charts and switch OFF on
+                1D, 1W and 1M, where they cannot mean anything sensible.
+
+  Always apply  Force them on everywhere. On 1D and above the session
+                window still cannot reject a bar (a daily bar spans every
+                hour of the day, so it always overlaps your window), but
+                the force-close and weekend rules do run.
+
+  Never apply   No time rules at all, on any chart. The strategy trades
+                whenever a signal appears.
+
+Second part of the same fix: on intraday charts the window is now judged by
+whether the bar OVERLAPS your hours, instead of only where the bar opens.
+A strategy decides at the bar's CLOSE, so judging it by the bar's open is
+wrong by one bar-length. On 1m that is one minute and changes nothing. On
+4h it was throwing away real signals.
+
+Measured over a week of bars, 06:00-23:00 India time, gold:
+
+    chart     v2.2 bars allowed     v2.3 bars allowed
+    1m              70.8%                 70.8%     unchanged
+    5m              70.8%                 70.8%     unchanged
+    15m             70.8%                 70.8%     unchanged
+    30m             70.8%                 70.8%     unchanged
+    1h              70.8%                 75.0%     recovered
+    4h              66.7%                 83.3%     recovered
+    12h             50.0%                100.0%     recovered
+    1D               0.0%                100.0%     was dead
+    1W               0.0%                100.0%     was dead
+    1M               0.0%                100.0%     was dead
+
+Your 1-minute setup is bit for bit unchanged. Nothing you have already
+tested moves.
+
+ON TIME, AT EVERY TIMEFRAME (v4.0). Every time rule is now judged at the
+moment the strategy ACTS - the close of a bar - and it asks one question:
+"will any part of the NEXT bar fall inside a no-trade period?" If yes, it
+flattens and stops now. So it is exactly on time whenever a bar closes on
+the boundary, and when the boundary falls in the middle of a bar it acts at
+the last bar close BEFORE it - early, never late.
+
+Tested with a position held open permanently, every timeframe, first
+action relative to the boundary (+ = late, - = early):
+
+    chart    02:00 force-close     Fri 21:00 weekend     17:25 news window
+             v3.3       v4.0       v3.3       v4.0       v3.3        v4.0
+    1m       +1 min     0          +1 min     0          +1 min      0
+    5m       +5         0          +5         0          +5          0
+    15m      +15        0          +15        0          +20         -10
+    30m      +30        0          +30        0          +35         -25
+    1h       +60        0          +60        0          +95         -25
+    2h       +120       0          +60        -60        +155        -85
+    4h       +120       -120       +180       -60        never       -85
+
+On 1-minute and 5-minute charts every rule is now to the minute.
+
+A warning that is not a bug: the daily chart will now trade, but a 1:1 stop
+and target on daily gold bars is a completely different instrument from
+your 1-minute setup. The stops will be hundreds of dollars wide and the
+money-based sizing will hand you very small positions. It works correctly.
+That does not mean it is good. Backtest it on its own terms before you put
+money near it.
+
+
+--------------------------------------------------------------------------
+SESSION WINDOW, FORCE-CLOSE HOUR, TIMEZONE
+--------------------------------------------------------------------------
+  Session timezone            Default Asia/Kolkata. Every hour setting in
+                              the strategy is read in this timezone.
+  Take entries from (hour)    Default 6.
+  Stop taking entries at      Default 23.
+  Force-close at (hour)       Default 2. Any open trade is closed at market.
+
+Outside the window the strategy pulls any resting order and arms nothing
+new. It does NOT close a trade that is already running - that is what the
+force-close hour is for.
+
+The force-close works on a DEAD ZONE, not on a single hour. The dead zone
+is everything from the force-close hour to the start of the session. The
+first bar that lands inside it triggers the close. This matters because a
+broker gap or a weekend can mean no bar exists at exactly 02:00 - with a
+single-hour test the close would simply never happen and the trade would
+run on. With a dead zone it fires on the first bar after the market
+reopens, whenever that is.
+
+
+--------------------------------------------------------------------------
+STOP LOSS
+--------------------------------------------------------------------------
+The stop goes at the opposite live structure level - the CHOCH* level on
+the other side of the trade - plus a buffer you set in price.
+
+For a long, that is the live swing low level, minus the buffer.
+For a short, the live swing high level, plus the buffer.
+
+If that level does not exist yet, no trade is armed. The stop is not
+invented.
+
+A sanity check runs before every order: the entry must be on the correct
+side of the stop. If the market has moved so far that it is not, the setup
+is cancelled outright rather than left resting with a stop on the wrong
+side. (That was a real bug in an earlier version - the check existed but
+the already-resting order was left alive.)
+
+
+--------------------------------------------------------------------------
+TARGET
+--------------------------------------------------------------------------
+An R multiple of the entry-to-stop distance. Default 1.0, so a 1:1. Set 2.0
+for a 1:2 and so on.
+
+With "push the target out to cover the commission" on (the default), the R
+multiple is measured on NET money, after the broker's charge, not on the
+raw price distance. A 1:1 means a win pays exactly what a loss costs.
+
+Both the stop and the target are attached to the position as a bracket the
+moment it opens, so they are live at the broker even if the chart is shut.
+
+FROZEN AT FILL (v4.0). Once a trade is open, its stop and target never move
+- inside TradingView or at your broker. They are exactly the values that
+were sent to FxPro with the entry. v3.x kept recalculating TradingView's
+copy of the target from the actual fill price, so after a gapped fill the
+two could disagree about where the trade should end.
+
+
+--------------------------------------------------------------------------
+COMMISSION MODEL  -  what your broker charges              (NEW in v3.0)
+--------------------------------------------------------------------------
+Your broker charges 28 USD per lot to open a gold trade and 28 to close it.
+56 for the complete round turn. Until v3.0 the strategy did not know that,
+so when you asked it to risk 50 it sized the position off the price move
+only - and the trade actually cost you more than 50.
+
+How much more depends entirely on how tight the stop is:
+
+    stop      old qty     commission     what the "50 risk" REALLY cost
+     3 pts    16.6667 oz      9.33            59.33      18.7% over
+     5 pts    10.0000 oz      5.60            55.60      11.2% over
+    10 pts     5.0000 oz      2.80            52.80       5.6% over
+    25 pts     2.0000 oz      1.12            51.12       2.2% over
+    50 pts     1.0000 oz      0.56            50.56       1.1% over
+
+On your 1-minute gold setup, where the stops are tight, nearly one fifth of
+your risk was going somewhere you had not counted it.
+
+Five models, pick the one that matches your broker:
+
+  Off                     Exactly like v2.3. Commission ignored in sizing.
+
+  Auto - per lot,         DEFAULT. You give it the charge per LOT for ONE
+  contract size from      side (default 28). It works out how many units
+  the ticker              are in a lot from the ticker itself. It doubles
+                          the charge for the round turn.
+
+  Per lot - I set the     Same, but you type the units per lot yourself
+  contract size           when the auto guess is wrong for your broker.
+
+  Percent of trade value  For crypto and shares, where the fee is a
+                          percentage of the notional.
+
+  Fixed cash per order    A flat fee per order whatever the size.
+
+Enter every figure in your ACCOUNT currency.
+
+
+--------------------------------------------------------------------------
+HOW THE CONTRACT SIZE IS DETECTED FROM THE TICKER      (NEW in v3.0)
+--------------------------------------------------------------------------
+This is the part that makes one setting work across every instrument. A
+"lot" is a different number of units on every market, so the strategy reads
+the ticker and works it out:
+
+    ticker contains XAU, or GOLD       ->     100 units per lot
+    ticker contains XAG, or SILVER     ->    5000 units per lot
+    ticker contains XPT or XPD         ->     100 units per lot
+    a forex pair                       ->  100000 units per lot
+    anything else                      ->       1 unit per lot
+
+So your 28 per lot per side becomes:
+
+    XAUUSD     28 / 100      =  0.28  per ounce per side  (0.56 round turn)
+    XAGUSD     28 / 5000     =  0.0056 per ounce per side
+    EURUSD     28 / 100000   =  0.00028 per unit per side
+
+That 0.28 is exactly the figure you worked out yourself - 0.01 lot of gold
+costing about 28 cents a side. The maths agrees with your broker statement.
+
+IMPORTANT, and this is the one thing to watch. For an index, a crypto pair
+or a share, "units per lot" falls back to 1, because there is no standard
+lot on those markets. If you leave 28 in the box and switch to NAS100 or
+BTCUSD, the strategy will believe every single unit costs 28 to trade, and
+it will size your positions down to almost nothing. Two things protect you:
+
+  - The table row "Commission model" prints the contract size it detected,
+    so you can see it before you trade.
+  - The table row "Costs last trade" prints the commission as a
+    percentage of your risk, and turns RED above 25%.
+
+If you trade anything other than metals and forex, set the model to
+"Percent of trade value" or "Fixed cash per order" instead.
+
+
+--------------------------------------------------------------------------
+HOW COMMISSION CHANGES THE POSITION SIZE               (NEW in v3.0)
+--------------------------------------------------------------------------
+Before: quantity = risk / stop distance.
+Now:    quantity = risk / (stop distance + round-turn commission per unit).
+
+That one change makes your risk figure mean exactly what it says. With 28
+per lot per side on gold:
+
+    stop     risk       quantity      lots      commission     loss if stopped
+     3 pts     50      14.0449 oz    0.1404        7.87            50.0000
+     5 pts     50       8.9928 oz    0.0899        5.04            50.0000
+    10 pts     50       4.7348 oz    0.0473        2.65            50.0000
+    50 pts     50       0.9889 oz    0.0099        0.55            50.0000
+   300 pts     50       0.1664 oz    0.0017        0.09            50.0000
+
+50 means 50. Every time, at every stop distance, commission included.
+
+Checked across five commission models, four stop distances, four R
+multiples and three risk sizes. Largest error: 0.000000000.
+
+
+--------------------------------------------------------------------------
+PUSH THE TARGET OUT TO COVER THE COMMISSION            (NEW in v3.0, ON)
+--------------------------------------------------------------------------
+Sizing alone fixes the losing side only. If the target stays where it was,
+a winner pays LESS than a loser costs, because commission comes off the win
+as well as adding to the loss. On gold with 50 of risk:
+
+    stop  3 pts    loss 50.00    win 34.27     a winner pays 15.73 less
+    stop 10 pts    loss 50.00    win 44.70     a winner pays  5.30 less
+    stop 50 pts    loss 50.00    win 48.89     a winner pays  1.11 less
+
+On a 1:1 system that asymmetry alone turns a 50% hit rate into a losing
+account. Nothing else has to go wrong.
+
+With this ON (the default) the target is moved far enough out that a win
+nets your FULL R after commission. Loss exactly 50, win exactly 50, at
+every stop distance. Set the R multiple to 2 and a win nets exactly 100.
+
+THIS IS THE ONE SETTING IN v3.0 THAT MOVES YOUR EXISTING BACKTEST NUMBERS.
+The target is now slightly further away, so slightly fewer targets are
+reached. Switch it off and the targets go back to exactly where v2.3 put
+them. It does nothing in "Fixed cash per order" mode, where the fee does
+not scale with position size.
+
+
+--------------------------------------------------------------------------
+MAKING TRADINGVIEW'S OWN REPORT MATCH                  (NEW in v3.0)
+--------------------------------------------------------------------------
+There is one thing the script cannot do for you. TradingView's commission
+setting lives in the Properties tab of the strategy, and Pine cannot write
+to it from code - it has to be a fixed number typed into the declaration,
+which would then be wrong for every other ticker. So:
+
+  The strategy uses your commission for SIZING and for its own counters
+  automatically. That part needs nothing from you, and it is the part that
+  decides how much real money is at risk on a live trade.
+
+  TradingView's built-in performance report - net profit, the equity curve,
+  the list of trades - only knows about commission if you type it into
+  Properties.
+
+To make the report exact, the table gives you the number:
+
+  1. Read the "Properties cash/contract" row in the table. On XAUUSD with
+     28 per lot per side it says 0.28.
+  2. Settings -> Properties tab -> Commission.
+  3. Set the type to "Cash per contract" and paste that number in.
+
+TradingView then charges it on the entry order and again on the exit order,
+which is the round turn. Do this once per chart.
+
+No double counting - and this time that is actually true. TradingView's
+per-trade profit already has the Properties commission taken off, so when
+Properties has a commission set, the strategy uses that profit as it is.
+Only when Properties is empty does it subtract its own estimate.
+
+A correction: the v3.x notes promised exactly this, and the v3.x code did
+not do it - it subtracted the commission a second time. That is bug 3 in
+"WHAT THE v4.0 AUDIT FOUND".
+
+With the spread model on (group 26), the "Properties cash/contract" row
+includes half the spread as well - paste that number, not the bare 0.28.
+
+
+--------------------------------------------------------------------------
+BROKER SPREAD  -  the new setting in group 26                (NEW in v4.0)
+--------------------------------------------------------------------------
+TradingView fills your backtest at the chart price and never charges a
+spread. FxPro charges it on every trade: you buy at the ask and sell at the
+bid. On 1-minute gold with a 3 to 5 point stop, the spread alone can be 5
+to 10 percent of your risk - and it is the largest single reason a live
+account earns less than its backtest.
+
+Type your typical spread in PRICE - on FxPro gold usually around 0.20 to
+0.40. Read it off the spread column in MT5's Market Watch at the hours you
+actually trade. The strategy then treats it exactly like commission:
+
+  - the position is sized so a stop-out costs your risk amount INCLUDING
+    the spread;
+  - the target is pushed out so a win still nets your full R;
+  - the strategy's own P&L counters include it;
+  - the "Properties cash/contract" table row includes half of it per side,
+    so pasting that into Properties makes TradingView's report charge it.
+
+It changes NOTHING that is sent to your broker. 0 = not modelled.
+
+What it did in the simulation - same strategy, same market, backtest versus
+a simulated live FxPro account with 0.30 spread and about 3 seconds of
+bridge delay:
+
+                                  backtest     live        gap
+    spread not modelled           -12.34      -18.38      -6.05 per trade
+    spread 0.30 modelled          -15.03      -14.43      +0.60 per trade
+
+Without it the backtest overstated live by about 12% of your risk on every
+single trade. With it the two agree to within 60 cents a trade, and the
+win rates agree within about one percentage point. The backtest ends up
+very slightly CONSERVATIVE, which is the safe direction.
+
+Notice the live column improved too, from -18.38 to -14.43. Modelling the
+spread does not only make the backtest honest - risk-based sizing stops
+ignoring a real cost, so it stops over-sizing tight stops. (Both columns
+are negative because the simulated market is a random walk with no edge
+for anyone. Only the GAP carries over to real gold.)
+
+
+--------------------------------------------------------------------------
+POSITION SIZE
+--------------------------------------------------------------------------
+Three modes:
+
+  Risk-based off the stop   Default, and the one you want. You set the
+                            money you are willing to lose. The strategy
+                            works out what one unit loses at your stop,
+                            converts it into your account currency, and
+                            buys exactly enough units that the stop costs
+                            that amount. 50 means 50 on gold, on EURUSD,
+                            on NAS100 - you never touch a lot size.
+
+  Fixed quantity            Always the same number of units.
+
+  Fixed cash per trade      Always the same notional value.
+
+The "Last trade risk" row in the table shows what the filled trade ACTUALLY
+had at risk, commission included. It should match your base risk. If it does
+not, something (usually the leverage cap) intervened, and the "Size capped"
+row will say so.
+
+
+--------------------------------------------------------------------------
+ROUNDING THE SIZE TO YOUR BROKER'S LOT STEP        (NEW in v3.2, ON)
+--------------------------------------------------------------------------
+Brokers only accept lot sizes in fixed steps. Almost always 0.01 lots - two
+decimal places. TradingView does not know that, so up to v3.1 the backtest
+was trading 0.0828 lots while your broker would have taken 0.08. Every
+number in the report was slightly wrong, and always in a direction you
+could not see.
+
+v3.2 rounds the size the STRATEGY trades to the same step your broker uses.
+Normal rounding, exactly as you described it:
+
+    0.0828  ->  0.08          below the halfway point, rounds down
+    0.0849  ->  0.08
+    0.0850  ->  0.09          halfway and above, rounds up
+    0.0851  ->  0.09
+    0.0899  ->  0.09
+    0.0050  ->  0.01
+    0.0049  ->  0.00          too small - the setup is skipped
+
+The step is in LOTS and is converted using the contract size from the
+commission group. So 0.01 lots is 1 ounce on gold, and 1000 units on a
+forex pair. Set it to 1 for a market that trades in whole contracts or
+shares. 0 turns it off and behaves exactly like v3.1.
+
+THE CONSEQUENCE, AND IT IS THE RIGHT ONE. Your risk is no longer exactly
+the amount you set. It lands a little above or a little below. On gold with
+50 of risk:
+
+    stop      ideal oz    traded    lots     real risk    off by
+     3 pts     14.0449      14      0.14        49.84      -0.3%
+     5 pts      8.9928       9      0.09        50.04      +0.1%
+    10 pts      4.7348       5      0.05        52.80      +5.6%
+    25 pts      1.9562       2      0.02        51.12      +2.2%
+    50 pts      0.9889       1      0.01        50.56      +1.1%
+   100 pts      0.4972       0      0.00        SKIPPED
+   300 pts      0.1664       0      0.00        SKIPPED
+
+This was ALWAYS happening on your live account. v3.2 just stops the
+backtest pretending otherwise. The "Last trade risk" row now shows the real
+figure and the lot size beside it.
+
+Two things to take from that table. First, the error is worst when the
+position is smallest, because one step is then a big slice of the whole
+trade. Raising your risk makes it finer: at 200 of risk a 10-point stop
+lands 0.3% out instead of 5.6%. Second, a wide stop with a small risk
+becomes UNTRADEABLE - 50 of risk on a 100-point gold stop is half of the
+smallest lot your broker will take, so the setup is skipped rather than
+sent as an empty order. That is the honest answer, not a bug.
+
+
+--------------------------------------------------------------------------
+THE ROUNDING OVERSHOOT LIMIT                       (NEW in v3.2, 25%)
+--------------------------------------------------------------------------
+Rounding up is harmless when the position is large and dangerous when it is
+small, because at the bottom of the range one step is an enormous jump.
+
+I found this in simulation while building v3.2, and it would have been a
+real problem. On gold with 200 of risk and a 300-point stop, the ideal size
+is 0.0066 lots. Rounded normally that becomes 0.01 - and 0.01 lots on a
+300-point stop is 300 of real risk, not 200. Half as much again as you
+asked for, silently, on a live account.
+
+So: if rounding UP would push the real risk more than this far above the
+amount you set, the size is rounded DOWN instead. If rounding down reaches
+zero the setup is skipped, which is correct - that trade is too small for
+your broker to take at your risk setting.
+
+25% is the default and normal trades are nowhere near it. The worst case in
+the table above is 5.6%. Only the extreme small-size cases are caught. Set
+0 for no limit and plain rounding everywhere.
+
+It only applies to risk-based sizing. Fixed quantity and fixed cash are
+sizes you set yourself, so they are left alone.
+
+
+--------------------------------------------------------------------------
+MAX LEVERAGE  -  and the bug it fixed
+--------------------------------------------------------------------------
+This one is worth understanding because it cost you 131 trades.
+
+You had a backtest where only 2 or 3 orders ever filled. The cause: with a
+10,000 account, risk-based sizing on a tight stop asks for an enormous
+position. A 10-point stop on gold at 50 risk is about 21,000 of position.
+TradingView silently REJECTS any order the account cannot hold. No error,
+no marker, nothing in the list of trades. The orders were being thrown away.
+
+And it is backwards from what you would expect: the TIGHTER the stop, the
+BIGGER the position risk-based sizing demands. So the best-looking setups
+were exactly the ones being dropped.
+
+Two things fix it. The strategy declares zero margin requirement, and this
+setting caps the position at equity x leverage (default 30, normal for
+retail gold and FX). Watch the "Size capped (leverage)" row - if it is
+climbing, your risk per trade is too large for the account.
+
+Since v3.2 the cap is applied AFTER rounding, and when it bites the size is
+rounded DOWN to the lot step rather than sitting just above the cap. A cap
+that gets rounded back over the limit is not a cap.
+
+
+--------------------------------------------------------------------------
+LOSS RECOVERY  -  Rule A and Rule B      (CHANGED in v2.3)
+--------------------------------------------------------------------------
+Off by default. Read the warning at the end of this section before using it.
+
+  Rule A - recover losses + base profit
+        Next risk = (losses carried + base) / R multiple.
+        One winner at your target gets everything back PLUS the base.
+        50 -> 100 -> 200 -> 400 -> 800
+
+  Rule B - double the losses
+        Next risk = 2 x losses carried, but never less than your base.
+        50 -> 100 -> 300 -> 900 -> 2700 -> 8100
+
+  The "never less than your base" part is new in v4.0. Without it, a small
+  leftover debt - 5, or 0.30, or a floating-point crumb - made Rule B ask
+  for a position smaller than the smallest lot, the order rounded to zero,
+  and because no trade could happen the debt could never be paid. Trading
+  stopped for good. Debt under half a cent now counts as paid as well.
+
+WHAT CHANGED IN v2.3, and it is the thing you asked for.
+
+v2.2 asked one question when a trade closed: did it make money? Any profit
+at all wiped the carried losses and dropped the next trade back to the base.
+
+That is wrong, and your own backtest showed it. Trade 52 exited on an
+opposite signal for +5.53 USD. That 5.53 erased several hundred dollars of
+carried losses and the ladder restarted at 50 - even though not one cent of
+those losses had actually been recovered.
+
+v2.3 tracks the UNRECOVERED LOSS instead. Every closed trade adds its loss
+or subtracts its profit. The ladder continues from whatever is still owed.
+
+    three stops, then a win cut short by an opposite signal, Rule A:
+
+      risk    50.00   stop     -50.00    owed      0 ->  50    next risk  100
+      risk   100.00   stop    -100.00    owed     50 -> 150    next risk  200
+      risk   200.00   stop    -200.00    owed    150 -> 350    next risk  400
+      risk   400.00   partial  +44.00    owed    350 -> 306    next risk  356
+
+      v2.2 would have made that last "next risk" 50.
+
+A FULL target win still clears everything and resets to base - that happens
+by arithmetic, not by a special case. Rule A is built so a win at your R
+multiple returns losses + base, which is always more than the debt. Rule B
+at 1:1 returns double the debt. Verified across 54,000 simulated sequences:
+273,518 full wins, every one of them cleared the debt to exactly zero.
+
+Two smaller fixes in the same area:
+  - Commission is subtracted from every closed trade before it is counted.
+    In v3.0 this works whether or not you set commission in Properties: the
+    real figure is used when it is there, the strategy's own estimate when
+    it is not, never both.
+  - A halt caused by the risk cap now clears only when the debt is actually
+    paid off, not on any small win.
+
+THE WARNING. Both rules make the position bigger after a loss. That is the
+fastest known way to empty an account. Rule B from a 50 base:
+
+    50 -> 100 -> 300 -> 900 -> 2700 -> 8100 -> 24300 -> 72900
+
+Seven losses in a row and it is asking for more than most accounts hold.
+Seven losses in a row is not rare. The hard cap below exists for exactly
+this reason - do not remove it. My honest advice: leave both rules off
+until you have watched the base strategy trade for a long time.
+
+
+--------------------------------------------------------------------------
+HARD CAP ON RISK PER TRADE
+--------------------------------------------------------------------------
+The recovery ladder can never ask for more than this (default 500). When it
+is reached, one of three things happens, your choice:
+
+  Clamp to the cap and carry on   Take the cap as the risk and keep going.
+                                  The sequence can no longer recover
+                                  everything, but it keeps trading.
+
+  Stop for the rest of the day    Default. Stop opening trades, clear the
+                                  carried losses, start fresh tomorrow.
+                                  This draws a line under a bad run
+                                  instead of chasing it.
+
+  Stop permanently                No more trades until you reload the
+                                  strategy. Use it when you want the
+                                  backtest to show you exactly where the
+                                  sequence broke.
+
+An earlier version had a real deadlock here: the halt was only cleared by a
+winning trade, but the halt blocked all entries, so no trade could open to
+produce that win. It is now cleared by the daily reset or by the debt being
+paid, never by a condition the halt itself makes impossible.
+
+
+--------------------------------------------------------------------------
+OPPOSITE SIGNAL WHILE IN A TRADE
+--------------------------------------------------------------------------
+A Pine strategy holds ONE net position. It cannot be long and short at the
+same time - that is a platform limit, not a choice.
+
+  ON (default)   The running trade is closed at market and the new one is
+                 opened.
+  OFF            The new signal is ignored until the current trade finishes.
+
+Only signals from sources you switched on count. In "CHOCH only" mode a BOS
+will not reverse your trade.
+
+v4.0: the CLOSE works even while a guard has trading halted - daily loss
+limit, max trades, risk cap, drawdown, news window, weekend. A halt stops
+NEW trades. It no longer stops you getting out of one the structure says
+is wrong. The reversal into the new direction still waits for the halt to
+lift.
+
+A same-direction signal while you are in a trade is ignored - it never
+adds, never moves the target, never stacks a second position.
+
+
+--------------------------------------------------------------------------
+ENTRY ORDER HANDLING  -  Continuous / Send once
+--------------------------------------------------------------------------
+  Continuous - follow the level   Default. While a setup waits, the limit
+                                  is re-placed every bar at the recomputed
+                                  level, so a rule-1 entry ratchets with
+                                  each new extreme of the leg.
+
+  Send once - place it and leave  The level is worked out once when the
+                                  setup arms, and the order is left exactly
+                                  there. No ratchet, no chasing. What you
+                                  saw when the signal printed is what you get.
+
+Neither one changes how many webhook messages you get. I told you the
+opposite once and I was wrong: a TradingView strategy alert fires when an
+order FILLS, not when it is placed. Re-placing a resting limit sends
+nothing to your bridge. Choose on behaviour, not on message count.
+
+
+--------------------------------------------------------------------------
+CANCEL AN UNFILLED ORDER ON ANY NEW SIGNAL
+--------------------------------------------------------------------------
+ON by default. The moment a new signal prints, a resting order that has not
+filled is pulled - even if the new signal does not itself produce a
+tradeable setup.
+
+Why this matters: before v2.2 the old order was only replaced when the new
+signal actually armed something. If the new signal was rejected - no pivot
+for rule 2, no opposite level, outside the session - the old order kept
+sitting there against a market that had already moved on.
+
+OFF returns to that older behaviour, where an order lives until it fills,
+expires, or is replaced.
+
+
+--------------------------------------------------------------------------
+SAFETY GUARDS  -  every one optional, most off by default
+--------------------------------------------------------------------------
+  Cancel an unfilled order after N bars
+      A setup that waited this long without filling is abandoned. Stops a
+      stale level sitting in the market long after the move that made it.
+      0 = never.
+
+  Skip the setup if the stop is CLOSER than this
+      A stop a couple of points away on 1m gold is inside the spread.
+      Risk-based sizing reacts by buying an enormous position for it, and
+      the spread alone can take you out. Try 3 on gold. 0 = off.
+
+  Skip the setup if the stop is FURTHER than this
+      The other end. A very wide stop makes the position tiny and the
+      target unreachable in the time you have. 0 = off.
+
+  Max trades per day
+      Counted from filled entries, reset at the start of each trading day
+      in your timezone. A hard brake on a choppy day. 0 = no limit.
+
+  Stop for the day after losing this much
+      Adds up closed profit and loss for the day. Once the day is down by
+      this amount it stops opening trades and starts fresh tomorrow. The
+      single most useful guard here - set it before you go live. 0 = off.
+
+  Stop PERMANENTLY after an equity drawdown of this %
+      Measured from the highest equity the account has reached. Unlike the
+      daily stop this one does not reset. Last line of defence. 0 = off.
+
+  Flatten and stop before the weekend
+      ON by default, Friday 21:00. Closes any open trade and takes no new
+      ones until the market reopens. Without it a Friday-night trade
+      carries the weekend gap - and a gap does not respect your stop, it
+      jumps straight past it. Cutoff day and hour are both settings.
+      Follows the "Time-of-day filters" setting above, so on a daily chart
+      under Auto it is off.
+
+The table row "BLOCKED NOW" names whichever guard is currently stopping
+trading, so you are never left guessing why nothing is firing.
+
+v4.0: while any guard blocks entries, nothing stays armed. A setup that was
+waiting is cancelled rather than left to be placed later from stale levels.
+
+
+--------------------------------------------------------------------------
+TRADE 24/7  -  WEEKENDS                          (NEW in v3.3, OFF)
+--------------------------------------------------------------------------
+Group 24, below the weekend cutoff settings.
+
+  OFF (default)  The weekend rules apply. The strategy flattens at the
+                 cutoff and takes nothing until the market reopens. Right
+                 for gold, forex, indices - anything that closes.
+
+  ON             Saturday and Sunday are treated like any other day. For
+                 crypto and anything else that runs round the clock, where
+                 there is no weekend gap to protect against.
+
+It overrides the weekend block completely, so you do not have to remember
+to switch the cutoff off as well - switch this on and weekends are simply
+allowed.
+
+TWO THINGS TO BE CLEAR ABOUT.
+
+First, this only unlocks SATURDAY AND SUNDAY. Your session hours in group
+20 still apply, so with the default 06:00-23:00 you get weekend trading
+during those hours only. For genuinely round-the-clock trading also set
+"Time-of-day filters" in group 20 to "Never apply".
+
+Second, DO NOT SWITCH THIS ON FOR GOLD. A position carried over the weekend
+meets the Monday gap, and a gap does not respect your stop - it jumps
+straight past it. The whole reason the weekend cutoff exists is that one
+gap can cost more than a month of good trades. This toggle is for markets
+that do not gap because they never close.
+
+Checked in simulation over three full weeks: with it off, zero fills land
+on a Saturday or Sunday. With it on, 706 of 2,423 fills do.
+
+
+--------------------------------------------------------------------------
+NEWS / BLACKOUT WINDOWS                          (NEW in v3.3, group 25)
+--------------------------------------------------------------------------
+Three time windows in which the strategy will not trade. All off by
+default. Use them on days when you know something is coming - a rate
+decision, NFP, CPI - and you would rather be flat than in front of it.
+
+  Window 1 / 2 / 3 - block trading      a tick box each
+  - window N time                       a time range, e.g. 1725-1835
+  When a window starts                  Close any open trade  /
+                                        Leave open trades alone
+
+MINUTES WORK. Click the time field and you get a proper picker. 17:25 to
+18:35 means exactly that - not 17:00 to 19:00. Everything else in the
+strategy that deals with time is hour-only; these windows are not.
+
+Times are read in the SESSION TIMEZONE from group 20 - Asia/Kolkata by
+default - not exchange time. A window may cross midnight: 2330-0030 works.
+
+INSIDE A WINDOW:
+  - no new setups are armed
+  - any resting order is cancelled immediately
+  - an open trade is closed, or left alone, depending on the setting
+  - the table's "BLOCKED NOW" row reads "news window" so you know why
+    nothing is happening
+
+Windows can overlap. Three overlapping windows behave as one long one.
+
+WHICH EXIT MODE TO USE. "Close any open trade" is the safe answer for a
+real news release: a spike straight through your stop can fill far worse
+than the price you set, and being flat beforehand is the only reliable
+protection. "Leave open trades alone" keeps the running trade with its
+stop and target and only blocks NEW entries - use it if you would rather
+let a winner finish than be flattened by the clock.
+
+TIMING (v4.0). The strategy flattens at the last bar close BEFORE the
+window, so on a 1-minute or 5-minute chart you are flat AT 17:25, not a bar
+after it. On bigger charts, where 17:25 falls inside a bar, it flattens at
+the close before that bar - a little early, never late. v3.3 was one bar
+late on every chart and on 4h never fired at all. You no longer need to
+start windows a few minutes early.
+
+Only the TIME of a window is read. If the time picker adds days of the
+week, they are ignored - switch a window on for the news day and off
+afterwards.
+
+INTRADAY ONLY. On 1D, 1W and 1M charts the windows are ignored, because a
+daily bar carries one single time of day - a blackout window there would
+either block the entire chart or nothing at all. Same reason the session
+filters switch off up there.
+
+Checked in simulation: a single 17:25-18:35 window removed 135 of 1,775
+fills, and across 96 configurations no order ever rested, no setup was ever
+armed, and no position was ever left open without a close pending inside a
+window.
+
+
+--------------------------------------------------------------------------
+GETTING LIVE TO MATCH THE BACKTEST  -  what to actually do
+--------------------------------------------------------------------------
+The strategy's DECISIONS are now identical live and in the backtest: same
+signals, same rule choice, same timing, same bracket. What can still differ
+is the PRICE you get, and that is down to three things.
+
+  1. Spread - the biggest one. Set group 26. Measured above: it closes the
+     gap from about 6 per trade to under 1.
+
+  2. Your broker enters at MARKET after TradingView confirms the fill.
+     The strategy uses limit orders; the message goes out when TradingView
+     sees the limit touched, and FxPro then buys at market a second or two
+     later. On average that is a little worse than the limit price. This
+     is the normal cost of alert-driven automation and no setting removes
+     it. (A bridge that places real pending limit orders at the broker
+     would - see "WHAT COULD STILL BE BETTER" at the end.)
+
+  3. Different price feeds. Your chart is OANDA; your broker is FxPro.
+     Structure levels are worked out from OANDA prices and traded at FxPro
+     prices. FxPro became a TradingView partner broker in 2025 - if your
+     account type lets you connect it, chart FxPro's OWN gold feed so the
+     levels are your broker's levels. (Their TradingView link appears to be
+     for cTrader-type accounts - check with FxPro for MT5.)
+
+The checklist, in order:
+
+  [ ] Group 26: set "Broker spread" to your real gold spread (e.g. 0.30).
+  [ ] Properties -> Commission -> Cash per contract -> paste the number
+      from the table's "Properties cash/contract" row.
+  [ ] Group 24: "Skip if the stop is CLOSER than" at least 3 to 5 times
+      your spread. Tight stops are where friction eats the most.
+  [ ] Consider "Send once" entry handling for live. Fewer moving orders,
+      and the level you saw is the level you get.
+  [ ] Group 22: "Minimum lot your broker accepts" = 0.01.
+  [ ] Demo for two weeks. Compare trade by trade against the List of
+      Trades. After 30 to 50 trades you have your real gap as a number.
+
+
+--------------------------------------------------------------------------
+AUTOMATION  -  the short version
+--------------------------------------------------------------------------
+ONE alert. Not four. You do not set up buy, sell, buy-close and sell-close
+separately.
+
+That is the whole reason this is a strategy and not an indicator. With an
+indicator you would need one alert per condition. With a strategy,
+TradingView fires the SAME alert every time an order fills and swaps in the
+message belonging to that particular order. The same alert says buy on a
+long entry, sell on a short entry and close on an exit. The strategy
+decides which - you never do.
+
+The chain:
+
+    TradingView cloud -> an order fills -> the alert fires -> webhook URL
+                                                                  |
+                                                            bridge service
+                                                                  |
+                                                          your broker / MT5
+
+Your computer can be off, because TradingView runs the alert on its own
+servers. Whatever sits in the bridge box has to run 24/7, which normally
+means a cheap VPS.
+
+
+--------------------------------------------------------------------------
+SETTING THE ALERT UP  -  the exact clicks
+--------------------------------------------------------------------------
+  1. Group 22: switch on "Attach a webhook message to every order".
+  2. Pick the format your bridge expects, and set "Quantity to send".
+  3. On the chart: Alerts -> Create Alert.
+  4. Condition = SMC Structure Strategy, and choose ORDER FILLS.
+  5. Message box:  {{strategy.order.alert_message}}
+  6. Notifications tab -> tick Webhook URL -> paste your bridge's URL.
+  7. Save. That one alert covers every trade from then on.
+
+Step 4 matters. Earlier notes said "Any alert() function call" - that is the
+wording for an INDICATOR and it is wrong here. The strategy attaches its
+message to each order, and those arrive through Order fills.
+
+v4.0: "Order fills and alert() function calls" is now safe too. Up to v3.3
+the strategy still fired the indicator's own BOS/CHOCH text alerts, and
+that option would have sent them to your bridge. They are switched off.
+
+Webhooks need a paid TradingView plan.
+
+
+--------------------------------------------------------------------------
+QUANTITY TO SEND  -  lots or units       (NEW in v3.1, read this one)
+--------------------------------------------------------------------------
+This is the most dangerous setting in the file. Wrong one way and every
+trade is a hundred times too big.
+
+Pine sizes in UNITS. On gold a unit is one ounce, so a trade might be 8.28.
+MetaTrader bridges - PineConnector, TradingConnector, most MT4/MT5 tools -
+expect LOTS. 8.28 LOTS of gold is 828 ounces. That is a 100x position, and
+v3.0 sent exactly that.
+
+  Lots (default)   Divides by the contract size from the commission group.
+                   8.28 ounces goes out as 0.0828. This is what an MT4 or
+                   MT5 bridge wants.
+
+  Raw units        Sends 8.28. Correct for broker REST APIs that think in
+                   units, such as OANDA.
+
+If you are unsure, leave it on Lots. Sending lots to a units broker makes
+the trade 100x too SMALL, which costs you nothing. The other way round
+empties the account.
+
+CHECK YOUR FIRST LIVE TRADE against your broker terminal before you walk
+away from it. Look at the position size with your own eyes.
+
+
+--------------------------------------------------------------------------
+MINIMUM LOT YOUR BROKER ACCEPTS          (NEW in v3.1, default off)
+--------------------------------------------------------------------------
+Brokers refuse an order below their minimum lot, usually 0.01. TradingView
+does not know that, so the backtest happily fills a 0.0099-lot trade your
+broker would throw away, and you are left wondering why a signal you watched
+print never reached the account.
+
+Set this to your broker's minimum and the strategy skips such a setup
+instead of sending an order that gets rejected. Skipped ones are counted in
+the "Skipped - stop too tight/wide" row.
+
+It bites when the stop is wide and the risk is small. 50 of risk on a
+300-point gold stop is 0.0017 lots - untradeable at most brokers. Either
+raise the risk or accept that very wide stops are not tradeable at your size.
+
+0 = no check, exactly like v3.0. This is the same class of problem as the
+leverage bug that silently swallowed 131 of your orders, which is why it is
+here.
+
+
+--------------------------------------------------------------------------
+THE MESSAGE FORMATS  -  what actually gets sent
+--------------------------------------------------------------------------
+Three formats. Every one of these is what v3.1 really produces, on XAUUSD,
+8.28 ounces, licence 12345, in Lots mode.
+
+JSON - for your own bridge or a broker API:
+
+  entry long   {"id":"12345","action":"buy","side":"long","symbol":"XAUUSD",
+                "qty":0.0828,"entry":4300.000,"sl":4295.000,"tp":4305.600}
+  exit         {"id":"12345","action":"close","side":"long","symbol":"XAUUSD",
+                "qty":0.0828,"entry":4300.000,"sl":null,"tp":null}
+
+PineConnector - for MT4 and MT5:
+
+  entry long   12345,buy,XAUUSD,sl=4295.000,tp=4305.600,volume=0.0828
+  exit long    12345,closelong,XAUUSD
+  exit short   12345,closeshort,XAUUSD
+
+Plain text - for a bridge that parses words:
+
+  entry long   buy XAUUSD side=long qty=0.0828 entry=4300.000 sl=4295.000
+               tp=4305.600
+  exit         close XAUUSD side=long qty=0.0828 entry=4300.000
+
+Two details worth knowing. The stop and target ride along with the ENTRY
+message, so your broker holds the real bracket - it survives the bridge
+crashing. And sl= / tp= are PRICES, not pips; check that against your
+bridge's documentation, because some expect pips.
+
+
+--------------------------------------------------------------------------
+HOW ORDER CANCELLATION WORKS IN AUTOMATION
+--------------------------------------------------------------------------
+Short answer: there is nothing to cancel at the broker, so nothing needs to
+be sent.
+
+The strategy works with limit orders - the pullback level for rule 1, the
+broken pivot for rule 2 - and it cancels them constantly. On a new signal,
+on the session ending, on the expiry timer, on the weekend cutoff. In the
+backtest you will see far more setups armed than orders filled.
+
+None of that ever reaches your broker, because A MESSAGE IS ONLY SENT WHEN
+AN ORDER FILLS, never when it is placed. So while a setup is waiting, the
+limit order exists ONLY inside TradingView. Your broker knows nothing about
+it. When the strategy cancels it, the order simply disappears from
+TradingView and the broker never had anything to cancel.
+
+    armed        -> nothing sent, broker sees nothing
+    cancelled    -> nothing sent, broker still sees nothing
+    FILLED       -> one buy or sell message, broker opens the trade
+
+So all of these work automatically and need nothing from your bridge:
+cancel on a new signal, the N-bar expiry, the session window closing, the
+weekend cutoff, the stop-distance skip, the minimum-lot skip.
+
+The consequence you do need to understand: your broker entry is a MARKET
+order, sent after TradingView has already confirmed the fill. Price touched
+your limit and then the message went out. So the real entry will be slightly
+worse than the backtest, every time. That is the price of this design, and
+it is the normal one.
+
+ONE THING NOT TO DO. Do not configure your bridge to place PENDING orders -
+buylimit, selllimit, buystop, sellstop. If it does, a real resting order
+exists at the broker, and the strategy has no way to tell it to cancel,
+because cancellations do not fire alerts. You would end up with stale
+pending orders at the broker that the strategy believes it killed hours
+ago. Market orders on fill only.
+
+
+--------------------------------------------------------------------------
+MAKING SURE IT IS ACTUALLY RUNNING
+--------------------------------------------------------------------------
+  - Alerts die. You have seen this yourself with the "Calculation error"
+    that stopped an alert after a few days. A dead alert stops your
+    automation silently - no trades, no warning. Check it is still alive
+    every day.
+  - Run it on a DEMO account for at least two weeks first. Compare every
+    fill against the backtest.
+  - Watch the first live trade's position size in your broker terminal
+    before you leave it alone.
+  - Backtest fills are optimistic. Expect worse entries live.
+
+--------------------------------------------------------------------------
+THE COUNTER TABLE  -  what every row means
+--------------------------------------------------------------------------
+  CHOCH signals            CHOCH events seen, or "off" if not in use.
+  BOS signals              BOS events seen, or "off" if not in use.
+  Setups armed             Signals that passed the rules and armed a setup.
+  Orders FILLED            Setups that actually became trades.
+  Armed, never filled      Setups whose order was pulled before it filled.
+  Exit - target            Trades that reached the target.
+  Exit - stop              Trades stopped out.
+  Exit - opposite sig      Trades closed by a reversal signal.
+  Exit - time flat         Trades closed by the force-close hour.
+  Size capped (leverage)   Times the leverage cap shrank the position.
+  Risk NEXT trade          What the next trade will risk. Orange = the
+                           recovery ladder has raised it above your base.
+  Last trade risk          What the last filled trade actually risked, and
+                           since v3.2 the lot size beside it. With lot-step
+                           rounding on, this will not be exactly your base
+                           risk - that is the point of it.
+  Losses carried           Money still owed to the recovery ladder. In
+                           v2.3 this moves in steps as partial wins chip
+                           it down, instead of jumping to zero.
+  Risk cap hit / HALT      Times the hard cap was reached, and whether
+                           trading is halted right now.
+  RULE 2 timeframe         The higher timeframe actually in use.
+  Skipped - stop too tight/wide   Setups the stop-distance band rejected.
+  Expired unfilled         Orders cancelled by the N-bar expiry.
+  BLOCKED NOW              Which guard is stopping trading, if any. Since
+                           v3.3 it also reads "news window".
+  Entry rules              NEW. "1 + 2 (dynamic)", "1 only (pullback %)",
+                           "2 only (HTF must agree)", or "NONE - both off"
+                           in red.
+  Time filters             "on", or "off (daily+)" when Auto has switched
+                           them off for this chart.
+  Commission model         NEW. What is being charged and the contract size
+                           detected, e.g. "28/lot x2, lot=100". Check this
+                           row the first time you load a new ticker.
+  Commission PAID total    NEW. Everything the broker has taken across the
+                           whole backtest.
+  Properties cash/contract NEW. The number to paste into the Properties
+                           tab so TradingView's own report matches.
+  Exit - news window       NEW in v3.3. Trades closed because a blackout
+                           window started. "off" when no window is on.
+  Costs last trade         What the last filled trade cost in fees plus
+                           the modelled spread (renamed in v4.0),
+                           and what share of your risk that was. RED above
+                           25% - that means the commission model is wrong
+                           for this ticker, or your stop is far too tight
+                           to be worth trading.
+
+Armed = Filled + Armed-never-filled + at most one still waiting. If that
+does not add up, something is wrong - it is checked on every simulation run.
+
+
+--------------------------------------------------------------------------
+SPEED  -  what v4.0 made faster, and what it deliberately did not touch
+--------------------------------------------------------------------------
+FASTER:
+
+  - An order is only re-sent when something about it actually changed -
+    entry, stop, target or size. v3.x re-submitted the identical order,
+    bracket and webhook text on every bar a setup was waiting. In the
+    simulation that cut order submissions by 54%.
+  - The bracket is attached once at entry instead of being rewritten on
+    every bar of a running trade.
+
+Verified: across 240 random settings combinations, v4.0 took EXACTLY the
+same trades as the unoptimised version - same bars, same prices, same
+sizes, same exits. The speed-up changes nothing you trade.
+
+NOT TOUCHED, ON PURPOSE: the structure engine itself. The strategy only
+trades main-tier signals, but the file still runs the internal and inner
+tiers too, and that is most of the work on every bar. It would be the
+biggest speed win - and I did not take it. The three tiers share pivot
+lists and inducement logic, and the higher-timeframe filter reads internal
+levels in its own calculation. Cutting the unused tiers out could silently
+change which main-tier signals fire, and there is no way to prove it does
+not without TradingView itself. A faster load is not worth trades that
+quietly differ from the indicator you have been checking them against.
+
+
+--------------------------------------------------------------------------
+THE SETTINGS PANEL
+--------------------------------------------------------------------------
+Only strategy settings are shown. All the indicator's drawing, table,
+volume-profile and alert settings are hidden - they still run the engine
+underneath, you just do not have to scroll past them. 62 settings in seven
+groups:
+
+  20. Strategy - entries, session, targets
+  21. Position size and risk
+  22. Webhook message (broker bridge)
+  23. Commission / broker charges
+  24. Safety - every one of these is optional
+  25. News / blackout windows
+  26. Live-trading realism  (the broker spread - new in v4.0)
+
+Settings are stored by POSITION, not by name. v3.0 inserted a whole new
+group in the middle, v3.1 added two settings to group 22 and v3.2 adds two
+to group 21, and v3.3 adds one to group 24 plus a whole new group 25, so
+everything below shifts and your saved values will not line up.
+
+v4.0 is the exception: its one new setting is appended at the very end, so
+every setting you saved in v3.3 lands exactly where it was. Go through the panel once after you load it. This matters most
+for the group 24 safety numbers - check them before you trade.
+
+
+--------------------------------------------------------------------------
+WHAT THIS STRATEGY WILL NOT DO
+--------------------------------------------------------------------------
+  - It will not hold a long and a short at once. Platform limit.
+  - It will not trade internal or inner structure. Main tier only.
+  - It will not move your stop to breakeven or trail it. The bracket is
+    set at entry and stays there.
+  - It will not add to a winning position. Pyramiding is zero.
+  - It will not guess a stop. No opposite level, no trade.
+  - It will not protect you from a martingale ladder you switched on
+    yourself. The hard cap is the only thing standing there.
+
+
+--------------------------------------------------------------------------
+EVERY BUG FOUND SO FAR, v1.0 TO v4.0
+--------------------------------------------------------------------------
+  v1.0  Stale setup fired after a trade closed. A same-direction signal
+        while already in a trade armed a setup that fired later. Setups are
+        now only accepted when flat, or on an opposite signal being reversed.
+
+  v1.0  Stop ended up on the wrong side of a resting entry. The sanity
+        check declined to re-place the order but the old one stayed live.
+        The setup is now cancelled outright.
+
+  v2.0  Only 2 of 133 orders filled. TradingView was silently rejecting
+        every order larger than the account. Fixed with zero declared
+        margin plus the leverage cap.
+
+  v2.0  The "size capped" counter incremented every bar instead of once
+        per episode. Latched.
+
+  v2.0  Permanent deadlock: the risk-cap halt could only be cleared by a
+        winning trade, but the halt blocked every entry, so no trade could
+        open to produce that win. Replaced with the three-way cap action
+        and a daily reset.
+
+  v2.1  The force-close needed a bar in the exact flat hour. A weekend or a
+        broker break meant it never ran. Replaced with the dead-zone test.
+
+  v2.2  A variable was used before it was declared. Pine is strict about
+        declaration order - the file would not have compiled. Caught before
+        release.
+
+  v2.3  ZERO TRADES ON 1D, 1W AND 1M. The session window judged a bar by
+        its own timestamp, which on a daily chart is a single fixed moment.
+        For gold that moment sits outside a normal session window, so every
+        bar on the chart was rejected. Fixed by the Auto time-filter mode.
+
+  v2.3  The 1h to 12h charts were quietly losing signals for the same
+        reason - a bar was judged by where it OPENED, not by the hours it
+        actually covers. 4h went from 66.7% of bars allowed to 83.3%.
+
+  v2.3  The recovery ladder reset on any profit, however small. A +5.53
+        exit wiped several hundred dollars of carried losses. Now it
+        tracks what is still unrecovered.
+
+  v2.3  Commission was not subtracted before a trade was counted toward
+        the ladder and the daily loss limit.
+
+  v3.0  Commission was not in the position size at all. Risking "50" on a
+        3-point gold stop actually cost 59.33 - 18.7% more than you asked
+        for, and the tighter the stop the worse it got. Sizing now includes
+        the round-turn charge.
+
+  v3.0  Even with sizing fixed, a winner paid less than a loser cost,
+        because the fee comes off the win as well as adding to the loss. On
+        a 3-point stop a 1:1 "winner" netted 34.27 against a 50.00 loser.
+        The target now covers the charge.
+
+  v3.1  THE WEBHOOK SENT 100x THE POSITION SIZE. PineConnector's volume=
+        is in LOTS, the strategy was sending UNITS. An 8.28-ounce gold
+        trade went out as "volume=8.28", which is 8.28 lots - 828 ounces.
+        Live, on a real account, that is an account-ending order. Fixed
+        with the "Quantity to send" setting, which divides by the contract
+        size and defaults to Lots.
+
+  v3.1  JSON mode sent invalid JSON on every exit. The weekend, time-flat
+        and opposite-signal closes have no stop or target, so the message
+        came out as "sl":NaN,"tp":NaN. Any normal parser rejects that, so
+        the close would never have reached the broker - leaving a live
+        position the strategy believed it had closed. Now sends null.
+
+  v3.1  PineConnector mode sent the command "close", which does not exist
+        in PineConnector. Same outcome: exits silently ignored. Now sends
+        closelong or closeshort.
+
+  v3.1  The alert setup in these notes said "Any alert() function call".
+        That is the indicator wording. For a strategy it is "Order fills".
+        Following the old instruction would have produced an alert that
+        never fired on a trade.
+
+  v3.2  The backtest traded sizes no broker would accept. TradingView
+        filled 0.0828 lots; a real account takes 0.08. Every figure in the
+        report was therefore slightly wrong. Sizes are now rounded to the
+        broker's lot step before the order is placed.
+
+  v3.2  Found in simulation before release, not in the wild: rounding UP
+        at the smallest sizes could raise the real risk by 50%. 0.0066
+        lots rounds to 0.01, and on a 300-point gold stop that is 300 of
+        risk instead of 200. Capped by the overshoot limit.
+
+  v4.0  The full audit. Eleven bugs - each one explained at the top of
+        these notes under "WHAT THE v4.0 AUDIT FOUND": same-bar trades the
+        strategy never saw (and could take twice), Rule B stopping forever
+        on a small debt, commission counted twice, the higher timeframe
+        repainting live, every time rule one bar late, the broker's target
+        drifting from TradingView's, halts blocking the protective exit, a
+        pending setup surviving a trend flip, a stale setup waking up the
+        next day, the indicator's alerts reaching the webhook, and tiny
+        orders printed as qty 0.
+
+Also corrected, in writing: I told you once that continuous order
+re-placement would flood your webhook bridge. It does not. Strategy alerts
+fire on fill, not on placement.
+
+
+--------------------------------------------------------------------------
+HOW v4.0 WAS CHECKED BEFORE RELEASE
+--------------------------------------------------------------------------
+A simulator was built for this audit. It ports the strategy block line by
+line - both v3.3 and v4.0 - and drives it with a market-structure engine on
+tick-level price paths, a TradingView-style order emulator (limits at the
+level, gap fills at the open, close-all at the next open, the same
+high-first / low-first rule inside a bar), and a model of a live MT5 account
+behind a webhook bridge (bid/ask spread, about 3 seconds of delay,
+slippage, market orders on fill, the broker holding the bracket it was
+sent).
+
+Every rule is written as a check that must hold on every single bar:
+
+  - no resting order while any gate is closed
+  - no position and no fill inside a news window, the weekend block or the
+    02:00-06:00 flat zone
+  - an opposite signal always closes the trade by the next open
+  - the bracket in TradingView always equals the one sent to the broker
+  - no pending setup against the main trend
+  - every order on the lot step, under the leverage cap, inside the
+    rounding limit, above the broker minimum
+  - no entry after the daily loss limit; never more trades than the max
+  - the recovery debt never negative
+  - the strategy's P&L equals the real P&L - commission counted once
+  - every fill counted; armed = filled + cancelled + still waiting
+  - every webhook message valid - JSON parses, PineConnector commands
+    real, quantity equal to the traded size
+
+Results:
+
+  - v4.0 sweep: 800 random combinations of every setting, two weeks of
+    1-minute bars each, 26,242 simulated trades. ZERO violations of any
+    rule. Every rule was genuinely exercised: 730,800 bars inside the
+    02:00-06:00 flat zone, 582,600 inside news windows, 132,660 on blocked
+    weekends, 718,183 with an order resting.
+  - v3.3 in the same sweep broke 11 different rules in 547 of the 800
+    combinations - which is how most of the eleven bugs were found.
+  - v4.0 versus the unoptimised version: identical trades in 240 of 240
+    combinations, with 54% fewer order submissions.
+  - Time rules measured on 1m, 5m, 15m, 30m, 1h, 2h and 4h - table above.
+  - Rule B forced into the small-debt trap: v3.3 zero trades, v4.0 normal.
+  - Backtest versus simulated live: the spread table above.
+
+Static checks, as every release: every name declared before use (Pine is
+strict), every input default inside its limits, pure ASCII, table bounds,
+brackets, no empty blocks, the input list identical to v3.3 in order with
+one setting appended, and the structure engine identical to v17.3 apart
+from the four alert switches.
+
+What simulation cannot do: it cannot compile Pine and it cannot see real
+gold. It proves the logic is consistent and that each rule does what it
+says. It does not prove the strategy makes money. Demo first.
+
+
+--------------------------------------------------------------------------
+  - Structure engine diffed against v17.3: identical, every line. v3.0
+    changes nothing outside the strategy block.
+  - Every new name checked to be declared before its first use. Pine
+    compiles top to bottom and will not forgive this.
+  - Every input's default checked against its own min and max. (A bug of
+    exactly this kind once shipped in the alert-only file and meant it had
+    never compiled at all.)
+  - Pure 7-bit ASCII. Zero non-ASCII bytes in the file.
+  - No leftover references to the removed setting. No compiler warnings
+    from alertcondition or barstate.islast.
+
+  - Session filter simulated across 14 chart timeframes and all three
+    filter modes. Result: no timeframe is dead, and 1m to 30m behaviour is
+    bit for bit identical to v2.2.
+  - Recovery ladder simulated over 54,000 sequences across both rules and
+    all three cap actions. Zero invariant violations. 331,506 partial wins
+    correctly continued the ladder. 273,518 uncapped full wins all cleared
+    the debt to exactly zero.
+  - Order state machine simulated across 1,728 configurations - every
+    combination of the five commission models, the three signal modes, the
+    four rule combinations, both entry modes, cancel-on-signal on and off,
+    and two guard settings. Zero invariant violations, and the counter
+    identity balanced in all of them.
+  - Commission maths checked across five models, four stop distances, four
+    R multiples and three risk sizes. The loss equals the risk you set and
+    the win equals R times the risk you set, to nine decimal places.
+  - The dangerous edge case - a fixed per-order fee larger than the risk
+    amount - was hit 38,952 times in simulation. Every time the strategy
+    refused to place the order rather than sending a zero-size one.
+  - Table bounds re-checked: 25 rows declared, rows 0 to 24 all used.
+  - Blackout windows and the 24/7 toggle simulated across 96
+    configurations over 21 simulated days each - both exit modes, six
+    window sets including overlapping windows and one crossing midnight,
+    weekends allowed and blocked. Zero invariant violations: no order
+    resting inside a window, no setup armed inside one, no position left
+    open without a close pending, and the counter identity balanced every
+    time.
+  - Both features proved to actually do work rather than silently pass:
+    the 24/7 toggle moved weekend fills from 0 to 706, and a single
+    17:25-18:35 window removed 135 of 1,775 fills.
+  - Window membership checked at the minute: 17:24 is outside, 17:25 is
+    inside, 18:35 is outside, and a 2330-0030 window correctly spans
+    midnight.
+  - Lot-step rounding checked against the exact rule: 0.0828 to 0.08,
+    0.0849 to 0.08, 0.0850 / 0.0851 / 0.0899 to 0.09, 0.0049 to zero and
+    skipped. All eight boundary cases match.
+  - Sizing swept over 2,240 combinations - five lot steps, four contract
+    sizes, four overshoot limits, seven stop distances, four risk amounts.
+    Zero violations: no size off the lot step, no size over the leverage
+    cap, no overshoot past the limit, no negative quantity. 996 of them
+    correctly refused as too small to trade.
+  - Order state machine re-run with rounding switched on, 720
+    configurations. Zero invariant violations, and 25,624 zero-size
+    sizings were refused rather than sent as empty orders.
+  - Every webhook message the strategy can produce - three formats x six
+    order types - was generated and checked. Every JSON message parses.
+    Every PineConnector command is a real command. No NaN anywhere. Lot
+    conversion checked on gold and on a forex pair.
+
+Simulation is not a compiler and it is not a broker. It proves the logic is
+internally consistent. It cannot prove the strategy makes money. Test on
+paper first.
+
+
+--------------------------------------------------------------------------
+WHAT COULD STILL BE BETTER  -  options for later, not done in v4.0
+--------------------------------------------------------------------------
+  1. REAL PENDING ORDERS AT THE BROKER. The one gap no setting closes: the
+     broker enters at market after TradingView's limit fills. The fix is to
+     send the pending limit itself to FxPro when the setup arms, and a
+     cancel when TradingView cancels it. It needs a bridge that supports
+     pending orders AND cancellations, and it is only safe in "Send once"
+     mode. I have not built it until we know exactly what your bridge
+     (WebhookTrade or another) accepts - a lost cancel message would leave
+     a live order at the broker that the strategy thinks is gone.
+
+  2. CHART YOUR BROKER'S OWN FEED. If FxPro's TradingView connection works
+     with your account, charting FxPro gold removes the OANDA-versus-FxPro
+     price difference entirely. No code needed.
+
+  3. BAR MAGNIFIER. TradingView Premium can resolve fills inside a bar
+     from lower-timeframe data instead of guessing high-first or low-first.
+     The simulation showed the guess rarely changes a 1-minute trade, so
+     this is a small gain - but it is free if your plan has it.
+
+  4. A LESS FRICTION-SENSITIVE TIMEFRAME. Every cost here - spread,
+     commission, delay - is a fixed amount per trade. On 1-minute gold with
+     3 to 5 point stops that is a large slice of your risk. On 5-minute,
+     with wider stops, the same costs are a much smaller slice. Worth a
+     backtest with the spread model on before deciding.
+
