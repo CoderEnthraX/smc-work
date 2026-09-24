@@ -896,11 +896,17 @@ Off by default. Read the warning at the end of this section before using it.
   Rule A - recover losses + base profit
         Next risk = (losses carried + base) / R multiple.
         One winner at your target gets everything back PLUS the base.
-        50 -> 100 -> 200 -> 400 -> 800
+        At 1:1   50 -> 100 -> 200 -> 400 -> 800
+        At 1:3   50 -> 33.33 -> 44.44 -> 59.26 -> 79.01
+        (At 1:3 a win pays three times the risk, so a third is enough.
+        After the first loss the risk is LOWER than the base.)
 
   Rule B - double the losses
         Next risk = 2 x losses carried, but never less than your base.
         50 -> 100 -> 300 -> 900 -> 2700 -> 8100
+        That is when every loss is a full stop. It doubles the TOTAL
+        carried, not the last trade. A trade closed early by an opposite
+        signal loses less than its risk, so the next step is smaller.
 
   The "never less than your base" part is new in v4.0. Without it, a small
   leftover debt - 5, or 0.30, or a floating-point crumb - made Rule B ask
