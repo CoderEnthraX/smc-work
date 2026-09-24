@@ -18,10 +18,11 @@ same webhook messages as v4.0. The one exception is explained in
 THE FIRST THING TO KNOW: your saved settings carry straight over from v4.0.
 v4.1 adds no settings and moves none.
 
-THE SECOND THING: open Settings -> Properties and look at "Margin for long
-positions" and "Margin for short positions". Both should be 0. If they are
-not, TradingView simulates margin calls that cut your trades into slices -
-that is where your extra 46 "fills" came from. See "MARGIN CALLS" below.
+THE SECOND THING: open Settings -> Properties and set it up exactly as in
+"THE PROPERTIES TAB" below. Two of your settings there were hurting you:
+leverage 30x (it caused the "Margin call" exits - that is where your extra
+46 "fills" came from) and Script execution "On realtime bar tick" (it makes
+live trading act on unfinished candles, which the backtest never does).
 
 THE THIRD THING (from v4.0): set the "Broker spread" setting (group 26). It
 is the single change that does the most to make live results match the
@@ -35,8 +36,8 @@ WHAT v4.1 FIXES  -  the counter table
     Your table said 54 setups armed and 100 orders filled. That is
     impossible - every trade starts from an armed setup - and it was a bug.
 
-    What happened: when the Properties tab has a margin requirement set,
-    TradingView simulates a broker margin call. It does not close the
+    What happened: when the Properties tab's leverage is low enough (yours
+    was 30x), TradingView simulates a broker margin call. It does not close the
     whole position. It closes a SLICE of it, and every slice appears as a
     separate closed trade in the List of Trades. Your screenshot shows it:
     one trade of 75.8 and one of 0.2 with the same entry - that is one
@@ -821,47 +822,70 @@ that gets rounded back over the limit is not a cap.
 
 
 --------------------------------------------------------------------------
-MARGIN CALLS  -  check Properties -> Margin                  (NEW in v4.1)
+MARGIN CALLS  -  what they are and how to stop them        (NEW in v4.1)
 --------------------------------------------------------------------------
-TradingView can pretend to be a broker that closes your position when the
-account runs out of margin. It is switched on by two numbers in the
-Properties tab:
+WHAT A MARGIN CALL IS. When you trade with leverage, the broker lends you
+most of the position. You only put up a deposit, called margin. At 30x
+leverage the deposit is 1/30 of the position's value. If the trade loses
+so much that your account can no longer cover that deposit, the broker
+closes some or all of the trade by force. That forced close is a margin
+call.
 
-    Settings -> Properties -> "Margin for long positions"   and
-                              "Margin for short positions"
+TradingView can pretend to be that broker. The switch is in:
 
-This strategy sets both to 0 in its code, which means "no margin calls".
-But the Properties tab keeps whatever was saved on your chart, so a value
-from an older script or a saved default can still be sitting there. Your
-table (100 fills from 54 setups) and your List of Trades (a 75.8 and a 0.2
-from the same entry) say it was very likely on for you.
+    Settings -> Properties -> "Long leverage"  and  "Short leverage"
 
-Why it is wrong for this strategy: the strategy already caps every
-position with its own "Max leverage" setting (group 21). On top of that, a
-margin call in TradingView does not work like FxPro's stop-out. It closes
-slices of the position at prices FxPro would not have closed them at. That
-makes the backtest show losses - and trades - your real account would not
-have. It also breaks the link between one TradingView trade and one
-broker trade, and the broker never hears about those slice closes.
+(Older TradingView versions called these "Margin for long / short
+positions", in percent. 30x leverage = 3.33% margin. Same thing.)
 
-What to do:
+WHY YOUR TRADES WERE EXITING ON "MARGIN CALL". Your Properties leverage
+was 30x AND the strategy's own "Max leverage" setting (group 21) was 30.
+That combination makes every big trade start at 100% of your margin:
 
-  1. Properties -> set both margin boxes to 0. Click OK.
-  2. The "Margin calls (Properties)" row in the table should read 0.
-     In the List of Trades, no exit should say "Margin call".
-  3. If you WANT to keep a margin model on (to see when a real stop-out
-     could happen), set it to your real FxPro requirement and keep
-     "Max leverage" well BELOW your broker's leverage. A position capped
-     at 30x with Properties margin at 1/30 (3.33%) uses 100% of the
-     account's margin from the first tick - any loss at all triggers a
-     margin call. Half the broker's leverage is a sane ceiling.
+    Account 10,000.  Gold at 4,000.
+    Rule B asks for a big trade. The strategy's Max leverage 30 cuts it
+    to the most the account may hold:
+        10,000 x 30 = 300,000 of gold = 75 ounces = 0.75 lots
+    TradingView's deposit at 30x:
+        300,000 / 30 = 10,000  ->  your WHOLE account
+    Price moves 1.00 against you:
+        loss 75, account 9,925, deposit still about 10,000
+        -> not enough -> TradingView force-closes part of the trade.
+           That part appears in the List of Trades as "Margin call".
 
-With Loss recovery B the trades get large quickly - your screenshot shows
-554 of risk on the next trade. Those are exactly the trades that hit the
-leverage cap, and exactly the ones a margin call would cut up. Watch the
-"Trades cut by leverage cap" row: if it climbs, the account is too small
-for the ladder you have set, and the ladder cannot recover what it thinks
-it is recovering.
+Your stop was several points away. It never got a chance. TradingView
+closes a slice - about four times what it needs, so it does not repeat
+every bar - and the rest of the trade carries on. That is why you saw one
+trade split into a 75.8 and a 0.2.
+
+A real broker would not have done this. FxPro lets your account fall a
+long way below the full deposit (to its "stop-out level") before it closes
+anything, and a 75 loss on a 10,000 account is nowhere near that.
+TradingView's version fires the moment the deposit is not fully covered.
+
+HOW TO STOP IT - two settings, both needed:
+
+  1. Properties -> Long leverage = 100x, Short leverage = 100x.
+     The same 0.75-lot trade then needs a 3,000 deposit, so a margin call
+     would need a 7,000 loss on ONE trade. With your stop and your risk
+     cap that cannot happen, so margin calls simply stop.
+     Rule of thumb: Properties leverage at least 3 times the strategy's
+     Max leverage. Higher is fine.
+
+  2. Inputs -> group 21 -> "Max leverage" = your REAL FxPro leverage for
+     gold, or lower. This is the setting that actually limits your trade
+     size. If it is higher than FxPro allows you, FxPro will refuse the
+     big trades the backtest takes. (Check your account leverage in
+     FxPro Direct or MT5.)
+
+Then check: the table's "Margin calls (Properties)" row reads 0, and no
+exit in the List of Trades says "Margin call".
+
+The "Trades cut by leverage cap" row is still worth watching. With Loss
+recovery B the trades grow fast - your table showed 554 of risk on the
+next trade. If this row keeps climbing, the account is too small for the
+ladder you have set, and the ladder cannot recover what it thinks it is
+recovering.
 
 
 --------------------------------------------------------------------------
@@ -1078,6 +1102,42 @@ COULD STILL BE BETTER").
 (The simulated market has no edge for anyone, so only the GAP column
 carries over to real gold - not whether either mode made money.)
 
+WHEN EXACTLY DOES THE ENTRY FILL - AT THE CANDLE CLOSE OR ON THE TOUCH?
+
+Two different moments:
+
+  The LEVEL is worked out at each candle CLOSE. (Only in continuous mode
+  does it change after the first time.)
+
+  The FILL happens in REAL TIME, on the tick where price touches the
+  level - in the middle of a candle, not at its close. The alert fires on
+  that same tick, your bridge gets the message, and FxPro opens the trade
+  at market, with the stop and target, a second or two later.
+
+Your example, continuous mode, 25% pullback:
+
+  Leg 4300 -> 4312. The order sits at 4309.00 (25% down from 4312).
+  Price pulls back only 20%, to 4309.60, and turns up. No touch, no fill.
+  (Say that small dip did not form a new structure low. If it did, the
+  stop and the start of the leg move up with it - the level is always
+  25% of the CURRENT leg.)
+  Price climbs to 4320. At THAT candle's close the order moves to
+      4320 - 25% of 20 = 4315.00   (stop 4299.00, size 0.03 lots,
+                                    target 4365.24)
+  A later candle dips to 4314.90. On the tick that touches 4315.00,
+  TradingView fills, the alert goes out at once, FxPro buys 0.03 lots at
+  market with SL 4299.00 and TP 4365.24.
+
+  In send-once mode the order stays at 4309.00 the whole time, so the dip
+  to 4314.90 does not fill it.
+
+One detail: the level only moves at a candle close. If price makes a new
+high and pulls back 25% from it inside the SAME one-minute candle, the
+order is still at the old level during that candle.
+
+All of this assumes Script execution = "On bar close" in the Properties
+tab (see "THE PROPERTIES TAB").
+
 
 --------------------------------------------------------------------------
 CANCEL AN UNFILLED ORDER ON ANY NEW SIGNAL
@@ -1232,6 +1292,76 @@ window.
 
 
 --------------------------------------------------------------------------
+THE PROPERTIES TAB  -  every setting, exactly                (NEW in v4.1)
+--------------------------------------------------------------------------
+Settings (gear icon on the strategy) -> Properties. These are the values
+that make TradingView do exactly what your Inputs say - nothing added,
+nothing taken away.
+
+  Initial capital          Your real FxPro balance, in USD. The leverage
+                           cap and the drawdown guard are worked out from
+                           it. (The position size is not - that comes from
+                           your risk amount.)
+
+  Default order size       Leave it (1, Quantity). The strategy always
+                           sends its own size; this box is never used.
+
+  Pyramiding               0. The strategy is built for one position.
+
+  Bar detalization         Leave "Default". If your plan offers a lower
+                           timeframe here (Premium plans), you may pick
+                           it: the backtest then knows whether the stop or
+                           the target came first inside a candle. It does
+                           not change live trading.
+
+  Script execution         "On bar close" ONLY. Untick "On realtime bar
+                           tick" and "After order is filled".
+                           THIS ONE MATTERS MOST. With "On realtime bar
+                           tick" ticked, the strategy recalculates on every
+                           price tick of the live candle - so live, it
+                           acts on CHOCH / BOS signals and levels from a
+                           candle that has not finished, which can vanish
+                           by the close. Your backtest never sees that; it
+                           only ever sees finished candles. Live and
+                           backtest stop matching.
+
+  Commission               Type "Cash per contract". Value: the table's
+                           "Paste into Properties cash/contract" row -
+                           0.28 for your 28-per-lot gold commission, or
+                           more if the spread setting (group 26) is on.
+                           Only TradingView's report uses this. The
+                           strategy never counts it twice.
+
+  Long leverage            100x. See "MARGIN CALLS" for why - 30x was
+  Short leverage           causing your margin-call exits.
+
+  Slippage                 0. Your 200 ticks makes every stop and every
+                           market close 0.20 worse in the backtest (gold's
+                           tick is 0.001), and the strategy's sizing
+                           cannot see it - so a stopped trade loses more
+                           than the risk you set. Put your real trading
+                           costs into group 26 "Broker spread" instead:
+                           then the size, the target and the report all
+                           include them.
+
+  Limit order execution    "Requested price". The entry fills the moment
+                           price touches your level - which is exactly
+                           what the strategy, and the alert, assume.
+
+  Order execution delay    "One tick". An order is filled on the next
+                           price tick after it is placed - the normal
+                           behaviour the strategy was built and tested on.
+
+Then click OK.
+
+AFTER CHANGING ANY SETTING, MAKE THE ALERT AGAIN. A TradingView alert
+keeps a copy of the settings from the moment it was created. Changing
+Inputs or Properties later does NOT change a running alert. Delete the old
+alert and create it again (see "SETTING THE ALERT UP"), or the broker
+keeps trading the old settings.
+
+
+--------------------------------------------------------------------------
 GETTING LIVE TO MATCH THE BACKTEST  -  what to actually do
 --------------------------------------------------------------------------
 The strategy's DECISIONS are now identical live and in the backtest: same
@@ -1258,8 +1388,9 @@ is the PRICE you get, and that is down to three things.
 
 The checklist, in order:
 
-  [ ] Properties -> Margin for long / short positions = 0. The table's
-      "Margin calls (Properties)" row must read 0.
+  [ ] Properties tab set exactly as in "THE PROPERTIES TAB": Script
+      execution "On bar close" only, leverage 100x, slippage 0. The
+      table's "Margin calls (Properties)" row must read 0.
   [ ] Group 26: set "Broker spread" to your real gold spread (e.g. 0.30).
   [ ] Properties -> Commission -> Cash per contract -> paste the number
       from the table's "Properties cash/contract" row.
@@ -1308,6 +1439,8 @@ SETTING THE ALERT UP  -  the exact clicks
   5. Message box:  {{strategy.order.alert_message}}
   6. Notifications tab -> tick Webhook URL -> paste your bridge's URL.
   7. Save. That one alert covers every trade from then on.
+  8. Changed any Input or Properties setting later? Delete the alert and
+     make it again. An alert keeps the settings it was created with.
 
 Step 4 matters. Earlier notes said "Any alert() function call" - that is the
 wording for an INDICATOR and it is wrong here. The strategy attaches its
