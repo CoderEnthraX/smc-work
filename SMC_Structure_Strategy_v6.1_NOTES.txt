@@ -70,6 +70,12 @@ WHAT v6.1 CHANGES
     While the charge per lot is 0 it reads "0 - type yours in group 23"
     in orange.
 
+37. RUNNING IT 24/7 WITHOUT YOUR LAPTOP (notes and handbook only).
+    Step by step: TheConnector's EA on an MQL5 VPS - prepare, rent,
+    migrate, switch the laptop's Algo Trading off, and test with the
+    laptop shut down. See "RUNNING IT 24/7". The strategy file itself
+    is unchanged.
+
 With the same commission and spread typed in, v6.1 takes exactly the
 same trades as v6.0 and v5.2 - checked in the simulator.
 
@@ -2354,6 +2360,136 @@ differ from the backtest.
 
 
 --------------------------------------------------------------------------
+RUNNING IT 24/7  -  TheConnector on an MQL5 VPS         (NEW, v6.1 notes)
+--------------------------------------------------------------------------
+WHAT HAS TO RUN, AND WHERE. Three pieces make a trade:
+
+  1. The strategy and its alert       TradingView's servers. Already
+                                      24/7 - your laptop is not needed.
+  2. TheConnector's webhook receiver  TheConnector's cloud. Already
+                                      24/7.
+  3. MT5 with TheConnector's EA       YOUR LAPTOP. This is the piece
+                                      that stops when the laptop sleeps.
+
+The EA inside MT5 picks up each command from TheConnector's cloud and
+places the order at FxPro. So MT5 must be running somewhere all the
+time. An MQL5 VPS is MetaQuotes' own server that runs a copy of your MT5
+for you, 24/7, next to your broker.
+
+WHAT IT COSTS. $15 for one month, $14 a month for three, $12.80 a month
+for a year. mql5.com has also offered a free trial of 1,440 minutes (24
+hours) to every account - use it for the first test if it is shown to
+you. One subscription covers ONE trading account: a demo and a live
+account need one each.
+
+WHAT IT CANNOT DO.
+  - It runs Expert Advisors only. No DLL files. TheConnector's EA talks
+    to TheConnector through MT5's normal web requests, which the VPS
+    supports, so it should run - but test it before you rely on it.
+  - You cannot open its screen. You see its logs, and your trades in
+    any MT5 (laptop or phone) logged in to the same account.
+  - An account that asks for a one-time password at every login cannot
+    be used.
+
+PART A  -  PREPARE MT5 ON YOUR LAPTOP (once)
+
+  1. Log in to the FxPro MT5 account you will automate, with the MAIN
+     (trading) password, not the investor password. Tick "Save
+     password".
+  2. Tools -> Options -> Community: log in with your mql5.com account
+     (free to create at mql5.com). The VPS is rented through it.
+  3. Tools -> Options -> Expert Advisors:
+       - tick "Allow algorithmic trading";
+       - tick "Allow WebRequest for listed URL" and add TheConnector's
+         address exactly as TheConnector's MT5 guide gives it;
+       - leave "Allow DLL imports" OFF. It is not allowed on the VPS.
+  4. Close every chart but ONE, for example XAUUSD M1. In Market Watch
+     keep only the symbols you trade (right-click -> Hide all, then add
+     yours back).
+  5. Drag TheConnector's EA onto that one chart. In its inputs type your
+     ACCOUNT_CODE and ROUTING_TOKEN from TheConnector's dashboard. On
+     the Common tab tick "Allow Algo Trading".
+  6. Check it works on the laptop first: the Experts tab shows the EA
+     loaded with no errors, and TheConnector's dashboard shows the
+     robot connected.
+
+PART B  -  RENT THE VPS AND MOVE MT5 ONTO IT
+
+  7. Navigator -> Accounts -> right-click your FxPro account ->
+     "Register a Virtual Server" (or the VPS button in the toolbar).
+  8. MT5 picks the server closest to FxPro and shows how much faster it
+     is than your own connection. FxPro's servers are in London (Equinix
+     LD4), so expect a London server and a ping of a few milliseconds.
+  9. Choose the free trial if it is offered, otherwise one month. Take
+     the yearly plan only after the test below has passed.
+ 10. Pay, then choose the migration type "Experts" (Expert Advisors and
+     indicators). "All" is only needed if you also copy MQL5 signals.
+     Click "Migrate".
+ 11. What moves across: your account login, the chart, the EA with its
+     inputs, the Market Watch symbols, and the WebRequest permission
+     with its address list. On the VPS, algorithmic trading is ALWAYS
+     on.
+
+PART C  -  RIGHT AFTER MIGRATING
+
+ 12. ON THE LAPTOP, SWITCH THE "ALGO TRADING" BUTTON OFF (toolbar). If
+     you leave it on, the EA runs in two places at once and every
+     command could be placed twice. With the button off you can keep
+     MT5 open on the laptop just to watch, or close it.
+ 13. Look at the VPS log: Navigator -> right-click the virtual server ->
+     Journal (the Toolbox also has a VPS tab). You want to see the
+     migration finish and TheConnector's EA load with no errors. An
+     error 4014 on a web request means TheConnector's address is not in
+     the WebRequest list: add it on the laptop (step 3) and migrate
+     again.
+ 14. TheConnector's dashboard should show the robot connected again -
+     now from the VPS.
+
+PART D  -  THE REAL TEST, ON A DEMO ACCOUNT, LAPTOP OFF
+
+ 15. Shut the laptop down completely.
+ 16. In TradingView, create ONE temporary test alert on any symbol with
+     a condition that fires soon (for example price crossing a level just
+     above the current price), with your TheConnector webhook URL and
+     this fixed message:
+        {"action":"buy","symbol":"XAUUSD","volume":0.01,"tag":"smcgold"}
+     (use your MT5 gold symbol name if it is different).
+ 17. When it fires, open MT5 on your phone: a 0.01-lot buy must appear
+     on the DEMO account. Close it from the phone, or with a second test
+     alert whose message is {"action":"closelong","symbol":"XAUUSD",
+     "tag":"smcgold"}.
+ 18. DELETE THE TEST ALERTS. A fixed message is only for this test - the
+     strategy's own alert must keep the message
+     {{strategy.order.alert_message}}.
+ 19. If the trade appeared with the laptop off, the VPS works. Only now
+     take the longer plan, and set the strategy's own alert on the live
+     account (after the two demo weeks).
+
+WHEN YOU CHANGE SOMETHING LATER
+
+  - Anything inside MT5 (EA inputs, a new TheConnector robot version, a
+    different chart or symbol): change it on the laptop, switch Algo
+    Trading ON only while you check it, switch it OFF again, then
+    right-click the virtual server and migrate again. The VPS copy is
+    replaced by what the laptop has.
+  - Anything in the strategy (TradingView settings): the VPS is not
+    involved. As always, delete the strategy's alert and create it
+    again after the change.
+  - Renewal: in your mql5.com profile -> Hosting, check the end date and
+    auto-renewal. When the subscription ends, the VPS stops and so do
+    your trades - silently.
+  - TradingView alerts can expire too: check the alert's expiry date.
+
+IF THE MQL5 VPS WILL NOT RUN TheConnector's EA (errors in its log, or no
+test trade): the fallback is an ordinary Windows VPS in London, where you
+install MT5 yourself exactly like on the laptop and leave it running -
+for example Azure's free 12 months (a small B1S server, UK South region),
+Contabo (about $10 a month) or FxPro's own VPS ($30 a month). On your own
+Windows VPS, also put MT5 in the Windows Startup folder so it comes back
+after a restart.
+
+
+--------------------------------------------------------------------------
 HOW ORDER CANCELLATION WORKS IN AUTOMATION
 --------------------------------------------------------------------------
 Short answer: there is nothing to cancel at the broker, so nothing needs to
@@ -2403,6 +2539,9 @@ MAKING SURE IT IS ACTUALLY RUNNING
     fill against the backtest.
   - Watch the first live trade's position size in your broker terminal
     before you leave it alone.
+  - On the MQL5 VPS: glance at its Journal (Navigator -> right-click the
+    virtual server) and at TheConnector's dashboard once a day, and keep
+    the Algo Trading button OFF on your laptop. See "RUNNING IT 24/7".
   - Backtest fills are optimistic. Expect worse entries live.
 
 --------------------------------------------------------------------------
