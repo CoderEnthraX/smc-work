@@ -1,0 +1,3051 @@
+//@version=6
+// SMC Structure Strategy  -  v5.2  -  main-tier CHOCH/BOS, rule 1 + rule 2, confirmed HTF, on-time session/news/weekend rules, news windows on chosen dates, automatic US news schedule + US market holidays on the New York clock, frozen broker bracket, commission + spread model, lot-step sizing, exact trade counters, profit-target stop, TheConnector message format  -  ASCII only
+strategy("SMC Structure Strategy", "SMC STRAT", overlay = true,
+     max_bars_back = 2000, max_lines_count = 500, max_labels_count = 500, dynamic_requests = true,
+     initial_capital = 10000, currency = currency.USD, default_qty_type = strategy.fixed, default_qty_value = 1,
+     margin_long = 0, margin_short = 0,
+     pyramiding = 0, calc_on_every_tick = false)
+
+gStr = "Structure colour"
+whiteStruct = false
+
+gTog = "0. Master toggles"
+gA = "Alerts - enable, then create ONE alert using 'Any alert() function call'"
+aBB = false
+
+gInt = "0. Internal + Inner structure - iBOS / iCHOCH - nBOS / nCHOCH"
+intDefOn = true
+intAltOn = true
+inPivK   = 1
+inHist   = false
+inBosTxt = "iBOS"
+inChoTxt = "iCHOCH"
+inLc   = color.new(color.blue, 0)
+inTc   = color.new(color.blue, 0)
+inLs   = "Solid"
+inW    = 1
+inTs   = "Small"
+inShow = true
+inStrOn  = true
+inStrTxt = "+"
+inStrSz  = "Small"
+
+gMS = "Market structure - mode & inducement (IDM)"
+gEngR = "23. Engine rules - these change the signals themselves"
+altMode = input.bool(false, "ALTERNATE rule: BOS is valid only AFTER IDM", tooltip = "OFF = complete default structure. ON = a body close beyond the trend-side line only prints a valid BOS if that pivot's inducement (IDM) has been taken first; without IDM the break is ignored and the engine waits for the IDM, then the next body close beyond the pivot is the valid BOS. CHOCH flips are never gated.", group = gEngR)
+showIdm = false
+idmTxt  = "IDM"
+idmSz   = "Small"
+idmUpC  = color.new(#26a69a, 0)
+idmDnC  = color.new(#ef5350, 0)
+idmTc   = color.white
+showStr = true
+strTxt  = "#"
+strSz   = "Small"
+
+grpE = "Engine"
+onClose   = true
+histBars  = 500
+showPiv   = false
+colPivHi  = color.new(color.red, 30)
+colPivLo  = color.new(color.teal, 30)
+showSweep = false
+colSweep  = color.gray
+paintBg   = false
+
+g1 = "(1) Bullish BOS"
+b1_lc   = color.black
+b1_tc   = color.black
+b1_ls   = "Solid"
+b1_w    = 1
+b1_txt  = "BOS"
+b1_ts   = "Small"
+b1_show = true
+b1_tv   = "Middle"
+b1_th   = "Center"
+
+g2 = "(2) Bearish BOS"
+b2_lc   = color.black
+b2_tc   = color.black
+b2_ls   = "Solid"
+b2_w    = 1
+b2_txt  = "BOS"
+b2_ts   = "Small"
+b2_show = true
+b2_tv   = "Middle"
+b2_th   = "Center"
+
+g3 = "(3) Bullish CHOCH"
+c1_lc   = color.black
+c1_tc   = color.black
+c1_ls   = "Solid"
+c1_w    = 1
+c1_txt  = "CHOCH"
+c1_ts   = "Small"
+c1_show = true
+c1_tv   = "Middle"
+c1_th   = "Center"
+
+g4 = "(4) Bearish CHOCH"
+c2_lc   = color.black
+c2_tc   = color.black
+c2_ls   = "Solid"
+c2_w    = 1
+c2_txt  = "CHOCH"
+c2_ts   = "Small"
+c2_show = true
+c2_tv   = "Middle"
+c2_th   = "Center"
+
+g5 = "(5) Possible BOS (active extended line)"
+p1_lc   = color.black
+p1_tc   = color.black
+p1_ls   = "Dotted"
+p1_w    = 1
+p1_txt  = "BOS*"
+p1_ts   = "Small"
+p1_show = true
+p1_tv   = "Middle"
+p1_th   = "Center"
+
+g6 = "(6) Possible CHOCH (active extended line)"
+p2_lc   = color.black
+p2_tc   = color.black
+p2_ls   = "Dotted"
+p2_w    = 1
+p2_txt  = "CHOCH*"
+p2_ts   = "Small"
+p2_show = true
+p2_tv   = "Middle"
+p2_th   = "Center"
+
+aSB = false
+aBC = false
+aSC = false
+aSW = false
+aIBB = false
+aISB = false
+aIBC = false
+aISC = false
+aAIB = false
+aAIC = false
+aAIE = false
+aRetPct  = 50.0
+aMainRet = false
+aIntRet  = false
+
+pbBodyOn  = input.bool(false, "PULLBACK RULE 1 - each of the 3 candles must have a body bigger than its own longest wick", group = gEngR, tooltip = "Adds ONE extra demand on top of the normal three-candle pullback: every one of the three candles must have a body bigger than its own longest wick.\n\nbody        = |close - open|\nupper wick  = high - the higher of open/close\nlower wick  = the lower of open/close - low\nthe candle counts only while  body > the longer of those two wicks\n\nOFF (default) = the pullback rule is exactly what it has always been. Nothing changes anywhere.\nON  = a long-wicked or indecision candle no longer counts toward the three. It does NOT reset the count - the sequence simply keeps waiting, the same way a wrong-direction candle does today.\n\nThe point is to stop a wick-heavy candle from carrying a pullback it never really made. Expect noticeably fewer pivots, and therefore fewer BOS/CHOCH marks on every tier.\n\nIt applies to MAIN, INTERNAL and INNER together, and to the multi-timeframe engine, because all four run on the same pullback counter.")
+pbBodyRef = input.bool(false, "PULLBACK RULE 2 - the 3 candles close beyond the previous candle's BODY, not its wick (carries rule 1)", group = gEngR, tooltip = "Changes WHAT the three candles have to close beyond, and carries the body rule above with it.\n\nNORMAL RULE: each candle must close beyond the previous pullback candle's WICK - below its low when hunting a high, above its high when hunting a low.\nTHIS RULE: each candle must close beyond the previous pullback candle's BODY instead - below its body bottom when hunting a high, above its body top when hunting a low. On a pullback candle the body edge is its close, so it becomes 'each candle closes beyond the last one's close'.\n\nAND it applies the body-bigger-than-its-longest-wick demand from the switch above to all three candles, whether or not that switch is ticked.\n\nSo it is LOOSER on where the close has to land and STRICTER on the quality of the candle. The two changes pull in opposite directions on purpose: the sequence is easier to keep alive through a normal retrace, but junk candles are thrown out of it.\n\nOFF (default) = the wick reference, exactly as it has always been.\nWITH BOTH TICKED = this one decides the reference level; the body demand is the same in both, so they do not fight.\n\nIt applies to MAIN, INTERNAL and INNER together, and to the multi-timeframe engine.")
+
+pbSwp2 = input.bool(false, "PULLBACK RULE 3 - two candles are enough once the pullback takes out the opposite live level (CHOCH* - iCHOCH*)", group = gEngR, tooltip = "Lets a swing confirm on TWO counted pullback candles instead of three, but only when the pullback has already taken out the level on the other side.\n\nWHAT COUNTS AS TAKING IT OUT. Hunting a HIGH: a bar's LOW trades below the live level under price - the CHOCH* level for main structure, the iCHOCH* level for internal and inner. Hunting a LOW: a bar's HIGH trades above the live level over price - BOS* for main, iBOS* for internal and inner. The wick is enough; it does not have to close through.\n\nWHEN IT IS CHECKED. Only after the high or low being hunted is set. A new extreme restarts the hunt and clears the sweep, so the sweep always has to happen on the way back down from the high you are trying to confirm, never on the bar that made it.\n\nWHY. A pullback deep enough to run the opposite level has already proved itself. Waiting for a third candle after that just marks the structure late - and the high that deserved the level is often skipped entirely, because the level slot is filled by the next high that does manage three.\n\nOFF (default) = three candles always, exactly as it has always been.\n\nIt is separate from the other two pullback rules and stacks with them: a candle still has to pass rule 1's body test to be counted at all, if rule 1 is on. If a sweeping candle has a long wick it will fail rule 1 and this rule will never see it - run this one on its own first.\n\nApplies to MAIN, INTERNAL and INNER, each against its own pair of live levels, and to the multi-timeframe engine against its own.")
+
+lstyle(string s) => s == "Dashed" ? line.style_dashed : s == "Dotted" ? line.style_dotted : line.style_solid
+tsize(string s)  => s == "Tiny" ? size.tiny : s == "Small" ? size.small : s == "Large" ? size.large : s == "Huge" ? size.huge : size.normal
+lblStyle(string tv) => tv == "Above" ? label.style_label_down : tv == "Below" ? label.style_label_up : label.style_none
+
+int _xBack = 1500
+f_xClamp(int b) => na(b) ? bar_index : math.max(math.min(b, bar_index), bar_index - _xBack)
+f_xNear(int b) => not na(b) and b <= bar_index and (bar_index - b) <= _xBack
+
+var color _wS = color.white
+var color b1_lcE = whiteStruct ? _wS : b1_lc
+var color b1_tcE = whiteStruct ? _wS : b1_tc
+var color b2_lcE = whiteStruct ? _wS : b2_lc
+var color b2_tcE = whiteStruct ? _wS : b2_tc
+var color c1_lcE = whiteStruct ? _wS : c1_lc
+var color c1_tcE = whiteStruct ? _wS : c1_tc
+var color c2_lcE = whiteStruct ? _wS : c2_lc
+var color c2_tcE = whiteStruct ? _wS : c2_tc
+var color p1_lcE = whiteStruct ? _wS : p1_lc
+var color p1_tcE = whiteStruct ? _wS : p1_tc
+var color p2_lcE = whiteStruct ? _wS : p2_lc
+var color p2_tcE = whiteStruct ? _wS : p2_tc
+
+styleOf(int sid, bool pend) =>
+    if pend
+        if sid <= 1
+            [p1_lcE, p1_tcE, p1_ls, p1_w, p1_txt, p1_ts, p1_tv, p1_th, p1_show]
+        else
+            [p2_lcE, p2_tcE, p2_ls, p2_w, p2_txt, p2_ts, p2_tv, p2_th, p2_show]
+    else
+        switch sid
+            0 => [b1_lcE, b1_tcE, b1_ls, b1_w, b1_txt, b1_ts, b1_tv, b1_th, b1_show]
+            1 => [b2_lcE, b2_tcE, b2_ls, b2_w, b2_txt, b2_ts, b2_tv, b2_th, b2_show]
+            2 => [c1_lcE, c1_tcE, c1_ls, c1_w, c1_txt, c1_ts, c1_tv, c1_th, c1_show]
+            => [c2_lcE, c2_tcE, c2_ls, c2_w, c2_txt, c2_ts, c2_tv, c2_th, c2_show]
+
+var array<line>  mainLn = array.new<line>()
+var array<label> mainLb = array.new<label>()
+var array<int>   mainCnt = array.new<int>()
+
+f_addLn(array<line> la, array<int> cnt, line l) =>
+    array.push(la, l)
+    array.push(cnt, 0)
+
+f_addLb(array<label> lb, array<int> cnt, label l) =>
+    if array.size(cnt) > 0
+        array.push(lb, l)
+        int k = array.size(cnt) - 1
+        array.set(cnt, k, array.get(cnt, k) + 1)
+
+f_cutOld(array<line> la, array<label> lb, array<int> cnt, int cap) =>
+    while array.size(la) > cap
+        line.delete(array.shift(la))
+        int c = array.shift(cnt)
+        while c > 0 and array.size(lb) > 0
+            label.delete(array.shift(lb))
+            c -= 1
+
+f_cutAll(array<line> la, array<label> lb, array<int> cnt) =>
+    while array.size(la) > 0
+        line.delete(array.pop(la))
+    while array.size(lb) > 0
+        label.delete(array.pop(lb))
+    array.clear(cnt)
+
+type SLine
+    line  ln
+    label lb
+    int   x1
+    float price
+    int   sid
+    int   born
+    bool  done
+    float swpP
+    int   swpB
+    float refP
+    float idmP
+    int   idmB
+    bool  idmHit
+    bool  swpT
+
+hAlignOf(int sid, bool pend) =>
+    if pend
+        sid <= 1 ? p1_th : p2_th
+    else
+        switch sid
+            0 => b1_th
+            1 => b2_th
+            2 => c1_th
+            => c2_th
+
+method repos(SLine s, int endBar) =>
+    if not na(s) and not na(s.ln) and not na(s.lb)
+        string th = hAlignOf(s.sid, not s.done)
+        if th != "Left"
+            s.lb.set_x(f_xClamp(th == "Right" ? endBar : int(math.avg(s.x1, endBar))))
+
+method freeze(SLine s) =>
+    if not na(s) and not na(s.ln)
+        s.done := true
+        [lc, tc, ls, w, txt, ts, tv, th, showT] = styleOf(s.sid, false)
+        s.ln.set_x2(bar_index)
+        s.ln.set_extend(extend.none)
+        s.ln.set_color(lc)
+        s.ln.set_width(w)
+        s.ln.set_style(lstyle(ls))
+        if not na(s.lb)
+            s.lb.delete()
+            s.lb := na
+        if showT
+            int lx = f_xClamp(th == "Left" ? s.x1 : th == "Right" ? bar_index : int(math.avg(s.x1, bar_index)))
+            s.lb := label.new(lx, s.price, txt, color = color(na), textcolor = tc, style = lblStyle(tv), size = tsize(ts))
+        f_addLn(mainLn, mainCnt, s.ln)
+        if not na(s.lb)
+            f_addLb(mainLb, mainCnt, s.lb)
+
+method drop(SLine s) =>
+    if not na(s) and not na(s.ln)
+        s.ln.delete()
+        if not na(s.lb)
+            s.lb.delete()
+
+mkSLine(float p, int b, int sid, bool draw) =>
+    [lc, tc, ls, w, txt, ts, tv, th, showT] = styleOf(sid, true)
+    line ln = na
+    label lb = na
+    int _bx = f_xClamp(b)
+    if draw
+        ln := line.new(_bx, p, bar_index, p, color = lc, width = w, style = lstyle(ls), extend = extend.right)
+    if draw and showT
+        int lx = th == "Left" ? _bx : th == "Right" ? bar_index : int(math.avg(_bx, bar_index))
+        lb := label.new(lx, p, txt, color = color(na), textcolor = tc, style = lblStyle(tv), size = tsize(ts))
+    SLine.new(ln, lb, b, p, sid, bar_index, false, na, na, na, na, na, false, false)
+
+type SwingTracker
+    bool  isHigh
+    float potential
+    int   potentialBar
+    int   count
+    float refLevel
+    bool  swept
+
+method update(SwingTracker t, float swpLvl) =>
+    float confP = na
+    int   confB = na
+    bool bearC  = close < open
+    bool bullC  = close > open
+    float _pbBd = math.abs(close - open)
+    float _pbWk = math.max(high - math.max(open, close), math.min(open, close) - low)
+    bool  _pbQ  = not (pbBodyOn or pbBodyRef) or _pbBd > _pbWk
+    bool pb     = (t.isHigh ? bearC : bullC) and _pbQ
+    float _pbRf = pbBodyRef ? (t.isHigh ? math.min(open, close) : math.max(open, close)) : (t.isHigh ? low : high)
+    bool newExt = na(t.potential) or (t.isHigh ? high >= t.potential : low <= t.potential)
+    if newExt
+        t.potential    := t.isHigh ? high : low
+        t.potentialBar := bar_index
+        t.count        := pb ? 1 : 0
+        t.refLevel     := pb ? _pbRf : na
+        t.swept        := false
+    else
+        if not na(swpLvl) and (t.isHigh ? low < swpLvl : high > swpLvl)
+            t.swept := true
+        if pb
+            if t.count == 0
+                t.count    := 1
+                t.refLevel := _pbRf
+            else if t.count == 1 and (t.isHigh ? close < t.refLevel : close > t.refLevel) and t.swept
+                confP := t.potential
+                confB := t.potentialBar
+                t.potential    := t.isHigh ? high : low
+                t.potentialBar := bar_index
+                t.count        := 1
+                t.refLevel     := _pbRf
+                t.swept        := false
+            else if t.count == 1 and (t.isHigh ? close < t.refLevel : close > t.refLevel)
+                t.count    := 2
+                t.refLevel := _pbRf
+            else if t.count == 2 and (t.isHigh ? close < t.refLevel : close > t.refLevel)
+                confP := t.potential
+                confB := t.potentialBar
+                t.potential    := t.isHigh ? high : low
+                t.potentialBar := bar_index
+                t.count        := 1
+                t.refLevel     := _pbRf
+                t.swept        := false
+    [confP, confB]
+
+var array<float> bufHi = array.new_float()
+var array<float> bufLo = array.new_float()
+var array<int>   bufDir = array.new_int()
+
+f_retExtreme(int fromBar, bool findHigh) =>
+    int sz   = array.size(bufLo)
+    int jEnd = sz - 1
+    float p  = na
+    int   b  = na
+    if jEnd > 0
+        int j0 = math.max(0, math.min(fromBar - bar_index + sz, jEnd - 1))
+        array<float> src = findHigh ? bufHi : bufLo
+        int base = bar_index - sz + 1
+        for j = j0 to jEnd - 1
+            float v = array.get(src, j)
+            if na(p) or (findHigh ? v >= p : v <= p)
+                p := v
+                b := base + j
+    [p, b]
+
+f_retExtInc(int fromBar, bool findHigh) =>
+    int sz   = array.size(bufLo)
+    int jEnd = sz - 1
+    float p  = na
+    int   b  = na
+    if jEnd >= 0
+        int j0 = math.max(0, math.min(fromBar - bar_index + sz, jEnd))
+        array<float> src = findHigh ? bufHi : bufLo
+        int base = bar_index - sz + 1
+        for j = j0 to jEnd
+            float v = array.get(src, j)
+            if na(p) or (findHigh ? v >= p : v <= p)
+                p := v
+                b := base + j
+    [p, b]
+
+method rearm(SwingTracker t, float p, int b) =>
+    t.potential    := p
+    t.potentialBar := b
+    int  sz  = array.size(bufHi)
+    int  idx = b - bar_index + sz - 1
+    bool ok  = not na(b) and idx >= 0 and idx <= sz - 1
+    int  dir = ok ? array.get(bufDir, idx) : 0
+    bool pb  = t.isHigh ? dir == -1 : dir == 1
+    t.count    := pb ? 1 : 0
+    t.refLevel := pb ? (t.isHigh ? array.get(bufLo, idx) : array.get(bufHi, idx)) : na
+    t.swept    := false
+
+method armHere(SwingTracker t) =>
+    t.potential    := t.isHigh ? high : low
+    t.potentialBar := bar_index
+    bool pb = t.isHigh ? close < open : close > open
+    t.count    := pb ? 1 : 0
+    t.refLevel := pb ? (t.isHigh ? low : high) : na
+    t.swept    := false
+
+f_isSwing(int pb, bool isHigh, int k) =>
+    int  sz  = array.size(bufHi)
+    int  idx = pb - bar_index + sz - 1
+    bool ok  = not na(pb) and idx - k >= 0 and idx <= sz - 1
+    if ok
+        float p = isHigh ? array.get(bufHi, idx) : array.get(bufLo, idx)
+        for j = 1 to k
+            float v = isHigh ? array.get(bufHi, idx - j) : array.get(bufLo, idx - j)
+            if isHigh ? v > p : v < p
+                ok := false
+    ok
+
+var array<int>   msLoB = array.new_int()
+var array<float> msLoP = array.new_float()
+var array<int>   msHiB = array.new_int()
+var array<float> msHiP = array.new_float()
+
+var array<float> mnHiP = array.new_float()
+var array<int>   mnHiB = array.new_int()
+var array<float> mnLoP = array.new_float()
+var array<int>   mnLoB = array.new_int()
+
+f_confExt(array<int> arrB, array<float> arrP, bool wantLow, int afterBar, float beyond) =>
+    float p = na
+    int   b = na
+    int   n = array.size(arrB)
+    if n > 0
+        for i = n - 1 to 0
+            int cb = array.get(arrB, i)
+            if cb <= afterBar
+                break
+            float cp = array.get(arrP, i)
+            if (wantLow ? cp <= beyond : cp >= beyond) and (na(p) or (wantLow ? cp < p : cp > p))
+                p := cp
+                b := cb
+    [p, b]
+
+f_swpConf(array<int> arrB, int swpB) =>
+    bool ok = false
+    int  n  = array.size(arrB)
+    if not na(swpB) and n > 0
+        for i = n - 1 to 0
+            int cb = array.get(arrB, i)
+            if cb == swpB
+                ok := true
+                break
+            if cb < swpB
+                break
+    ok
+
+f_lastMinor(bool wantLow, int beforeBar) =>
+    arrB = wantLow ? msLoB : msHiB
+    arrP = wantLow ? msLoP : msHiP
+    float p = na
+    int   b = na
+    int   n = array.size(arrB)
+    if n > 0
+        for i = n - 1 to 0
+            if array.get(arrB, i) < beforeBar
+                p := array.get(arrP, i)
+                b := array.get(arrB, i)
+                break
+    [p, b]
+
+f_idmMark(SLine s) =>
+    bool inWin = (last_bar_index - bar_index) <= histBars
+    if showIdm and inWin and not na(s.idmP) and f_xNear(s.idmB)
+        bool isCeil = s.sid == 0 or s.sid == 2
+        label.new(s.idmB, s.idmP, idmTxt, color = isCeil ? idmUpC : idmDnC, textcolor = idmTc, style = isCeil ? label.style_label_up : label.style_label_down, size = tsize(idmSz))
+
+method armIdm(SLine s) =>
+    if not na(s)
+        bool isCeil = s.sid == 0 or s.sid == 2
+        [ip, ib] = f_lastMinor(isCeil, s.x1)
+        s.idmP   := ip
+        s.idmB   := ib
+        s.idmHit := false
+        if not na(ip)
+            [xp, xb] = f_retExtreme(s.x1, not isCeil)
+            bool takenPast = not na(xp) and (isCeil ? xp < ip : xp > ip)
+            bool takenNow  = isCeil ? low < ip : high > ip
+            if takenPast or takenNow
+                s.idmHit := true
+                f_idmMark(s)
+
+f_intArmIdm(int pivB, bool isCeil) =>
+    [ip, ib] = f_lastMinor(isCeil, pivB)
+    bool hit = false
+    if not na(ip)
+        [xp, xb] = f_retExtreme(pivB, not isCeil)
+        bool takenPast = not na(xp) and (isCeil ? xp < ip : xp > ip)
+        bool takenNow  = isCeil ? low < ip : high > ip
+        hit := takenPast or takenNow
+    [ip, hit]
+
+bool intUse = altMode ? intAltOn : intDefOn
+var array<line>  intLn = array.new<line>()
+var array<label> intLb = array.new<label>()
+var array<int>   intCnt = array.new<int>()
+
+f_intPrune() =>
+    f_cutOld(intLn, intLb, intCnt, 150)
+
+f_intClear() =>
+    f_cutAll(intLn, intLb, intCnt)
+
+f_intMark(float p, int pb, bool isCho) =>
+    bool inWin = (last_bar_index - bar_index) <= histBars and f_xNear(pb)
+    if intUse and inWin
+        f_addLn(intLn, intCnt, line.new(pb, p, bar_index, p, color = inLc, width = inW, style = lstyle(inLs)))
+        if inShow
+            f_addLb(intLb, intCnt, label.new(int(math.avg(pb, bar_index)), p, isCho ? inChoTxt : inBosTxt, color = color(na), textcolor = inTc, style = label.style_none, size = tsize(inTs)))
+        f_intPrune()
+
+f_intStrong(int b, bool isLow) =>
+    bool inWin = (last_bar_index - bar_index) <= histBars and f_xNear(b)
+    if intUse and inStrOn and inWin
+        f_addLb(intLb, intCnt, label.new(b, na, inStrTxt, yloc = isLow ? yloc.belowbar : yloc.abovebar, style = label.style_none, textcolor = color.gray, size = tsize(inStrSz)))
+        f_intPrune()
+
+var SwingTracker hiT = SwingTracker.new(true,  na, na, 0, na, false)
+var SwingTracker loT = SwingTracker.new(false, na, na, 0, na, false)
+var SwingTracker aHiT = SwingTracker.new(true,  na, na, 0, na, false)
+var SwingTracker aLoT = SwingTracker.new(false, na, na, 0, na, false)
+var bool huntHi = true
+var bool huntLo = true
+var float lastAHiP = na
+var float lastALoP = na
+
+var int   trendDir = 0
+var SLine ceilS = na
+var SLine florS = na
+var float allHi = na
+var float allLo = na
+bool evBosUp  = false
+bool evBosDn  = false
+bool evChoUp  = false
+bool evChoDn  = false
+bool evSwpHi  = false
+bool evSwpLo  = false
+bool evIBosUp = false
+bool evIBosDn = false
+bool evIChoUp = false
+bool evIChoDn = false
+
+var bool  mainRetFired  = false
+var float lastMainRetLvl = na
+var int   mainRetBorn   = na
+var float mainRetAnch   = na
+var bool  intRetFired   = false
+var float lastIntRetLvl = na
+var int   intRetBorn    = na
+var float intRetAnch    = na
+var bool  nnRetFired    = false
+var float lastNnRetLvl  = na
+var int   nnRetBorn     = na
+var float nnRetAnch     = na
+var float mRunHi = na
+var float mRunLo = na
+var float iRunHi = na
+var float iRunLo = na
+var float nRunHi = na
+var float nRunLo = na
+
+var int   iTrend    = 0
+var array<float> pvHiP = array.new_float()
+var array<int>   pvHiB = array.new_int()
+var array<float> pvLoP = array.new_float()
+var array<int>   pvLoB = array.new_int()
+var int   iAncB     = na
+var float iCeilP    = na
+var int   iCeilB    = na
+var int   iCeilBorn = na
+var float iCeilSwp  = na
+var int   iCeilSwpB = na
+var bool  iCeilSwpT = false
+var float iCeilRef  = na
+var float iCeilIdmP   = na
+var bool  iCeilIdmHit = false
+var float iFlorP    = na
+var int   iFlorB    = na
+var int   iFlorBorn = na
+var float iFlorSwp  = na
+var int   iFlorSwpB = na
+var bool  iFlorSwpT = false
+var float iFlorRef  = na
+var float iFlorIdmP   = na
+var bool  iFlorIdmHit = false
+
+var int   nTrend    = 0
+var int   nAncB     = na
+var float nCeilP    = na
+var int   nCeilB    = na
+var int   nCeilBorn = na
+var float nCeilSwp  = na
+var int   nCeilSwpB = na
+var bool  nCeilSwpT = false
+var float nCeilRef  = na
+var float nCeilIdmP   = na
+var bool  nCeilIdmHit = false
+var float nFlorP    = na
+var int   nFlorB    = na
+var int   nFlorBorn = na
+var float nFlorSwp  = na
+var int   nFlorSwpB = na
+var bool  nFlorSwpT = false
+var float nFlorRef  = na
+var float nFlorIdmP   = na
+var bool  nFlorIdmHit = false
+bool evNBosUp = false
+bool evNBosDn = false
+bool evNChoUp = false
+bool evNChoDn = false
+float rqUpP  = na
+int   rqUpB  = na
+bool  rqUpCho = false
+float rqDnP  = na
+int   rqDnB  = na
+bool  rqDnCho = false
+int   rqStrUp = na
+int   rqStrDn = na
+bool  rqClear = false
+bool  _intClrReq = false
+
+if not onClose or barstate.isconfirmed
+
+    array.push(bufHi, high)
+    array.push(bufLo, low)
+    array.push(bufDir, close > open ? 1 : close < open ? -1 : 0)
+    int _bufSz = array.size(bufHi)
+    if _bufSz > 5150
+        bufHi  := array.copy(array.slice(bufHi,  _bufSz - 4900, _bufSz))
+        bufLo  := array.copy(array.slice(bufLo,  _bufSz - 4900, _bufSz))
+        bufDir := array.copy(array.slice(bufDir, _bufSz - 4900, _bufSz))
+    allHi := na(allHi) ? high : math.max(allHi, high)
+    allLo := na(allLo) ? low  : math.min(allLo, low)
+    bool drawOk = (last_bar_index - bar_index) <= histBars
+    if bar_index >= 2
+        if low[1] < low[2] and low[1] < low
+            array.push(msLoB, bar_index - 1)
+            array.push(msLoP, low[1])
+            if array.size(msLoB) > 200
+                array.shift(msLoB)
+                array.shift(msLoP)
+        if high[1] > high[2] and high[1] > high
+            array.push(msHiB, bar_index - 1)
+            array.push(msHiP, high[1])
+            if array.size(msHiB) > 200
+                array.shift(msHiB)
+                array.shift(msHiP)
+
+    float _swpH = (pbSwp2 and not na(florS)) ? florS.price : na
+    float _swpL = (pbSwp2 and not na(ceilS)) ? ceilS.price : na
+    [phP, phB] = hiT.update(_swpH)
+    [plP, plB] = loT.update(_swpL)
+
+    if not na(phP)
+        array.push(mnHiP, phP)
+        array.push(mnHiB, phB)
+        if array.size(mnHiB) > 300
+            array.shift(mnHiP)
+            array.shift(mnHiB)
+    if not na(plP)
+        array.push(mnLoP, plP)
+        array.push(mnLoB, plB)
+        if array.size(mnLoB) > 300
+            array.shift(mnLoP)
+            array.shift(mnLoB)
+
+    float aPhP = na
+    int   aPhB = na
+    float aPlP = na
+    int   aPlB = na
+    if huntHi
+        [_ph, _phb] = aHiT.update(pbSwp2 ? iFlorP : na)
+        aPhP := _ph
+        aPhB := _phb
+    if huntLo
+        [_pl, _plb] = aLoT.update(pbSwp2 ? iCeilP : na)
+        aPlP := _pl
+        aPlB := _plb
+    if not na(aPhP)
+        huntHi   := false
+        huntLo   := true
+        lastAHiP := aPhP
+        [_rlp, _rlb] = f_retExtreme(aPhB, false)
+        bool _useNow = na(_rlp) or low <= _rlp
+        aLoT.rearm(_useNow ? low : _rlp, _useNow ? bar_index : _rlb)
+    if not na(aPlP)
+        huntLo   := false
+        huntHi   := true
+        lastALoP := aPlP
+        [_rhp, _rhb] = f_retExtreme(aPlB, true)
+        bool _useNowH = na(_rhp) or high >= _rhp
+        aHiT.rearm(_useNowH ? high : _rhp, _useNowH ? bar_index : _rhb)
+
+    if not huntHi and not na(lastAHiP) and high >= lastAHiP
+        huntHi := true
+        huntLo := false
+        aHiT.armHere()
+    else if not huntLo and not na(lastALoP) and low <= lastALoP
+        huntLo := true
+        huntHi := false
+        aLoT.armHere()
+
+    if not na(aPhP)
+        array.push(pvHiP, aPhP)
+        array.push(pvHiB, aPhB)
+        if array.size(pvHiB) > 300
+            array.shift(pvHiP)
+            array.shift(pvHiB)
+    if not na(aPlP)
+        array.push(pvLoP, aPlP)
+        array.push(pvLoB, aPlB)
+        if array.size(pvLoB) > 300
+            array.shift(pvLoP)
+            array.shift(pvLoB)
+
+    if not na(phP)
+        bool _cSwept = false
+        bool _cEq    = false
+        if not na(ceilS)
+            _cSwept := not na(ceilS.swpP)
+            _cEq    := phP == ceilS.price
+        bool adoptC  = trendDir == 0 ? (phP >= allHi and not _cSwept and not _cEq) : na(ceilS)
+        if adoptC
+            ceilS.drop()
+            ceilS := mkSLine(phP, phB, trendDir == -1 ? 2 : 0, drawOk)
+            ceilS.armIdm()
+        if showPiv
+            if drawOk
+                if f_xNear(phB)
+                    label.new(phB, phP, ".", style = label.style_none, textcolor = colPivHi, size = size.small)
+
+    if not na(plP)
+        bool _fSwept = false
+        bool _fEq    = false
+        if not na(florS)
+            _fSwept := not na(florS.swpP)
+            _fEq    := plP == florS.price
+        bool adoptF  = trendDir == 0 ? (plP <= allLo and not _fSwept and not _fEq) : na(florS)
+        if adoptF
+            florS.drop()
+            florS := mkSLine(plP, plB, trendDir == 1 ? 3 : 1, drawOk)
+            florS.armIdm()
+        if showPiv
+            if drawOk
+                if f_xNear(plB)
+                    label.new(plB, plP, ".", style = label.style_none, textcolor = colPivLo, size = size.small)
+
+    if not na(ceilS) and not ceilS.idmHit and not na(ceilS.idmP) and low < ceilS.idmP
+        ceilS.idmHit := true
+        f_idmMark(ceilS)
+    if not na(florS) and not florS.idmHit and not na(florS.idmP) and high > florS.idmP
+        florS.idmHit := true
+        f_idmMark(florS)
+
+    if not na(ceilS) and bar_index > ceilS.born
+        if close > ceilS.price and (trendDir == -1 or not altMode or ceilS.idmHit or na(ceilS.idmP))
+            bool isCho = trendDir == -1
+            evChoUp := isCho
+            evBosUp := not isCho
+            int srcC = ceilS.x1
+            ceilS.freeze()
+            [rpC, rbC] = f_retExtInc(srcC, false)
+            if not na(rpC)
+                florS.drop()
+                florS := mkSLine(rpC, rbC, 3, drawOk)
+                florS.armIdm()
+            if showStr and not isCho and ceilS.idmHit and not na(rpC) and drawOk and f_xNear(rbC)
+                f_addLb(mainLb, mainCnt, label.new(rbC, na, strTxt, yloc = yloc.belowbar, style = label.style_none, textcolor = color.gray, size = tsize(strSz)))
+            trendDir := 1
+            ceilS := na
+        else
+            if high > ceilS.price
+                evSwpHi := true
+                if na(ceilS.swpP) or high > ceilS.swpP
+                    ceilS.swpP := high
+                    ceilS.swpB := bar_index
+                    ceilS.swpT := false
+                if showSweep and drawOk
+                    label.new(bar_index, na, "x", yloc = yloc.abovebar, style = label.style_none, textcolor = colSweep, size = size.small)
+                if altMode and not ceilS.idmHit and not na(ceilS.idmP) and close > ceilS.price and not na(ceilS.swpP)
+                    float mpC = ceilS.swpP
+                    int   mbC = ceilS.swpB
+                    int   mdC = ceilS.sid
+                    ceilS.drop()
+                    ceilS := mkSLine(mpC, mbC, mdC, drawOk)
+                    ceilS.armIdm()
+            if not na(ceilS.swpP) and na(ceilS.refP)
+                [refPc, refBc] = f_retExtreme(ceilS.x1, false)
+                ceilS.refP := refPc
+            if not na(ceilS.swpB) and ceilS.swpB == bar_index and trendDir == 1 and not na(ceilS.refP) and low < ceilS.refP
+                ceilS.swpT := true
+            if trendDir == 1 and not na(ceilS.swpP) and not na(ceilS.refP) and low < ceilS.refP and (not ceilS.swpT or f_swpConf(mnHiB, ceilS.swpB))
+                float spC = ceilS.swpP
+                int   sbC = ceilS.x1
+                if not na(spC)
+                    int sdC = ceilS.sid
+                    ceilS.drop()
+                    ceilS := mkSLine(spC, sbC, sdC, drawOk)
+                    ceilS.armIdm()
+
+    if not na(florS) and bar_index > florS.born
+        if close < florS.price and (trendDir == 1 or not altMode or florS.idmHit or na(florS.idmP))
+            bool isCho = trendDir == 1
+            evChoDn := isCho
+            evBosDn := not isCho
+            int srcF = florS.x1
+            florS.freeze()
+            [rpF, rbF] = f_retExtInc(srcF, true)
+            if not na(rpF)
+                ceilS.drop()
+                ceilS := mkSLine(rpF, rbF, 2, drawOk)
+                ceilS.armIdm()
+            if showStr and not isCho and florS.idmHit and not na(rpF) and drawOk and f_xNear(rbF)
+                f_addLb(mainLb, mainCnt, label.new(rbF, na, strTxt, yloc = yloc.abovebar, style = label.style_none, textcolor = color.gray, size = tsize(strSz)))
+            trendDir := -1
+            florS := na
+        else
+            if low < florS.price
+                evSwpLo := true
+                if na(florS.swpP) or low < florS.swpP
+                    florS.swpP := low
+                    florS.swpB := bar_index
+                    florS.swpT := false
+                if showSweep and drawOk
+                    label.new(bar_index, na, "x", yloc = yloc.belowbar, style = label.style_none, textcolor = colSweep, size = size.small)
+                if altMode and not florS.idmHit and not na(florS.idmP) and close < florS.price and not na(florS.swpP)
+                    float mpF = florS.swpP
+                    int   mbF = florS.swpB
+                    int   mdF = florS.sid
+                    florS.drop()
+                    florS := mkSLine(mpF, mbF, mdF, drawOk)
+                    florS.armIdm()
+            if not na(florS.swpP) and na(florS.refP)
+                [refPf, refBf] = f_retExtreme(florS.x1, true)
+                florS.refP := refPf
+            if not na(florS.swpB) and florS.swpB == bar_index and trendDir == -1 and not na(florS.refP) and high > florS.refP
+                florS.swpT := true
+            if trendDir == -1 and not na(florS.swpP) and not na(florS.refP) and high > florS.refP and (not florS.swpT or f_swpConf(mnLoB, florS.swpB))
+                float spF = florS.swpP
+                int   sbF = florS.x1
+                if not na(spF)
+                    int sdF = florS.sid
+                    florS.drop()
+                    florS := mkSLine(spF, sbF, sdF, drawOk)
+                    florS.armIdm()
+
+    bool mainEvt = evBosUp or evBosDn or evChoUp or evChoDn
+    if mainEvt
+        mRunHi := high
+        mRunLo := low
+    else
+        mRunHi := na(mRunHi) ? high : math.max(mRunHi, high)
+        mRunLo := na(mRunLo) ? low  : math.min(mRunLo, low)
+    int iAnchor = na
+    if trendDir == 1
+        if not na(ceilS)
+            iAnchor := ceilS.x1
+    else if trendDir == -1
+        if not na(florS)
+            iAnchor := florS.x1
+    if mainEvt
+        iTrend := 0
+        iAncB  := na
+        iCeilP    := na
+        iCeilB    := na
+        iCeilBorn := na
+        iCeilSwp  := na
+        iCeilSwpB := na
+        iCeilRef  := na
+        iCeilIdmP   := na
+        iCeilIdmHit := false
+        iFlorP    := na
+        iFlorB    := na
+        iFlorBorn := na
+        iFlorSwp  := na
+        iFlorSwpB := na
+        iFlorRef  := na
+        iFlorIdmP   := na
+        iFlorIdmHit := false
+        _intClrReq := true
+
+    if na(iAncB) and not na(iAnchor)
+        iAncB := iAnchor
+        if na(iCeilP) and array.size(pvHiB) > 0
+            for _s = 0 to array.size(pvHiB) - 1
+                int _sb = array.get(pvHiB, _s)
+                if _sb > iAncB and close < array.get(pvHiP, _s) and (inPivK <= 1 or f_isSwing(_sb, true, inPivK))
+                    iCeilP    := array.get(pvHiP, _s)
+                    iCeilB    := _sb
+                    iCeilBorn := bar_index
+                    [_sip, _sih] = f_intArmIdm(_sb, true)
+                    iCeilIdmP   := _sip
+                    iCeilIdmHit := _sih
+                    break
+        if na(iFlorP) and array.size(pvLoB) > 0
+            for _s = 0 to array.size(pvLoB) - 1
+                int _sb = array.get(pvLoB, _s)
+                if _sb > iAncB and close > array.get(pvLoP, _s) and (inPivK <= 1 or f_isSwing(_sb, false, inPivK))
+                    iFlorP    := array.get(pvLoP, _s)
+                    iFlorB    := _sb
+                    iFlorBorn := bar_index
+                    [_sjp, _sjh] = f_intArmIdm(_sb, false)
+                    iFlorIdmP   := _sjp
+                    iFlorIdmHit := _sjh
+                    break
+
+    if not mainEvt and not na(iAncB)
+        if not na(aPhP) and aPhB > iAncB and close < aPhP and (inPivK <= 1 or f_isSwing(aPhB, true, inPivK))
+            if na(iCeilP)
+                iCeilP    := aPhP
+                iCeilB    := aPhB
+                iCeilBorn := bar_index
+                iCeilSwp  := na
+                iCeilSwpB := na
+                iCeilRef  := na
+                [ipCa, ihCa] = f_intArmIdm(aPhB, true)
+                iCeilIdmP   := ipCa
+                iCeilIdmHit := ihCa
+        if not na(aPlP) and aPlB > iAncB and close > aPlP and (inPivK <= 1 or f_isSwing(aPlB, false, inPivK))
+            if na(iFlorP)
+                iFlorP    := aPlP
+                iFlorB    := aPlB
+                iFlorBorn := bar_index
+                iFlorSwp  := na
+                iFlorSwpB := na
+                iFlorRef  := na
+                [ipFa, ihFa] = f_intArmIdm(aPlB, false)
+                iFlorIdmP   := ipFa
+                iFlorIdmHit := ihFa
+
+        if not na(iCeilP) and not iCeilIdmHit and not na(iCeilIdmP) and low < iCeilIdmP
+            iCeilIdmHit := true
+        if not na(iFlorP) and not iFlorIdmHit and not na(iFlorIdmP) and high > iFlorIdmP
+            iFlorIdmHit := true
+
+        if not na(iCeilP) and not na(iCeilBorn) and bar_index > iCeilBorn
+            if close > iCeilP and (iTrend != 1 or not altMode or iCeilIdmHit or na(iCeilIdmP))
+                bool isChoU = iTrend != 1
+                if isChoU
+                    evIChoUp := true
+                else
+                    evIBosUp := true
+                f_intMark(iCeilP, iCeilB, isChoU)
+                [iRpU, iRbU] = f_retExtInc(iCeilB, false)
+                if not na(iRpU)
+                    iFlorP    := iRpU
+                    iFlorB    := iRbU
+                    iFlorBorn := bar_index
+                    iFlorSwp  := na
+                    iFlorSwpB := na
+                    iFlorRef  := na
+                    [ipFr, ihFr] = f_intArmIdm(iRbU, false)
+                    iFlorIdmP   := ipFr
+                    iFlorIdmHit := ihFr
+                if not isChoU and iCeilIdmHit and not na(iRbU)
+                    f_intStrong(iRbU, true)
+                iTrend    := 1
+                iCeilP    := na
+                iCeilB    := na
+                iCeilBorn := na
+                iCeilSwp  := na
+                iCeilSwpB := na
+                iCeilRef  := na
+                iCeilIdmP   := na
+                iCeilIdmHit := false
+            else
+                if high > iCeilP
+                    if na(iCeilRef)
+                        [iRefPu, iRefBu] = f_retExtreme(iCeilB, false)
+                        iCeilRef := iRefPu
+                    if na(iCeilSwp) or high > iCeilSwp
+                        iCeilSwp  := high
+                        iCeilSwpB := bar_index
+                        iCeilSwpT := false
+                    if altMode and not iCeilIdmHit and not na(iCeilIdmP) and close > iCeilP and not na(iCeilSwp)
+                        float _amICp = iCeilSwp
+                        int   _amICb = iCeilSwpB
+                        iCeilP    := _amICp
+                        iCeilB    := _amICb
+                        iCeilBorn := bar_index
+                        iCeilSwp  := na
+                        iCeilSwpB := na
+                        iCeilSwpT := false
+                        iCeilRef  := na
+                        [_amICi, _amICh] = f_intArmIdm(_amICb, true)
+                        iCeilIdmP   := _amICi
+                        iCeilIdmHit := _amICh
+                if not na(iCeilSwpB) and iCeilSwpB == bar_index and iTrend == 1 and not na(iCeilRef) and low < iCeilRef
+                    iCeilSwpT := true
+                if iTrend == 1 and not na(iCeilSwp) and not na(iCeilRef) and low < iCeilRef and (not iCeilSwpT or f_swpConf(pvHiB, iCeilSwpB))
+                    float _ipC = iCeilSwp
+                    int   _ibC = iCeilB
+                    if not na(_ipC)
+                        iCeilP    := _ipC
+                        iCeilB    := _ibC
+                        iCeilBorn := bar_index
+                        iCeilSwp  := na
+                        iCeilSwpB := na
+                        iCeilRef  := na
+                        [ipCp, ihCp] = f_intArmIdm(_ibC, true)
+                        iCeilIdmP   := ipCp
+                        iCeilIdmHit := ihCp
+
+        if not na(iFlorP) and not na(iFlorBorn) and bar_index > iFlorBorn
+            if close < iFlorP and (iTrend != -1 or not altMode or iFlorIdmHit or na(iFlorIdmP))
+                bool isChoD = iTrend != -1
+                if isChoD
+                    evIChoDn := true
+                else
+                    evIBosDn := true
+                f_intMark(iFlorP, iFlorB, isChoD)
+                [iRpD, iRbD] = f_retExtInc(iFlorB, true)
+                if not na(iRpD)
+                    iCeilP    := iRpD
+                    iCeilB    := iRbD
+                    iCeilBorn := bar_index
+                    iCeilSwp  := na
+                    iCeilSwpB := na
+                    iCeilRef  := na
+                    [ipCr, ihCr] = f_intArmIdm(iRbD, true)
+                    iCeilIdmP   := ipCr
+                    iCeilIdmHit := ihCr
+                if not isChoD and iFlorIdmHit and not na(iRbD)
+                    f_intStrong(iRbD, false)
+                iTrend    := -1
+                iFlorP    := na
+                iFlorB    := na
+                iFlorBorn := na
+                iFlorSwp  := na
+                iFlorSwpB := na
+                iFlorRef  := na
+                iFlorIdmP   := na
+                iFlorIdmHit := false
+            else
+                if low < iFlorP
+                    if na(iFlorRef)
+                        [iRefPd, iRefBd] = f_retExtreme(iFlorB, true)
+                        iFlorRef := iRefPd
+                    if na(iFlorSwp) or low < iFlorSwp
+                        iFlorSwp  := low
+                        iFlorSwpB := bar_index
+                        iFlorSwpT := false
+                    if altMode and not iFlorIdmHit and not na(iFlorIdmP) and close < iFlorP and not na(iFlorSwp)
+                        float _amIFp = iFlorSwp
+                        int   _amIFb = iFlorSwpB
+                        iFlorP    := _amIFp
+                        iFlorB    := _amIFb
+                        iFlorBorn := bar_index
+                        iFlorSwp  := na
+                        iFlorSwpB := na
+                        iFlorSwpT := false
+                        iFlorRef  := na
+                        [_amIFi, _amIFh] = f_intArmIdm(_amIFb, false)
+                        iFlorIdmP   := _amIFi
+                        iFlorIdmHit := _amIFh
+                if not na(iFlorSwpB) and iFlorSwpB == bar_index and iTrend == -1 and not na(iFlorRef) and high > iFlorRef
+                    iFlorSwpT := true
+                if iTrend == -1 and not na(iFlorSwp) and not na(iFlorRef) and high > iFlorRef and (not iFlorSwpT or f_swpConf(pvLoB, iFlorSwpB))
+                    float _ipF = iFlorSwp
+                    int   _ibF = iFlorB
+                    if not na(_ipF)
+                        iFlorP    := _ipF
+                        iFlorB    := _ibF
+                        iFlorBorn := bar_index
+                        iFlorSwp  := na
+                        iFlorSwpB := na
+                        iFlorRef  := na
+                        [ipFp, ihFp] = f_intArmIdm(_ibF, false)
+                        iFlorIdmP   := ipFp
+                        iFlorIdmHit := ihFp
+
+    bool intEvt = evIBosUp or evIBosDn or evIChoUp or evIChoDn
+    if mainEvt or intEvt
+        iRunHi := high
+        iRunLo := low
+    else
+        iRunHi := na(iRunHi) ? high : math.max(iRunHi, high)
+        iRunLo := na(iRunLo) ? low  : math.min(iRunLo, low)
+
+    int nAnchor = na
+    if iTrend == 1
+        if not na(iCeilB)
+            nAnchor := iCeilB
+    else if iTrend == -1
+        if not na(iFlorB)
+            nAnchor := iFlorB
+
+    if mainEvt or intEvt
+        nTrend := 0
+        nAncB  := na
+        nCeilP    := na
+        nCeilB    := na
+        nCeilBorn := na
+        nCeilSwp  := na
+        nCeilSwpB := na
+        nCeilRef  := na
+        nCeilIdmP   := na
+        nCeilIdmHit := false
+        nFlorP    := na
+        nFlorB    := na
+        nFlorBorn := na
+        nFlorSwp  := na
+        nFlorSwpB := na
+        nFlorRef  := na
+        nFlorIdmP   := na
+        nFlorIdmHit := false
+        rqClear := true
+
+    if na(nAncB) and not na(nAnchor)
+        nAncB := nAnchor
+        if na(nCeilP) and array.size(pvHiB) > 0
+            for _n = 0 to array.size(pvHiB) - 1
+                int _nb = array.get(pvHiB, _n)
+                if _nb > nAncB and close < array.get(pvHiP, _n) and (inPivK <= 1 or f_isSwing(_nb, true, inPivK))
+                    nCeilP    := array.get(pvHiP, _n)
+                    nCeilB    := _nb
+                    nCeilBorn := bar_index
+                    [_nip, _nih] = f_intArmIdm(_nb, true)
+                    nCeilIdmP   := _nip
+                    nCeilIdmHit := _nih
+                    break
+        if na(nFlorP) and array.size(pvLoB) > 0
+            for _n = 0 to array.size(pvLoB) - 1
+                int _nb = array.get(pvLoB, _n)
+                if _nb > nAncB and close > array.get(pvLoP, _n) and (inPivK <= 1 or f_isSwing(_nb, false, inPivK))
+                    nFlorP    := array.get(pvLoP, _n)
+                    nFlorB    := _nb
+                    nFlorBorn := bar_index
+                    [_njp, _njh] = f_intArmIdm(_nb, false)
+                    nFlorIdmP   := _njp
+                    nFlorIdmHit := _njh
+                    break
+
+    if not mainEvt and not intEvt and not na(nAncB)
+        if not na(aPhP) and aPhB > nAncB and close < aPhP and (inPivK <= 1 or f_isSwing(aPhB, true, inPivK))
+            if na(nCeilP)
+                nCeilP    := aPhP
+                nCeilB    := aPhB
+                nCeilBorn := bar_index
+                nCeilSwp  := na
+                nCeilSwpB := na
+                nCeilRef  := na
+                [npCa, nhCa] = f_intArmIdm(aPhB, true)
+                nCeilIdmP   := npCa
+                nCeilIdmHit := nhCa
+        if not na(aPlP) and aPlB > nAncB and close > aPlP and (inPivK <= 1 or f_isSwing(aPlB, false, inPivK))
+            if na(nFlorP)
+                nFlorP    := aPlP
+                nFlorB    := aPlB
+                nFlorBorn := bar_index
+                nFlorSwp  := na
+                nFlorSwpB := na
+                nFlorRef  := na
+                [npFa, nhFa] = f_intArmIdm(aPlB, false)
+                nFlorIdmP   := npFa
+                nFlorIdmHit := nhFa
+
+        if not na(nCeilP) and not nCeilIdmHit and not na(nCeilIdmP) and low < nCeilIdmP
+            nCeilIdmHit := true
+        if not na(nFlorP) and not nFlorIdmHit and not na(nFlorIdmP) and high > nFlorIdmP
+            nFlorIdmHit := true
+
+        if not na(nCeilP) and not na(nCeilBorn) and bar_index > nCeilBorn
+            if close > nCeilP and (nTrend != 1 or not altMode or nCeilIdmHit or na(nCeilIdmP))
+                bool isNChoU = nTrend != 1
+                if isNChoU
+                    evNChoUp := true
+                else
+                    evNBosUp := true
+                rqUpP   := nCeilP
+                rqUpB   := nCeilB
+                rqUpCho := isNChoU
+                [nRpU, nRbU] = f_retExtInc(nCeilB, false)
+                if not na(nRpU)
+                    nFlorP    := nRpU
+                    nFlorB    := nRbU
+                    nFlorBorn := bar_index
+                    nFlorSwp  := na
+                    nFlorSwpB := na
+                    nFlorRef  := na
+                    [npFr, nhFr] = f_intArmIdm(nRbU, false)
+                    nFlorIdmP   := npFr
+                    nFlorIdmHit := nhFr
+                if not isNChoU and nCeilIdmHit and not na(nRbU)
+                    rqStrUp := nRbU
+                nTrend    := 1
+                nCeilP    := na
+                nCeilB    := na
+                nCeilBorn := na
+                nCeilSwp  := na
+                nCeilSwpB := na
+                nCeilRef  := na
+                nCeilIdmP   := na
+                nCeilIdmHit := false
+            else
+                if high > nCeilP
+                    if na(nCeilRef)
+                        [nRefPu, nRefBu] = f_retExtreme(nCeilB, false)
+                        nCeilRef := nRefPu
+                    if na(nCeilSwp) or high > nCeilSwp
+                        nCeilSwp  := high
+                        nCeilSwpB := bar_index
+                        nCeilSwpT := false
+                    if altMode and not nCeilIdmHit and not na(nCeilIdmP) and close > nCeilP and not na(nCeilSwp)
+                        float _amNCp = nCeilSwp
+                        int   _amNCb = nCeilSwpB
+                        nCeilP    := _amNCp
+                        nCeilB    := _amNCb
+                        nCeilBorn := bar_index
+                        nCeilSwp  := na
+                        nCeilSwpB := na
+                        nCeilSwpT := false
+                        nCeilRef  := na
+                        [_amNCi, _amNCh] = f_intArmIdm(_amNCb, true)
+                        nCeilIdmP   := _amNCi
+                        nCeilIdmHit := _amNCh
+                if not na(nCeilSwpB) and nCeilSwpB == bar_index and nTrend == 1 and not na(nCeilRef) and low < nCeilRef
+                    nCeilSwpT := true
+                if nTrend == 1 and not na(nCeilSwp) and not na(nCeilRef) and low < nCeilRef and (not nCeilSwpT or f_swpConf(pvHiB, nCeilSwpB))
+                    float _npC = nCeilSwp
+                    int   _nbC = nCeilB
+                    if not na(_npC)
+                        nCeilP    := _npC
+                        nCeilB    := _nbC
+                        nCeilBorn := bar_index
+                        nCeilSwp  := na
+                        nCeilSwpB := na
+                        nCeilRef  := na
+                        [npCp, nhCp] = f_intArmIdm(_nbC, true)
+                        nCeilIdmP   := npCp
+                        nCeilIdmHit := nhCp
+
+        if not na(nFlorP) and not na(nFlorBorn) and bar_index > nFlorBorn
+            if close < nFlorP and (nTrend != -1 or not altMode or nFlorIdmHit or na(nFlorIdmP))
+                bool isNChoD = nTrend != -1
+                if isNChoD
+                    evNChoDn := true
+                else
+                    evNBosDn := true
+                rqDnP   := nFlorP
+                rqDnB   := nFlorB
+                rqDnCho := isNChoD
+                [nRpD, nRbD] = f_retExtInc(nFlorB, true)
+                if not na(nRpD)
+                    nCeilP    := nRpD
+                    nCeilB    := nRbD
+                    nCeilBorn := bar_index
+                    nCeilSwp  := na
+                    nCeilSwpB := na
+                    nCeilRef  := na
+                    [npCr, nhCr] = f_intArmIdm(nRbD, true)
+                    nCeilIdmP   := npCr
+                    nCeilIdmHit := nhCr
+                if not isNChoD and nFlorIdmHit and not na(nRbD)
+                    rqStrDn := nRbD
+                nTrend    := -1
+                nFlorP    := na
+                nFlorB    := na
+                nFlorBorn := na
+                nFlorSwp  := na
+                nFlorSwpB := na
+                nFlorRef  := na
+                nFlorIdmP   := na
+                nFlorIdmHit := false
+            else
+                if low < nFlorP
+                    if na(nFlorRef)
+                        [nRefPd, nRefBd] = f_retExtreme(nFlorB, true)
+                        nFlorRef := nRefPd
+                    if na(nFlorSwp) or low < nFlorSwp
+                        nFlorSwp  := low
+                        nFlorSwpB := bar_index
+                        nFlorSwpT := false
+                    if altMode and not nFlorIdmHit and not na(nFlorIdmP) and close < nFlorP and not na(nFlorSwp)
+                        float _amNFp = nFlorSwp
+                        int   _amNFb = nFlorSwpB
+                        nFlorP    := _amNFp
+                        nFlorB    := _amNFb
+                        nFlorBorn := bar_index
+                        nFlorSwp  := na
+                        nFlorSwpB := na
+                        nFlorSwpT := false
+                        nFlorRef  := na
+                        [_amNFi, _amNFh] = f_intArmIdm(_amNFb, false)
+                        nFlorIdmP   := _amNFi
+                        nFlorIdmHit := _amNFh
+                if not na(nFlorSwpB) and nFlorSwpB == bar_index and nTrend == -1 and not na(nFlorRef) and high > nFlorRef
+                    nFlorSwpT := true
+                if nTrend == -1 and not na(nFlorSwp) and not na(nFlorRef) and high > nFlorRef and (not nFlorSwpT or f_swpConf(pvLoB, nFlorSwpB))
+                    float _npF = nFlorSwp
+                    int   _nbF = nFlorB
+                    if not na(_npF)
+                        nFlorP    := _npF
+                        nFlorB    := _nbF
+                        nFlorBorn := bar_index
+                        nFlorSwp  := na
+                        nFlorSwpB := na
+                        nFlorRef  := na
+                        [npFp, nhFp] = f_intArmIdm(_nbF, false)
+                        nFlorIdmP   := npFp
+                        nFlorIdmHit := nhFp
+
+    if mainEvt or intEvt or evNBosUp or evNBosDn or evNChoUp or evNChoDn
+        nRunHi := high
+        nRunLo := low
+    else
+        nRunHi := na(nRunHi) ? high : math.max(nRunHi, high)
+        nRunLo := na(nRunLo) ? low  : math.min(nRunLo, low)
+
+    ceilS.repos(bar_index)
+    florS.repos(bar_index)
+
+f_retLvl(int dir, float anch, float orig, float pct) =>
+    float l = na
+    if dir == 1 and not na(anch) and not na(orig) and anch > orig
+        l := anch - (anch - orig) * pct / 100.0
+    else if dir == -1 and not na(anch) and not na(orig) and orig > anch
+        l := anch + (orig - anch) * pct / 100.0
+    l
+
+float mAnch = na
+float mOrig = na
+if trendDir == 1
+    mAnch := mRunHi
+    mOrig := mRunLo
+    if not na(florS)
+        mOrig := florS.price
+else if trendDir == -1
+    mAnch := mRunLo
+    mOrig := mRunHi
+    if not na(ceilS)
+        mOrig := ceilS.price
+float mLvl = f_retLvl(trendDir, mAnch, mOrig, aRetPct)
+
+bool rtMainRet = false
+if evBosUp or evBosDn or evChoUp or evChoDn
+    mainRetFired := false
+if na(mLvl)
+    mainRetFired   := false
+    lastMainRetLvl := na
+    mainRetBorn    := na
+    mainRetAnch    := na
+else
+    if na(mainRetAnch) or mainRetAnch != mAnch
+        mainRetAnch := mAnch
+        if (trendDir == 1 and close > mLvl) or (trendDir == -1 and close < mLvl)
+            mainRetFired := false
+    bool _mNewLvl = na(lastMainRetLvl) or mLvl != lastMainRetLvl
+    if _mNewLvl
+        lastMainRetLvl := mLvl
+        mainRetBorn := bar_index
+    if not mainRetFired and not _mNewLvl
+        if (trendDir == 1 and low <= mLvl) or (trendDir == -1 and high >= mLvl)
+            rtMainRet    := true
+
+float iAnch = na
+float iOrig = na
+if iTrend == 1
+    iAnch := iRunHi
+    iOrig := not na(iFlorP) ? iFlorP : iRunLo
+else if iTrend == -1
+    iAnch := iRunLo
+    iOrig := not na(iCeilP) ? iCeilP : iRunHi
+float iLvl = f_retLvl(iTrend, iAnch, iOrig, aRetPct)
+
+bool rtIntRet = false
+if evIBosUp or evIBosDn or evIChoUp or evIChoDn or evBosUp or evBosDn or evChoUp or evChoDn
+    intRetFired := false
+if na(iLvl)
+    intRetFired   := false
+    lastIntRetLvl := na
+    intRetBorn    := na
+    intRetAnch    := na
+else
+    if na(intRetAnch) or intRetAnch != iAnch
+        intRetAnch := iAnch
+        if (iTrend == 1 and close > iLvl) or (iTrend == -1 and close < iLvl)
+            intRetFired := false
+    bool _iNewLvl = na(lastIntRetLvl) or iLvl != lastIntRetLvl
+    if _iNewLvl
+        lastIntRetLvl := iLvl
+        intRetBorn := bar_index
+    if not intRetFired and not _iNewLvl
+        if (iTrend == 1 and low <= iLvl) or (iTrend == -1 and high >= iLvl)
+            rtIntRet    := true
+
+float nAnch = na
+float nOrig = na
+if nTrend == 1
+    nAnch := nRunHi
+    nOrig := not na(nFlorP) ? nFlorP : nRunLo
+else if nTrend == -1
+    nAnch := nRunLo
+    nOrig := not na(nCeilP) ? nCeilP : nRunHi
+float nLvl = f_retLvl(nTrend, nAnch, nOrig, aRetPct)
+
+bool rtNnRet = false
+if evNBosUp or evNBosDn or evNChoUp or evNChoDn or evIBosUp or evIBosDn or evIChoUp or evIChoDn or evBosUp or evBosDn or evChoUp or evChoDn
+    nnRetFired := false
+if na(nLvl)
+    nnRetFired   := false
+    lastNnRetLvl := na
+    nnRetBorn    := na
+    nnRetAnch    := na
+else
+    if na(nnRetAnch) or nnRetAnch != nAnch
+        nnRetAnch := nAnch
+        if (nTrend == 1 and close > nLvl) or (nTrend == -1 and close < nLvl)
+            nnRetFired := false
+    bool _nNewLvl = na(lastNnRetLvl) or nLvl != lastNnRetLvl
+    if _nNewLvl
+        lastNnRetLvl := nLvl
+        nnRetBorn := bar_index
+    if not nnRetFired and not _nNewLvl
+        if (nTrend == 1 and low <= nLvl) or (nTrend == -1 and high >= nLvl)
+            rtNnRet    := true
+
+almGate  = false
+almGateP = 0.0
+almGateD = "Either"
+bgcolor(paintBg ? (trendDir == 1 ? color.new(color.teal, 92) : trendDir == -1 ? color.new(color.red, 92) : na) : na)
+plot(trendDir, "Trend (1 = bull, -1 = bear, 0 = undefined)", display = display.data_window)
+
+f_tfPack(bool on) =>
+    int trOut = 0
+    int evOut = 0
+    int inOut = 0
+    int nnOut = 0
+    if on
+        var SwingTracker tkHi = SwingTracker.new(true,  na, na, 0, na, false)
+        var SwingTracker tkLo = SwingTracker.new(false, na, na, 0, na, false)
+        var SwingTracker tkAH = SwingTracker.new(true,  na, na, 0, na, false)
+        var SwingTracker tkAL = SwingTracker.new(false, na, na, 0, na, false)
+        var float tCeil  = na
+        var float iCe  = na
+        var float iFl  = na
+        var int   tCeilB = na
+        var float tFlor  = na
+        var int   tFlorB = na
+        var float tRunLo = na
+        var float tRunHi = na
+        var int   tTrend = 0
+        var float tAllHi = na
+        var float tAllLo = na
+        tAllHi := na(tAllHi) ? high : math.max(tAllHi, high)
+        tAllLo := na(tAllLo) ? low  : math.min(tAllLo, low)
+        tRunLo := na(tRunLo) ? low  : math.min(tRunLo, low)
+        tRunHi := na(tRunHi) ? high : math.max(tRunHi, high)
+        var bool  hntH   = true
+        var bool  hntL   = true
+        var float lHiP   = na
+        var float lLoP   = na
+        var float rmLoP  = na
+        var int   rmLoB  = na
+        var int   rmLoDir = 0
+        var float rmLoHi = na
+        var float rmHiP  = na
+        var int   rmHiB  = na
+        var int   rmHiDir = 0
+        var float rmHiLo = na
+        if na(rmLoP) or low <= rmLoP
+            rmLoP   := low
+            rmLoB   := bar_index
+            rmLoDir := close > open ? 1 : close < open ? -1 : 0
+            rmLoHi  := high
+        if na(rmHiP) or high >= rmHiP
+            rmHiP   := high
+            rmHiB   := bar_index
+            rmHiDir := close > open ? 1 : close < open ? -1 : 0
+            rmHiLo  := low
+        [cfH, cfHb] = tkHi.update(pbSwp2 ? tFlor : na)
+        [cfL, cfLb] = tkLo.update(pbSwp2 ? tCeil : na)
+        int _hPot0 = tkAH.potentialBar
+        int _lPot0 = tkAL.potentialBar
+        float afH  = na
+        int   afHb = na
+        float afL  = na
+        int   afLb = na
+        if hntH
+            [_ch, _chb] = tkAH.update(pbSwp2 ? iFl : na)
+            afH  := _ch
+            afHb := _chb
+        if hntL
+            [_cl, _clb] = tkAL.update(pbSwp2 ? iCe : na)
+            afL  := _cl
+            afLb := _clb
+        if not na(afH)
+            hntH := false
+            hntL := true
+            lHiP := afH
+            tkAL.potential    := rmLoP
+            tkAL.potentialBar := rmLoB
+            bool _pbL = rmLoDir == 1
+            tkAL.count    := _pbL ? 1 : 0
+            tkAL.refLevel := _pbL ? rmLoHi : na
+        if not na(afL)
+            hntL := false
+            hntH := true
+            lLoP := afL
+            tkAH.potential    := rmHiP
+            tkAH.potentialBar := rmHiB
+            bool _pbH = rmHiDir == -1
+            tkAH.count    := _pbH ? 1 : 0
+            tkAH.refLevel := _pbH ? rmHiLo : na
+        if not hntH and not na(lHiP) and high >= lHiP
+            hntH := true
+            hntL := false
+            tkAH.armHere()
+        else if not hntL and not na(lLoP) and low <= lLoP
+            hntL := true
+            hntH := false
+            tkAL.armHere()
+        if tkAH.potentialBar != _hPot0
+            rmLoP := low
+            rmLoB := bar_index
+        if tkAL.potentialBar != _lPot0
+            rmHiP := high
+            rmHiB := bar_index
+        if not na(cfH)
+            bool adoptH = tTrend == 0 ? cfH >= tAllHi : na(tCeil)
+            if adoptH or (not na(tCeil) and cfH == tCeil)
+                tCeil  := cfH
+                tCeilB := bar_index
+                tRunLo := low
+        if not na(cfL)
+            bool adoptL = tTrend == 0 ? cfL <= tAllLo : na(tFlor)
+            if adoptL or (not na(tFlor) and cfL == tFlor)
+                tFlor  := cfL
+                tFlorB := bar_index
+                tRunHi := high
+        bool mEvt = false
+        if not na(tCeil) and not na(tCeilB) and bar_index > tCeilB and close > tCeil
+            tTrend := 1
+            mEvt   := true
+            tFlor  := tRunLo
+            tFlorB := bar_index
+            tRunHi := high
+            tCeil  := na
+            tCeilB := na
+        else if not na(tFlor) and not na(tFlorB) and bar_index > tFlorB and close < tFlor
+            tTrend := -1
+            mEvt   := true
+            tCeil  := tRunHi
+            tCeilB := bar_index
+            tRunLo := low
+            tFlor  := na
+            tFlorB := na
+        trOut := tTrend
+        if mEvt
+            evOut := tTrend == 1 ? 1 : 2
+
+        var int   iTr  = 0
+        var int   iAnc = na
+        var int   iCeB = na
+        var int   iFlB = na
+        var float iRLo = na
+        var float iRHi = na
+        var array<float> qHiP = array.new_float()
+        var array<int>   qHiB = array.new_int()
+        var array<float> qLoP = array.new_float()
+        var array<int>   qLoB = array.new_int()
+        if not na(afH)
+            array.push(qHiP, afH)
+            array.push(qHiB, afHb)
+            if array.size(qHiB) > 120
+                array.shift(qHiP)
+                array.shift(qHiB)
+        if not na(afL)
+            array.push(qLoP, afL)
+            array.push(qLoB, afLb)
+            if array.size(qLoB) > 120
+                array.shift(qLoP)
+                array.shift(qLoB)
+        iRLo := na(iRLo) ? low  : math.min(iRLo, low)
+        iRHi := na(iRHi) ? high : math.max(iRHi, high)
+        int  _anc    = tTrend == 1 ? tCeilB : tTrend == -1 ? tFlorB : na
+        bool iEvt    = false
+        if mEvt
+            iTr  := 0
+            iAnc := na
+            iCe  := na
+            iCeB := na
+            iFl  := na
+            iFlB := na
+        if na(iAnc) and not na(_anc)
+            iAnc := _anc
+            if na(iCe) and array.size(qHiB) > 0
+                for _q = 0 to array.size(qHiB) - 1
+                    if array.get(qHiB, _q) > iAnc and close < array.get(qHiP, _q)
+                        iCe  := array.get(qHiP, _q)
+                        iCeB := bar_index
+                        iRLo := low
+                        break
+            if na(iFl) and array.size(qLoB) > 0
+                for _q = 0 to array.size(qLoB) - 1
+                    if array.get(qLoB, _q) > iAnc and close > array.get(qLoP, _q)
+                        iFl  := array.get(qLoP, _q)
+                        iFlB := bar_index
+                        iRHi := high
+                        break
+        if not mEvt and not na(iAnc)
+            if not na(afH) and afHb > iAnc and close < afH
+                if na(iCe) or afH == iCe
+                    iCe  := afH
+                    iCeB := bar_index
+                    iRLo := low
+            if not na(afL) and afLb > iAnc and close > afL
+                if na(iFl) or afL == iFl
+                    iFl  := afL
+                    iFlB := bar_index
+                    iRHi := high
+            if not na(iCe) and not na(iCeB) and bar_index > iCeB and close > iCe
+                iTr  := 1
+                iEvt := true
+                iFl  := iRLo
+                iFlB := bar_index
+                iRHi := high
+                iCe  := na
+                iCeB := na
+            else if not na(iFl) and not na(iFlB) and bar_index > iFlB and close < iFl
+                iTr  := -1
+                iEvt := true
+                iCe  := iRHi
+                iCeB := bar_index
+                iRLo := low
+                iFl  := na
+                iFlB := na
+        inOut := iTr
+        if iEvt
+            evOut := evOut + 4
+
+        var int   nTr  = 0
+        var int   nAnc = na
+        var float nCe  = na
+        var int   nCeB = na
+        var float nFl  = na
+        var int   nFlB = na
+        var float nRLo = na
+        var float nRHi = na
+        nRLo := na(nRLo) ? low  : math.min(nRLo, low)
+        nRHi := na(nRHi) ? high : math.max(nRHi, high)
+        int _nanc = iTr == 1 ? iCeB : iTr == -1 ? iFlB : na
+        if mEvt or iEvt
+            nTr  := 0
+            nAnc := na
+            nCe  := na
+            nCeB := na
+            nFl  := na
+            nFlB := na
+        if na(nAnc) and not na(_nanc)
+            nAnc := _nanc
+            if na(nCe) and array.size(qHiB) > 0
+                for _q = 0 to array.size(qHiB) - 1
+                    if array.get(qHiB, _q) > nAnc and close < array.get(qHiP, _q)
+                        nCe  := array.get(qHiP, _q)
+                        nCeB := bar_index
+                        nRLo := low
+                        break
+            if na(nFl) and array.size(qLoB) > 0
+                for _q = 0 to array.size(qLoB) - 1
+                    if array.get(qLoB, _q) > nAnc and close > array.get(qLoP, _q)
+                        nFl  := array.get(qLoP, _q)
+                        nFlB := bar_index
+                        nRHi := high
+                        break
+        if not mEvt and not iEvt and not na(nAnc)
+            if not na(afH) and afHb > nAnc and close < afH
+                if na(nCe) or afH == nCe
+                    nCe  := afH
+                    nCeB := bar_index
+                    nRLo := low
+            if not na(afL) and afLb > nAnc and close > afL
+                if na(nFl) or afL == nFl
+                    nFl  := afL
+                    nFlB := bar_index
+                    nRHi := high
+            if not na(nCe) and not na(nCeB) and bar_index > nCeB and close > nCe
+                nTr  := 1
+                evOut := evOut + 8
+                nFl  := nRLo
+                nFlB := bar_index
+                nRHi := high
+                nCe  := na
+                nCeB := na
+            else if not na(nFl) and not na(nFlB) and bar_index > nFlB and close < nFl
+                nTr  := -1
+                evOut := evOut + 8
+                nCe  := nRHi
+                nCeB := bar_index
+                nRLo := low
+                nFl  := na
+                nFlB := na
+        nnOut := nTr
+
+    [trOut, evOut, inOut, nnOut]
+
+almT1  = "Price crosses level"
+
+almOn2 = false
+almT2  = "Price crosses level"
+almP2  = 0.0
+almD2  = "Either"
+
+almOn3 = false
+almT3  = "Price crosses level"
+almP3  = 0.0
+almD3  = "Either"
+
+almOn4 = false
+almT4  = "Price crosses level"
+almP4  = 0.0
+almD4  = "Either"
+
+almOn5 = false
+almT5  = "Price crosses level"
+almP5  = 0.0
+almD5  = "Either"
+
+nnOn     = true
+nnHist   = false
+nnBosTxt = "nBOS"
+nnChoTxt = "nCHOCH"
+nnLc     = color.new(color.yellow, 0)
+nnTc     = color.new(color.yellow, 0)
+nnLs     = "Solid"
+nnW      = 1
+nnTs     = "Small"
+nnShow   = true
+nnStrOn  = false
+nnStrTxt = "."
+nnStrSz  = "Small"
+aNBB = false
+aNSB = false
+aNBC = false
+aNSC = false
+aANE = false
+
+gArm = "Arm status readout"
+armShow  = true
+armPos   = "Bottom right"
+armSize  = "Small"
+armShowP = true
+armTitle = "ARM"
+armTxtA  = "ARMED"
+armTxtW  = "WAITING"
+armTxtN  = "NO GATE"
+armColA  = color.new(color.lime, 0)
+armColW  = color.new(color.orange, 0)
+armColN  = color.new(color.gray, 0)
+armTitTc = color.silver
+armBg    = color.new(color.black, 20)
+
+aNnRet   = false
+
+var array<line>  innLn = array.new<line>()
+var array<label> innLb = array.new<label>()
+var array<int>   innCnt = array.new<int>()
+
+f_innPrune() =>
+    f_cutOld(innLn, innLb, innCnt, 100)
+
+f_innClear() =>
+    f_cutAll(innLn, innLb, innCnt)
+
+f_innMark(float p, int pb, bool isCho) =>
+    bool inWin = (last_bar_index - bar_index) <= histBars and f_xNear(pb)
+    if nnOn and inWin
+        f_addLn(innLn, innCnt, line.new(pb, p, bar_index, p, color = nnLc, width = nnW, style = lstyle(nnLs)))
+        if nnShow
+            f_addLb(innLb, innCnt, label.new(int(math.avg(pb, bar_index)), p, isCho ? nnChoTxt : nnBosTxt, color = color(na), textcolor = nnTc, style = label.style_none, size = tsize(nnTs)))
+        f_innPrune()
+
+f_innStrong(int b, bool isLow) =>
+    bool inWin = (last_bar_index - bar_index) <= histBars and f_xNear(b)
+    if nnOn and nnStrOn and inWin
+        f_addLb(innLb, innCnt, label.new(b, na, nnStrTxt, yloc = isLow ? yloc.belowbar : yloc.abovebar, style = label.style_none, textcolor = color.gray, size = tsize(nnStrSz)))
+        f_innPrune()
+
+if not na(rqUpP)
+    f_innMark(rqUpP, rqUpB, rqUpCho)
+if not na(rqDnP)
+    f_innMark(rqDnP, rqDnB, rqDnCho)
+if not na(rqStrUp)
+    f_innStrong(rqStrUp, true)
+if not na(rqStrDn)
+    f_innStrong(rqStrDn, false)
+
+f_trigCode(string t) =>
+    t == "Price crosses level" ? 0 : t == "Price at N% of BOS*/CHOCH* range" ? 1 : t == "Price at N% of internal range" ? 2 : t == "BOS" ? 3 : t == "CHOCH" ? 4 : t == "iBOS" ? 5 : t == "iCHOCH" ? 6 : t == "Any structure event" ? 7 : t == "Any internal structure event" ? 8 : t == "Price at N% of inner nBOS/nCHOCH range" ? 9 : t == "nBOS" ? 10 : t == "nCHOCH" ? 11 : 12
+var int almK1 = f_trigCode(almT1)
+var int almK2 = f_trigCode(almT2)
+var int almK3 = f_trigCode(almT3)
+var int almK4 = f_trigCode(almT4)
+var int almK5 = f_trigCode(almT5)
+float _armPc = nz(close[1], close)
+f_armTouch(float lvl, string dir, float pc) =>
+    bool hit = false
+    if lvl > 0
+        bool fromBelow = pc <= lvl and high >= lvl
+        bool fromAbove = pc >= lvl and low  <= lvl
+        hit := dir == "Touches from below" ? fromBelow : dir == "Touches from above" ? fromAbove : (fromBelow or fromAbove)
+    hit
+f_armHit(int trig, float lvl, string dir) =>
+    switch trig
+        0 => f_armTouch(lvl, dir, _armPc)
+        1 => rtMainRet
+        2 => rtIntRet
+        3 => evBosUp or evBosDn
+        4 => evChoUp or evChoDn
+        5 => evIBosUp or evIBosDn
+        6 => evIChoUp or evIChoDn
+        7 => evBosUp or evBosDn or evChoUp or evChoDn
+        8 => evIBosUp or evIBosDn or evIChoUp or evIChoDn
+        9 => rtNnRet
+        10 => evNBosUp or evNBosDn
+        11 => evNChoUp or evNChoDn
+        => evNBosUp or evNBosDn or evNChoUp or evNChoDn
+
+var bool almArmed = false
+bool almAnySlot = almGate or almOn2 or almOn3 or almOn4 or almOn5
+if almAnySlot and not almArmed and barstate.isrealtime
+    bool almHit = (almGate and f_armHit(almK1, almGateP, almGateD)) or (almOn2 and f_armHit(almK2, almP2, almD2)) or (almOn3 and f_armHit(almK3, almP3, almD3)) or (almOn4 and f_armHit(almK4, almP4, almD4)) or (almOn5 and f_armHit(almK5, almP5, almD5))
+    if almHit
+        almArmed := true
+bool almOk = not almAnySlot or almArmed
+
+if almOk and barstate.isrealtime
+    if rtMainRet
+        mainRetFired := true
+    if rtIntRet
+        intRetFired := true
+    if rtNnRet
+        nnRetFired := true
+
+var array<string> almQC = array.new<string>()
+var array<string> almQB = array.new<string>()
+if almOk and (evBosUp or evBosDn or evChoUp or evChoDn or evSwpHi or evSwpLo or evIBosUp or evIBosDn or evIChoUp or evIChoDn or evNBosUp or evNBosDn or evNChoUp or evNChoDn)
+    string tfTxt = syminfo.ticker + " - " + timeframe.period + " - " + str.tostring(close, format.mintick)
+    if evBosUp and aBB
+        array.push(almQC, "Bullish BOS - "   + tfTxt)
+    if evBosDn and aSB
+        array.push(almQC, "Bearish BOS - "   + tfTxt)
+    if evChoUp and aBC
+        array.push(almQC, "Bullish CHOCH - " + tfTxt)
+    if evChoDn and aSC
+        array.push(almQC, "Bearish CHOCH - " + tfTxt)
+    if (evSwpHi or evSwpLo) and aSW
+        array.push(almQC, "Liquidity sweep - " + tfTxt)
+    if evIBosUp and aIBB
+        array.push(almQC, "Bullish iBOS - "   + tfTxt)
+    if evIBosDn and aISB
+        array.push(almQC, "Bearish iBOS - "   + tfTxt)
+    if evIChoUp and aIBC
+        array.push(almQC, "Bullish iCHOCH - " + tfTxt)
+    if evIChoDn and aISC
+        array.push(almQC, "Bearish iCHOCH - " + tfTxt)
+    if (evIBosUp or evIBosDn) and aAIB
+        array.push(almQC, "iBOS - " + tfTxt)
+    if (evIChoUp or evIChoDn) and aAIC
+        array.push(almQC, "iCHOCH - " + tfTxt)
+    if (evIBosUp or evIBosDn or evIChoUp or evIChoDn) and aAIE
+        array.push(almQC, "Internal structure event - " + tfTxt)
+    if evNBosUp and aNBB
+        array.push(almQC, "Bullish nBOS - "   + tfTxt)
+    if evNBosDn and aNSB
+        array.push(almQC, "Bearish nBOS - "   + tfTxt)
+    if evNChoUp and aNBC
+        array.push(almQC, "Bullish nCHOCH - " + tfTxt)
+    if evNChoDn and aNSC
+        array.push(almQC, "Bearish nCHOCH - " + tfTxt)
+    if (evNBosUp or evNBosDn or evNChoUp or evNChoDn) and aANE
+        array.push(almQC, "Inner structure event - " + tfTxt)
+
+if almOk and ((rtMainRet and aMainRet) or (rtIntRet and aIntRet) or (rtNnRet and aNnRet))
+    string rtTfTxt = syminfo.ticker + " - " + timeframe.period + " - " + str.tostring(close, format.mintick)
+    if rtMainRet and aMainRet
+        array.push(almQB, "Price at " + str.tostring(aRetPct, "#.#") + "% retracement of the BOS*/CHOCH* leg - level " + str.tostring(mLvl, format.mintick) + " - " + rtTfTxt)
+    if rtIntRet and aIntRet
+        array.push(almQB, "Price at " + str.tostring(aRetPct, "#.#") + "% retracement of the iBOS/iCHOCH leg - level " + str.tostring(iLvl, format.mintick) + " - " + rtTfTxt)
+    if rtNnRet and aNnRet
+        array.push(almQB, "Price at " + str.tostring(aRetPct, "#.#") + "% retracement of the nBOS/nCHOCH leg - level " + str.tostring(nLvl, format.mintick) + " - " + rtTfTxt)
+
+f_armTag(bool on, int trig, float lvl) =>
+    string t = ""
+    if on
+        t := trig == 0 ? (lvl > 0 ? str.tostring(lvl, format.mintick) : "-") : trig == 1 ? "RET%" : trig == 2 ? "iRET%" : trig == 3 ? "BOS" : trig == 4 ? "CHOCH" : trig == 5 ? "iBOS" : trig == 6 ? "iCHOCH" : trig == 7 ? "ANY" : trig == 8 ? "iANY" : trig == 9 ? "nRET%" : trig == 10 ? "nBOS" : trig == 11 ? "nCHOCH" : "nANY"
+    t
+
+f_armJoin(string acc, string add) =>
+    add == "" ? acc : acc == "" ? add : acc + "  -  " + add
+
+f_armPos(string p) =>
+    p == "Top left" ? position.top_left : p == "Top center" ? position.top_center : p == "Top right" ? position.top_right : p == "Middle left" ? position.middle_left : p == "Middle right" ? position.middle_right : p == "Bottom left" ? position.bottom_left : p == "Bottom center" ? position.bottom_center : position.bottom_right
+
+g7  = "(7) Possible iBOS (internal active extended line)"
+ipOn     = true
+ip1_lc   = color.new(color.blue, 0)
+ip1_tc   = color.new(color.blue, 0)
+ip1_ls   = "Dotted"
+ip1_w    = 1
+ip1_txt  = "iBOS*"
+ip1_ts   = "Small"
+ip1_show = true
+ip1_tv   = "Middle"
+ip1_th   = "Center"
+
+g8  = "(8) Possible iCHOCH (internal active extended line)"
+ip2_lc   = color.new(color.blue, 40)
+ip2_tc   = color.new(color.blue, 40)
+ip2_ls   = "Dotted"
+ip2_w    = 1
+ip2_txt  = "iCHOCH*"
+ip2_ts   = "Small"
+ip2_show = true
+ip2_tv   = "Middle"
+ip2_th   = "Center"
+
+g9  = "(9) Possible nBOS (inner active extended line)"
+npOn     = true
+np1_lc   = color.new(color.yellow, 0)
+np1_tc   = color.new(color.yellow, 0)
+np1_ls   = "Dotted"
+np1_w    = 1
+np1_txt  = "nBOS*"
+np1_ts   = "Small"
+np1_show = true
+np1_tv   = "Middle"
+np1_th   = "Center"
+
+g10 = "(10) Possible nCHOCH (inner active extended line)"
+np2_lc   = color.new(color.yellow, 40)
+np2_tc   = color.new(color.yellow, 40)
+np2_ls   = "Dotted"
+np2_w    = 1
+np2_txt  = "nCHOCH*"
+np2_ts   = "Small"
+np2_show = true
+np2_tv   = "Middle"
+np2_th   = "Center"
+
+gEqM = "(11) 50% line - main BOS* / CHOCH* range"
+eqMOn    = true
+eqMPct   = 50.0
+eqAnch   = "Older level"
+eqM_lc   = color.new(color.gray, 0)
+eqM_tc   = color.new(color.gray, 0)
+eqM_ls   = "Dashed"
+eqM_w    = 1
+eqM_txt  = "EQ"
+eqM_pc   = true
+eqM_ts   = "Small"
+eqM_show = true
+eqM_tv   = "Middle"
+eqM_th   = "Center"
+
+gEqI = "(12) 50% line - internal iBOS* / iCHOCH* range"
+eqIOn    = false
+eqIPct   = 50.0
+eqI_lc   = color.new(color.blue, 25)
+eqI_tc   = color.new(color.blue, 25)
+eqI_ls   = "Dashed"
+eqI_w    = 1
+eqI_txt  = "iEQ"
+eqI_pc   = true
+eqI_ts   = "Small"
+eqI_show = true
+eqI_tv   = "Middle"
+eqI_th   = "Center"
+
+gEqN = "(13) 50% line - inner nBOS* / nCHOCH* range"
+eqNOn    = false
+eqNPct   = 50.0
+eqN_lc   = color.new(color.yellow, 25)
+eqN_tc   = color.new(color.yellow, 25)
+eqN_ls   = "Dashed"
+eqN_w    = 1
+eqN_txt  = "nEQ"
+eqN_pc   = true
+eqN_ts   = "Small"
+eqN_show = true
+eqN_tv   = "Middle"
+eqN_th   = "Center"
+
+mainKeep = 0
+intKeep  = 0
+nnKeep   = 0
+
+aANB = false
+aANC = false
+
+mstTen  = true
+mstHist = false
+eqSrc   = "Range (BOS*/CHOCH* pair)"
+eqSrcCl = "New high / low (wick)"
+almMax  = 0
+
+var line  ipCeilLn = na
+var label ipCeilLb = na
+var line  ipFlorLn = na
+var label ipFlorLb = na
+var line  npCeilLn = na
+var label npCeilLb = na
+var line  npFlorLn = na
+var label npFlorLb = na
+var line  eqMLn = na
+var label eqMLb = na
+var line  eqILn = na
+var label eqILb = na
+var line  eqNLn = na
+var label eqNLb = na
+
+var float mCHi  = na
+var float mCLo  = na
+var int   mEvtB = na
+var float iCHi  = na
+var float iCLo  = na
+var int   iEvtB = na
+var float nCHi  = na
+var float nCLo  = na
+var int   nEvtB = na
+bool eqClose = eqSrcCl == "Close beyond the previous extreme"
+bool eqLive  = eqSrc   == "Live leg (from the break)"
+
+if eqLive and (not onClose or barstate.isconfirmed)
+    bool  _mE  = evBosUp or evBosDn or evChoUp or evChoDn
+    bool  _iE  = _mE or evIBosUp or evIBosDn or evIChoUp or evIChoDn
+    bool  _nE  = _iE or evNBosUp or evNBosDn or evNChoUp or evNChoDn
+    bool  _upC = close > nz(high[1], high)
+    bool  _dnC = close < nz(low[1], low)
+    if _mE
+        mCHi  := high
+        mCLo  := low
+        mEvtB := bar_index
+    else
+        if _upC and (na(mCHi) or high > mCHi)
+            mCHi := high
+        if _dnC and (na(mCLo) or low < mCLo)
+            mCLo := low
+    if _iE
+        iCHi  := high
+        iCLo  := low
+        iEvtB := bar_index
+    else
+        if _upC and (na(iCHi) or high > iCHi)
+            iCHi := high
+        if _dnC and (na(iCLo) or low < iCLo)
+            iCLo := low
+    if _nE
+        nCHi  := high
+        nCLo  := low
+        nEvtB := bar_index
+    else
+        if _upC and (na(nCHi) or high > nCHi)
+            nCHi := high
+        if _dnC and (na(nCLo) or low < nCLo)
+            nCLo := low
+
+f_hLine(line ln, label lb, bool on, float p, int b, string txt, color lc, color tc, string ls, int w, string ts, bool showT, string tv, string th) =>
+    line  _l = ln
+    label _b = lb
+    if not on or na(p) or na(b)
+        if not na(_l)
+            line.delete(_l)
+            _l := na
+        if not na(_b)
+            label.delete(_b)
+            _b := na
+    else
+        int _x1 = b
+        int _hMin = math.max(last_bar_index - histBars, bar_index - _xBack)
+        if _x1 < _hMin
+            _x1 := _hMin
+        if _x1 < 0
+            _x1 := 0
+        if _x1 > bar_index
+            _x1 := bar_index
+        if na(_l)
+            _l := line.new(_x1, p, bar_index, p, color = lc, width = w, style = lstyle(ls), extend = extend.right)
+        else
+            line.set_xy1(_l, _x1, p)
+            line.set_xy2(_l, bar_index, p)
+            line.set_color(_l, lc)
+            line.set_width(_l, w)
+            line.set_style(_l, lstyle(ls))
+        if showT
+            int _lx = th == "Left" ? _x1 : th == "Right" ? bar_index : int(math.avg(_x1, bar_index))
+            if na(_b)
+                _b := label.new(_lx, p, txt, color = color(na), textcolor = tc, style = lblStyle(tv), size = tsize(ts))
+            else
+                label.set_xy(_b, _lx, p)
+                label.set_text(_b, txt)
+                label.set_textcolor(_b, tc)
+                label.set_style(_b, lblStyle(tv))
+                label.set_size(_b, tsize(ts))
+        else
+            if not na(_b)
+                label.delete(_b)
+                _b := na
+    [_l, _b]
+
+f_ipStyle(bool isBos) =>
+    if isBos
+        [ip1_lc, ip1_tc, ip1_ls, ip1_w, ip1_txt, ip1_ts, ip1_show, ip1_tv, ip1_th]
+    else
+        [ip2_lc, ip2_tc, ip2_ls, ip2_w, ip2_txt, ip2_ts, ip2_show, ip2_tv, ip2_th]
+
+f_npStyle(bool isBos) =>
+    if isBos
+        [np1_lc, np1_tc, np1_ls, np1_w, np1_txt, np1_ts, np1_show, np1_tv, np1_th]
+    else
+        [np2_lc, np2_tc, np2_ls, np2_w, np2_txt, np2_ts, np2_show, np2_tv, np2_th]
+
+f_eqLvl(float a, float b, float pct) =>
+    float l = na
+    if not na(a) and not na(b)
+        float _lo = math.min(a, b)
+        float _hi = math.max(a, b)
+        l := _lo + (_hi - _lo) * pct / 100.0
+    l
+
+f_eqBar(int b1, int b2, string mode) =>
+    int r = na
+    if not na(b1) and not na(b2)
+        int _older = b1 < b2 ? b1 : b2
+        int _newer = b1 > b2 ? b1 : b2
+        r := mode == "Newer level" ? _newer : mode == "Current bar" ? bar_index : _older
+    r
+
+f_eqTxt(string t, bool app, float pct) =>
+    string s = t
+    if app
+        string _p = str.tostring(pct, "#.##") + "%"
+        s := t == "" ? _p : t + " " + _p
+    s
+
+if bar_index == last_bar_index
+    [_icLc, _icTc, _icLs, _icW, _icTx, _icTs, _icSh, _icTv, _icTh] = f_ipStyle(iTrend == 1)
+    [_icL, _icB] = f_hLine(ipCeilLn, ipCeilLb, ipOn and intUse, iCeilP, iCeilB, _icTx, _icLc, _icTc, _icLs, _icW, _icTs, _icSh, _icTv, _icTh)
+    ipCeilLn := _icL
+    ipCeilLb := _icB
+
+    [_ifLc, _ifTc, _ifLs, _ifW, _ifTx, _ifTs, _ifSh, _ifTv, _ifTh] = f_ipStyle(iTrend == -1)
+    [_ifL, _ifB] = f_hLine(ipFlorLn, ipFlorLb, ipOn and intUse, iFlorP, iFlorB, _ifTx, _ifLc, _ifTc, _ifLs, _ifW, _ifTs, _ifSh, _ifTv, _ifTh)
+    ipFlorLn := _ifL
+    ipFlorLb := _ifB
+
+    [_ncLc, _ncTc, _ncLs, _ncW, _ncTx, _ncTs, _ncSh, _ncTv, _ncTh] = f_npStyle(nTrend == 1)
+    [_ncL, _ncB] = f_hLine(npCeilLn, npCeilLb, npOn and nnOn, nCeilP, nCeilB, _ncTx, _ncLc, _ncTc, _ncLs, _ncW, _ncTs, _ncSh, _ncTv, _ncTh)
+    npCeilLn := _ncL
+    npCeilLb := _ncB
+
+    [_nfLc, _nfTc, _nfLs, _nfW, _nfTx, _nfTs, _nfSh, _nfTv, _nfTh] = f_npStyle(nTrend == -1)
+    [_nfL, _nfB] = f_hLine(npFlorLn, npFlorLb, npOn and nnOn, nFlorP, nFlorB, _nfTx, _nfLc, _nfTc, _nfLs, _nfW, _nfTs, _nfSh, _nfTv, _nfTh)
+    npFlorLn := _nfL
+    npFlorLb := _nfB
+
+    float _eqMp = na
+    int   _eqMb = na
+    if eqLive
+        float _mTop = na
+        float _mBot = na
+        if trendDir == 1
+            _mTop := eqClose ? mCHi : mRunHi
+            _mBot := not na(florS) ? florS.price : mRunLo
+        else if trendDir == -1
+            _mBot := eqClose ? mCLo : mRunLo
+            _mTop := not na(ceilS) ? ceilS.price : mRunHi
+        _eqMp := f_eqLvl(_mTop, _mBot, eqMPct)
+        _eqMb := mEvtB
+    else if not na(ceilS) and not na(florS)
+        _eqMp := f_eqLvl(ceilS.price, florS.price, eqMPct)
+        _eqMb := f_eqBar(ceilS.x1, florS.x1, eqAnch)
+    [_eqML, _eqMB] = f_hLine(eqMLn, eqMLb, eqMOn, _eqMp, _eqMb, f_eqTxt(eqM_txt, eqM_pc, eqMPct), eqM_lc, eqM_tc, eqM_ls, eqM_w, eqM_ts, eqM_show, eqM_tv, eqM_th)
+    eqMLn := _eqML
+    eqMLb := _eqMB
+
+    float _eqIp = na
+    int   _eqIb = na
+    if eqLive
+        float _iTop = na
+        float _iBot = na
+        if iTrend == 1
+            _iTop := eqClose ? iCHi : iRunHi
+            _iBot := not na(iFlorP) ? iFlorP : iRunLo
+        else if iTrend == -1
+            _iBot := eqClose ? iCLo : iRunLo
+            _iTop := not na(iCeilP) ? iCeilP : iRunHi
+        _eqIp := f_eqLvl(_iTop, _iBot, eqIPct)
+        _eqIb := iEvtB
+    else
+        _eqIp := f_eqLvl(iCeilP, iFlorP, eqIPct)
+        _eqIb := f_eqBar(iCeilB, iFlorB, eqAnch)
+    [_eqIL, _eqIB] = f_hLine(eqILn, eqILb, eqIOn and intUse, _eqIp, _eqIb, f_eqTxt(eqI_txt, eqI_pc, eqIPct), eqI_lc, eqI_tc, eqI_ls, eqI_w, eqI_ts, eqI_show, eqI_tv, eqI_th)
+    eqILn := _eqIL
+    eqILb := _eqIB
+
+    float _eqNp = na
+    int   _eqNb = na
+    if eqLive
+        float _nTop = na
+        float _nBot = na
+        if nTrend == 1
+            _nTop := eqClose ? nCHi : nRunHi
+            _nBot := not na(nFlorP) ? nFlorP : nRunLo
+        else if nTrend == -1
+            _nBot := eqClose ? nCLo : nRunLo
+            _nTop := not na(nCeilP) ? nCeilP : nRunHi
+        _eqNp := f_eqLvl(_nTop, _nBot, eqNPct)
+        _eqNb := nEvtB
+    else
+        _eqNp := f_eqLvl(nCeilP, nFlorP, eqNPct)
+        _eqNb := f_eqBar(nCeilB, nFlorB, eqAnch)
+    [_eqNL, _eqNB] = f_hLine(eqNLn, eqNLb, eqNOn and nnOn, _eqNp, _eqNb, f_eqTxt(eqN_txt, eqN_pc, eqNPct), eqN_lc, eqN_tc, eqN_ls, eqN_w, eqN_ts, eqN_show, eqN_tv, eqN_th)
+    eqNLn := _eqNL
+    eqNLb := _eqNB
+
+int _capMain = mstTen ? 10 : mainKeep > 0 ? mainKeep : 500
+int _capInt  = mstTen ? 10 : intKeep
+int _capInn  = mstTen ? 10 : nnKeep
+f_cutOld(mainLn, mainLb, mainCnt, _capMain)
+if _capInt > 0
+    f_cutOld(intLn, intLb, intCnt, _capInt)
+if _capInn > 0
+    f_cutOld(innLn, innLb, innCnt, _capInn)
+
+if almOk and (evNBosUp or evNBosDn or evNChoUp or evNChoDn)
+    string nnTfTxt = syminfo.ticker + " - " + timeframe.period + " - " + str.tostring(close, format.mintick)
+    if (evNBosUp or evNBosDn) and aANB
+        array.push(almQC, "nBOS - " + nnTfTxt)
+    if (evNChoUp or evNChoDn) and aANC
+        array.push(almQC, "nCHOCH - " + nnTfTxt)
+
+if _intClrReq and not inHist and not mstHist
+    f_intClear()
+if rqClear and not nnHist and not mstHist
+    f_innClear()
+
+var int almFired = 0
+bool _almLive = barstate.isrealtime
+while array.size(almQC) > 0
+    string _almM = array.shift(almQC)
+    if _almLive and (almMax == 0 or almFired < almMax)
+        almFired += 1
+        alert(_almM, alert.freq_once_per_bar_close)
+while array.size(almQB) > 0
+    string _almN = array.shift(almQB)
+    if _almLive and (almMax == 0 or almFired < almMax)
+        almFired += 1
+        alert(_almN, alert.freq_once_per_bar)
+
+gStg = "20. Strategy - entries, session, targets"
+stOn     = input.bool(true, "Enable trading", group = gStg)
+stR1On   = input.bool(true, "RULE 1 - pullback % entry", group = gStg, tooltip = "Entry at a percentage retracement of the leg.\n\nRULE 1 ALONE (rule 2 off): every signal is entered this way, whatever the higher timeframe is doing. The higher-timeframe request is not even sent, so the script also loads faster.\n\nRULE 1 + RULE 2: rule 1 handles the signals where the higher timeframe DISAGREES.")
+stR2On   = input.bool(true, "RULE 2 - entry at the broken pivot, higher timeframe must AGREE", group = gStg, tooltip = "Entry at the pivot the signal just broke, taken only when the higher timeframe trend points the same way.\n\nRULE 2 ALONE (rule 1 off): a signal is taken ONLY when the higher timeframe agrees. Everything else is skipped.\n\nRULE 1 + RULE 2: the strategy picks per signal - agrees goes to rule 2, disagrees goes to rule 1.\n\nBOTH OFF: no trades at all.")
+stSigSrc = input.string("CHOCH only", "Take trades on", options = ["CHOCH only", "BOS only", "CHOCH and BOS"], group = gStg, tooltip = "Which main-tier structure events are allowed to start a trade.\n\nCHOCH ONLY (default): a change of character only - the reversal signal. Fewest trades.\n\nBOS ONLY: a break of structure only - the continuation signal. No reversal entries at all.\n\nCHOCH AND BOS: both. Several times as many signals.\n\nWhichever you pick, everything downstream is identical: the same two entry rules, the same stop, the same target, the same sizing. The choice only decides which events are looked at. Events you switch off are invisible to the strategy - they do not arm a setup, they do not reverse a running trade, and they do not cancel a resting order.")
+stPbPct  = input.float(50.0, "  - RULE 1 pullback %", minval = 1.0, maxval = 99.0, step = 0.5, group = gStg, tooltip = "Measured from the live CHOCH* level up to the running extreme of the leg. It RATCHETS: a new extreme moves the level and the resting order with it, a candle against the leg leaves it alone.")
+stRR     = input.float(1.0, "Target - R multiple of the entry-to-stop distance", minval = 0.1, maxval = 20.0, step = 0.1, group = gStg)
+stSlBuf  = input.float(0.0, "Stop buffer beyond the CHOCH* level, in price", minval = 0.0, step = 0.01, group = gStg)
+stRev    = input.bool(true, "Opposite signal while in a trade: close and reverse", group = gStg, tooltip = "A Pine strategy holds ONE net position, so taking both sides at once is not possible. This closes the running trade at market and opens the new one. OFF = the new signal is ignored until the current trade finishes.")
+stEntMode = input.string("Continuous - follow the level", "Entry order handling", options = ["Continuous - follow the level", "Send once - place it and leave it"], group = gStg, tooltip = "CONTINUOUS (default): while a setup is waiting, the limit is re-placed every bar at the recomputed level, so a rule-1 entry RATCHETS up with each new extreme of the leg.\n\nSEND ONCE: the level is worked out once when the setup is armed and the order is left exactly there. No ratchet, no chasing - what you saw when the signal printed is what you get.\n\nNeither one changes how many webhook messages you get. A TradingView strategy alert fires when an order FILLS, not when it is placed, so re-placing a resting limit sends nothing to your bridge. Choose on behaviour, not on message count.")
+stHtf    = input.string("Auto - paired with the chart", "Higher timeframe for RULE 2", options = ["Auto - paired with the chart", "15m", "1h", "4h", "1D", "1W", "1M"], group = gStg, tooltip = "Which timeframe has to AGREE for rule 2 to be used instead of rule 1.\n\nAUTO pairs it with whatever chart you are on:\n  1m chart  -> 15m\n  5m chart  -> 1h\n  15m chart -> 4h\n  1h chart  -> 1D\n  4h chart  -> 1W\n  1D chart  -> 1M\n\nOr pick one by hand. If the timeframe you pick is not ABOVE the chart timeframe it is ignored and every signal falls through to rule 1 - a filter cannot be built from a timeframe faster than the chart.")
+stSessMode = input.string("Auto - off on daily charts and above", "Time-of-day filters", options = ["Auto - off on daily charts and above", "Always apply", "Never apply"], group = gStg, tooltip = "Controls the session window, the force-close hour and the weekend cutoff together.\n\nAUTO (default): they apply on intraday charts and switch OFF on 1D, 1W and 1M. A daily bar carries ONE time-of-day - the session open - so an hour filter on a daily chart is not a filter, it is an on/off switch for the whole chart, and for most brokers it lands OUTSIDE a normal session window and kills every trade. Auto stops that happening.\n\nALWAYS APPLY: force them on everywhere. On 1D and above the session window still cannot reject anything (a daily bar spans every hour), but the force-close and weekend rules do run.\n\nNEVER APPLY: no time rules at all, on any chart. The strategy trades whenever a signal appears.")
+stTz     = input.string("Asia/Kolkata", "Session timezone", group = gStg)
+stHrOn   = input.int(6, "Take entries from (hour)", minval = 0, maxval = 23, group = gStg)
+stHrOff  = input.int(23, "Stop taking entries at (hour)", minval = 0, maxval = 23, group = gStg)
+stHrFlat = input.int(2, "Force-close any open trade at (hour)", minval = 0, maxval = 23, group = gStg)
+stShow   = input.bool(true, "Draw entry / stop / target levels", group = gStg)
+stStatOn = input.bool(true, "Show the counter table", group = gStg)
+stStatPos = input.string("Bottom right", "  - table position", options = ["Top left", "Top center", "Top right", "Middle left", "Middle right", "Bottom left", "Bottom center", "Bottom right"], group = gStg)
+
+gRsk = "21. Position size and risk"
+stSize   = input.string("Risk-based off the stop", "Position size", options = ["Risk-based off the stop", "Fixed quantity", "Fixed cash per trade"], group = gRsk, tooltip = "RISK-BASED is the one that makes a money stop-loss mean the same thing on every ticker. It works out how much one unit loses at your stop, converts that into the account currency, and buys exactly enough units that the stop costs your risk amount. Same 50 on XAUUSD, EURUSD, NAS100 or anything else.")
+stRisk   = input.float(50.0, "  - BASE risk per trade, in account currency", minval = 0.01, group = gRsk, tooltip = "The money you lose if the stop is hit. Position size is derived from it and the stop distance - you never set a lot size by hand.\n\nCheck the 'Last trade risk' row in the table: it shows what the filled trade ACTUALLY had at risk. It should match this number.")
+stQty    = input.float(1.0, "  - fixed quantity", minval = 0.000001, group = gRsk)
+stCash   = input.float(1000.0, "  - fixed cash per trade", minval = 0.01, group = gRsk)
+stLotStep = input.float(0.01, "Round the size to the broker's lot step  (0 = off)", minval = 0.0, step = 0.01, group = gRsk, tooltip = "Brokers only accept lot sizes in fixed steps - almost always 0.01 lots, two decimal places. TradingView does not know that, so the backtest was trading 0.0828 lots while your broker would round it to 0.08. Every number in the report was then slightly wrong.\n\nThis rounds the size the STRATEGY trades to the same step your broker uses, so the backtest matches reality. Normal rounding: 0.0828 -> 0.08, but 0.0850, 0.0851 and 0.0899 all go to 0.09.\n\nBecause of this your risk will NOT be exactly the amount you set. It lands a little above or a little below, and the 'Last trade risk' row shows the real figure. That is simply true of every broker account - it was always happening, you just could not see it before.\n\nThe step is in LOTS and is converted using the contract size from the commission group, so 0.01 lots on gold is 1 ounce, and on a forex pair it is 1000 units.\n\nIf rounding sends the size to zero the setup is skipped, not sent as an empty order. That happens with a wide stop and a small risk - 50 of risk on a 100-point gold stop is half of the smallest lot your broker will take. Raise the risk or use a tighter stop.\n\n0 = no rounding, exactly like v3.1. Use 1 for a market that trades in whole contracts or shares.")
+stRndMax = input.float(25.0, "  - but never let rounding raise the risk by more than (%)", minval = 0.0, maxval = 500.0, step = 5.0, group = gRsk, tooltip = "Rounding UP is fine when the size is large, and dangerous when it is small. At the very bottom of the range the smallest step is a huge jump: 0.0066 lots rounds up to 0.01, which is half as much risk again as you asked for. On gold with 200 of risk and a 300-point stop that is 300 of real risk, not 200.\n\nThis caps the damage. If rounding UP would push the real risk more than this far above the amount you set, the size is rounded DOWN instead. If rounding down reaches zero the setup is skipped, which is the correct answer - that trade is too small for your broker to take at your risk setting.\n\n25% is a sane default. Normal trades are nowhere near it: a 10-point gold stop at 50 risk rounds to 5 ounces and lands 5.6% over. Only the extreme small-size cases are caught.\n\n0 = no limit, always round normally. Only affects risk-based sizing - the fixed-quantity and fixed-cash modes are sizes you set yourself.")
+stLev    = input.float(30.0, "Max leverage (position value / equity)", minval = 1.0, maxval = 500.0, step = 1.0, group = gRsk, tooltip = "Caps the position at equity x leverage. Risk-based sizing on a tight stop asks for a big position - a 10-point stop on gold with 50 risk is about 21,000 of position. Without leverage the account cannot hold that and the order is silently dropped. 30 is normal for retail gold and FX. Keep it at or below the leverage your broker really gives you on this instrument, and keep the Properties leverage at least 3 times higher so TradingView never simulates a margin call. Watch the 'Trades cut by leverage cap' row.")
+
+stSeqMode = input.string("Off", "Loss-recovery sizing", options = ["Off", "Rule A - recover losses + base profit", "Rule B - double the losses"], group = gRsk, tooltip = "OFF = every trade risks the base amount. Nothing recovers anything.\n\nLOSSES CARRIED: every closed trade adds its loss or takes off its profit, after commission and spread. Never below zero.\n\nRULE A: next risk = (losses carried + base) / R multiple, so ONE winner at your target gets everything back plus the base amount. At 1:1: 50 -> 100 -> 200 -> 400. At 1:3: 50 -> 33.33 -> 44.44 -> 59.26.\n\nRULE B: next risk = 2 x losses carried, never less than the base. 50 -> 100 -> 300 -> 900 -> 2700 -> 8100 when every loss is a full stop. An early exit (opposite signal, time flat) loses less, so the next step is smaller.\n\nA win pays off losses carried; the ladder goes back to the base only when they reach zero. The size is still rounded to your lot step and cut by Max leverage.\n\nREAD THE WARNING IN THE NOTES FILE BEFORE USING EITHER. Both grow the position after losses, which is the fastest known way to empty an account. Rule B reaches 8,100 of risk after six losers in a row. The hard cap below exists for exactly that reason - do not remove it.")
+stSeqMax  = input.float(500.0, "  - HARD CAP on risk per trade", minval = 0.01, group = gRsk, tooltip = "The recovery sequence can never ask for more than this. Keep it small relative to the account. With the cap hit, either the risk is clamped or trading stops, depending on the switch below.")
+stSeqCapAct = input.string("Stop for the rest of the day", "  - when the cap is reached", options = ["Clamp to the cap and carry on", "Stop for the rest of the day", "Stop permanently"], group = gRsk, tooltip = "CLAMP: take the cap as the risk and keep going. The sequence can no longer recover everything, but it keeps trading.\n\nSTOP FOR THE DAY (default): stop opening trades, then clear the carried losses and start fresh at the next trading day. This is the sane default - it draws a line under a bad run instead of chasing it.\n\nSTOP PERMANENTLY: no more trades until you reload the strategy. Use it if you want the backtest to show you exactly where the sequence broke.")
+
+gWh = "22. Webhook message (broker bridge)"
+stWhOn   = input.bool(false, "Attach a webhook message to every order", group = gWh, tooltip = "Fills in the alert_message of each order so ONE alert - condition: this strategy, 'Order fills', message {{strategy.order.alert_message}} - can drive a bridge to MT5, cTrader or a broker API. See the notes file for the full set-up.")
+stWhMode = input.string("JSON", "Message format", options = ["JSON", "PineConnector", "TheConnector", "Plain text"], group = gWh, tooltip = "The format your broker bridge reads.\n\nTHECONNECTOR (theconnector.fr): an entry sends buy / sell with the exact lot (volume), the stop and target as PRICES (sl_price / tp_price), and your tag; an exit sends closelong / closeshort with the same tag, so the robot only closes this strategy's trades. Put your access key at the end of the webhook URL (TheConnector's way) or in 'License ID / account tag' below, and see group 30.\n\nIn TradingView the alert message must be ONLY {{strategy.order.alert_message}} - never a fixed text from the bridge's website, which would send the same order on every fill.")
+stWhMinLot = input.float(0.0, "Minimum lot your broker accepts  (0 = no check)", minval = 0.0, step = 0.01, group = gWh, tooltip = "Brokers refuse an order below their minimum lot - usually 0.01. TradingView does not know that, so the backtest happily fills a 0.0099-lot trade that your broker would throw away, and you end up wondering why a signal you watched print never reached the account.\n\nSet this to your broker's minimum (0.01 on most MT4/MT5 accounts) and the strategy skips a setup whose size comes out below it, instead of sending an order that gets rejected. The skipped ones are counted in the 'Skipped - stop distance / min lot' row.\n\nThis happens when the stop is wide and the risk is small: 50 of risk on a 300-point gold stop is 0.0017 lots. Either raise the risk or accept that very wide stops are not tradeable at your size.\n\n0 = no check, exactly like v3.0.")
+stWhQty  = input.string("Lots  (units divided by the contract size)", "Quantity to send", options = ["Lots  (units divided by the contract size)", "Raw units  (exactly what Pine sizes)"], group = gWh, tooltip = "THE MOST DANGEROUS SETTING IN THIS FILE. Get it wrong one way and every trade is 100 times too big.\n\nPine sizes in UNITS. On gold a unit is one ounce, so a trade might be 8.28. MetaTrader bridges - PineConnector, TradingConnector, most MT4/MT5 tools - expect LOTS, and 8.28 lots of gold is 828 ounces. That is a hundred times the position you meant.\n\nLOTS (default): the quantity is divided by the contract size shown in the commission table - 100 for gold - so 8.28 ounces is sent as 0.0828. This is what an MT4/MT5 bridge wants.\n\nRAW UNITS: sends 8.28. Correct for broker REST APIs that think in units, such as OANDA.\n\nIf you are unsure, leave it on Lots. Sending lots to a units broker makes the trade 100x too SMALL, which costs you nothing. The other way round empties the account.\n\nCheck the first live trade against your broker terminal before you walk away from it.")
+stWhId   = input.string("", "License ID / account tag", group = gWh, tooltip = "TheConnector: leave this BLANK and put your access key at the end of the webhook URL instead - https://webhook.theconnector.fr/YOUR_ACCESS_KEY - as TheConnector recommends. If you type it here, it is sent in the accessKey field of every message. Keep it private either way.\n\nPineConnector puts your licence ID first in every command. For JSON it is copied into the id field. Leave blank if your bridge does not need one.")
+
+gCm = "23. Commission / broker charges"
+stCmMode = input.string("Auto - per lot, contract size from the ticker", "Commission model", options = ["Off", "Auto - per lot, contract size from the ticker", "Per lot - I set the contract size", "Percent of trade value", "Fixed cash per order"], group = gCm, tooltip = "How your broker charges you, so the strategy can size the position for the REAL cost of the trade instead of the price move alone.\n\nAUTO (default): you tell it the charge per LOT for ONE side, and it works out how many units are in a lot from the ticker itself - 100 for gold, 5000 for silver, 100000 for a forex pair, 1 for everything else. Charging 28 per lot per side on XAUUSD comes out at 0.28 per ounce per side, 0.56 round turn.\n\nPER LOT - I SET THE CONTRACT SIZE: same, but you type the units per lot yourself when the auto guess is wrong for your broker.\n\nPERCENT OF TRADE VALUE: for crypto and shares, where the fee is a percentage of the notional.\n\nFIXED CASH PER ORDER: a flat fee per order, no matter the size.\n\nOFF: exactly like v2.3 - commission is ignored in sizing.\n\nEnter every figure in your ACCOUNT currency.")
+stCmLot  = input.float(28.0, "  - charge per LOT, ONE side", minval = 0.0, step = 0.01, group = gCm, tooltip = "One side only. The strategy doubles it for the round turn. 28 here means 28 to open and 28 to close - 56 for the complete trade on one lot, which is the XAUUSD number you gave.")
+stCmUnit = input.float(100.0, "  - units per lot (manual mode only)", minval = 0.000001, group = gCm, tooltip = "Only read when the model above is 'Per lot - I set the contract size'. Gold is 100 ounces per lot, silver 5000, a forex pair 100000. The table shows what auto detected for this chart so you can compare.")
+stCmPct  = input.float(0.05, "  - percent of trade value, ONE side", minval = 0.0, step = 0.001, group = gCm)
+stCmFix  = input.float(3.50, "  - fixed cash per order", minval = 0.0, step = 0.01, group = gCm)
+stCmTgt  = input.bool(true, "Push the target out to cover the commission", group = gCm, tooltip = "ON (default): the target is moved far enough that a winning trade nets your FULL R after commission. With a 1:1 and 50 of risk, a loss costs exactly 50 and a win pays exactly 50.\n\nOFF: the target stays at the plain price distance, so a 'winner' nets slightly less than a loser costs. On a 1:1 system that asymmetry alone is enough to turn a 50% hit rate into a losing account.\n\nThis is the one setting in v3.0 that moves your existing backtest numbers - the target is now slightly further away, so slightly fewer of them are reached. Switch it off to reproduce v2.3 exactly.\n\nIt has no effect in 'Fixed cash per order' mode, where the fee does not scale with size.")
+
+gSaf = "24. Safety - every one of these is optional"
+stCancelSig = input.bool(true, "Cancel an unfilled order on ANY new signal", group = gSaf, tooltip = "ON (default): the moment a new CHOCH or BOS prints, a resting order that has not filled is pulled, even if the new signal does not itself produce a tradeable setup.\n\nOFF: the old order is only replaced when the new signal actually arms something. If the new signal is rejected - no pivot for rule 2, no opposite level - the old order keeps sitting there against a market that has already moved on.")
+stExpBars   = input.int(0, "Cancel an unfilled order after N bars  (0 = never)", minval = 0, maxval = 5000, group = gSaf, tooltip = "A setup that has waited this many bars without filling is abandoned. Stops a stale level sitting in the market long after the move that created it.")
+stMinStop   = input.float(0.0, "Skip the setup if the stop is CLOSER than this (price)", minval = 0.0, step = 0.01, group = gSaf, tooltip = "A stop a couple of points away on 1m gold is inside the spread. Risk-based sizing reacts by buying an enormous position for it, and the spread alone can take you out. Try 3 on gold. 0 = off.")
+stMaxStop   = input.float(0.0, "Skip the setup if the stop is FURTHER than this (price)", minval = 0.0, step = 0.01, group = gSaf, tooltip = "The other end: a very wide stop makes the position tiny and the target unreachable in the time you have. 0 = off.")
+stMaxTrades = input.int(0, "Max trades per day  (0 = no limit)", minval = 0, maxval = 200, group = gSaf, tooltip = "Counted from filled entries, reset at the start of each trading day in your session timezone. A hard brake on a choppy day.")
+stDayLoss   = input.float(0.0, "Stop for the day after losing this much  (0 = off)", minval = 0.0, group = gSaf, tooltip = "Adds up closed profit and loss for the day. Once the day is down by this amount it stops opening trades and starts fresh tomorrow. The most useful guard here - set it before you go live.")
+stDD        = input.float(0.0, "Stop PERMANENTLY after an equity drawdown of this %  (0 = off)", minval = 0.0, maxval = 100.0, group = gSaf, tooltip = "Measured from the highest equity the account has reached. Unlike the daily stop this one does not reset - it is the last line of defence.")
+stWkFlat    = input.bool(true, "Flatten and stop before the weekend", group = gSaf, tooltip = "Closes any open trade and takes no new ones from the cutoff below until the market reopens. Without it a Friday-night trade carries the weekend gap - and a gap does not respect your stop, it jumps straight past it.")
+stWkDay     = input.string("Friday", "  - cutoff day", options = ["Thursday", "Friday", "Saturday"], group = gSaf)
+stWkHr      = input.int(21, "  - cutoff hour", minval = 0, maxval = 23, group = gSaf)
+stWk247     = input.bool(false, "Trade 24/7 - allow weekends (crypto)", group = gSaf, tooltip = "OFF (default): the weekend rules above apply - the strategy flattens at the cutoff and takes nothing until the market reopens. Right for forex, gold and anything else that closes.\n\nON: weekends are treated like any other day. For crypto and anything else that trades 24/7, where a Saturday is just another Saturday and there is no weekend gap to protect against.\n\nThis only unlocks SATURDAY AND SUNDAY. The session hours in group 20 still apply, so with the default 06:00-23:00 you get weekend trading during those hours only. For true round-the-clock trading also set 'Time-of-day filters' in group 20 to 'Never apply'.\n\nDo not switch this on for gold. A weekend position carries the Monday gap, and a gap does not respect your stop - it jumps straight past it.")
+
+gNw = "25. News / blackout windows - no trading inside these times"
+stNwExit = input.string("Close any open trade", "When a window starts", options = ["Close any open trade", "Leave open trades alone"], group = gNw, tooltip = "What happens to a trade that is ALREADY OPEN when a window begins.\n\nCLOSE ANY OPEN TRADE (default): flattened at market the moment the window starts, and nothing new is opened until it ends. This is the safe answer for a news release - a spike through your stop can fill far worse than the price you set.\n\nLEAVE OPEN TRADES ALONE: the running trade keeps its stop and target and is allowed to finish, but no NEW trade is opened inside the window. Use this if you would rather let a winner run than be flattened by the clock.")
+stNw1On  = input.bool(false, "Window 1 - block trading", group = gNw, tooltip = "A time window in which the strategy will not trade. Click the field for a proper time picker - it takes hours AND minutes, so 17:25 to 18:35 is exactly what you think it is.\n\nRead in the session timezone from group 20 (Asia/Kolkata by default), NOT exchange time.\n\nInside a window: no new setups are armed, any resting order is cancelled, and an open trade is closed or left alone depending on the setting above.\n\nA window may cross midnight - 2330-0030 is fine.\n\nWindows only work on INTRADAY charts. On 1D and above a bar carries one single time of day, so a blackout window there would either block the whole chart or nothing at all. They are ignored on those timeframes.")
+stNw1    = input.session("1725-1835", "  - window 1 time", group = gNw)
+stNw2On  = input.bool(false, "Window 2 - block trading", group = gNw)
+stNw2    = input.session("1800-1900", "  - window 2 time", group = gNw)
+stNw3On  = input.bool(false, "Window 3 - block trading", group = gNw)
+stNw3    = input.session("2330-0030", "  - window 3 time", group = gNw)
+
+gLv = "26. Live-trading realism"
+stSprd   = input.float(0.0, "Broker spread, in price  (0 = not modelled)", minval = 0.0, step = 0.01, group = gLv, tooltip = "Your broker's typical spread, in PRICE (not ticks, not points). On FxPro gold it is somewhere between about 0.08 and 0.40 depending on the account type - check the spread column in MT5's Market Watch at the hours you trade, and use the TOP of the range you see.\n\nWhy it matters: TradingView fills your backtest at the chart price and never charges a spread. Your broker charges it on every single trade - you buy at the ask and sell at the bid. On 1-minute gold with a 3 to 5 point stop, the spread alone can be 5 to 10 percent of your risk, and it is the largest single reason a live account earns less than its backtest.\n\nSet it and the strategy treats the spread as a cost, exactly like commission: the position is sized so the stop costs your risk amount INCLUDING the spread, the target is pushed out so a win still nets your full R, and the strategy's own P&L counters include it. The 'Paste into Properties cash/contract' row in the table then includes the spread too - paste that number into Properties and TradingView's own report charges it as well.\n\nIt changes nothing that is sent to your broker. 0 = not modelled, exactly like before.")
+
+gPt = "27. Profit target - stop new trades"
+stPtOn   = input.bool(false, "Stop taking new trades once the profit target is reached", group = gPt, tooltip = "OFF (default): no profit target.\n\nON: the strategy adds up the net profit and loss of every CLOSED trade - after commission and spread, the same figure as TradingView's Cumulative P&L once Properties commission is set - and once it reaches the target below it takes no new trades. A trade that is already running is never touched; the target is measured on closed trades, so the position is flat when it is reached.\n\nThe table row 'Profit target' shows how far along you are, and BLOCKED NOW says 'profit target' once it is reached.")
+stPtAmt  = input.float(500.0, "  - profit target, in account currency", minval = 0.01, group = gPt, tooltip = "For example 200, 500 or 1000. Net profit after costs, in your account currency (USD).")
+stPtPer  = input.string("Total since the start date", "  - count the profit", options = ["Total since the start date", "Each day (starts again tomorrow)", "Each week (starts again on Monday)"], group = gPt, tooltip = "TOTAL SINCE THE START DATE: everything closed from the start date below. Once the target is reached the strategy stays stopped. To trade again, raise the target or move the start date - then delete and re-create the alert.\n\nEACH DAY: the count starts from zero every day at midnight in your session timezone (group 20). Reach the target and it stops for the rest of that day, then carries on tomorrow.\n\nEACH WEEK: the same, starting from zero every Monday.")
+stPtFrom = input.time(timestamp("01 Jan 2000 00:00 +0000"), "  - start date (only for Total)", group = gPt, tooltip = "Trades that CLOSE on or after this moment are counted. Only used by 'Total since the start date'.\n\nIMPORTANT FOR LIVE TRADING: TradingView runs the strategy over the whole chart history before it goes live, and those backtest trades would count too. If the backtest already made more than the target, the live alert would start out stopped. So set this to the day you switch the live alert on.\n\nFor a backtest, leave it at the default (2000) to count everything on the chart.")
+
+gNd = "28. News windows - only on chosen dates"
+stNdOn    = input.bool(false, "News windows work ONLY on the dates below", group = gNd, tooltip = "OFF (default): the news windows in group 25 work exactly as before - every day.\n\nON: a news window only blocks trading on the dates you list below. On every other date it does nothing at all, even though it is switched on. Use it for the days that actually have news - CPI, NFP, FOMC - instead of blocking the same hours every day.\n\nThe date that counts is the date the window STARTS on, in your session timezone (group 20). So a 2330-0030 window on the 17th still runs past midnight into the 18th.\n\nThe table row 'News windows active on' shows the dates the strategy actually read, so you can check your typing.")
+stNdList  = input.string("", "  - dates (day of the month)", group = gNd, tooltip = "The days, separated by commas or spaces. A range works too.\n\nExamples:\n  3, 12, 28\n  12-14\n  3 12 17 28\n\nDays 1 to 31. Anything else is ignored. If the setting is ON and no valid date is typed, the news windows never block anything - the table shows NO VALID DATES in red.")
+stNdScope = input.string("This month only", "  - these dates are for", options = ["This month only", "Every month"], group = gNd, tooltip = "THIS MONTH ONLY (default): the dates apply to the current calendar month only. Past months in the backtest are not blocked on those dates, because you picked them for this month. When a new month starts, type the new dates, then delete and re-create the alert.\n\nEVERY MONTH: the same day numbers apply in every month - the 12th of every month, for example. Use it for a backtest if your news falls on the same dates each month.")
+
+gAu = "29. Automatic US news schedule, US clock, US holidays"
+stAuOn   = input.bool(false, "Automatic US news windows (dates worked out by rule)", group = gAu, tooltip = "OFF (default): nothing changes.\n\nON: the strategy works out, from the calendar alone, the days and times of the regular US releases ticked below, and blocks trading around each one exactly like a news window: no new trades, any waiting order cancelled, and an open trade closed or left alone according to 'When a window starts' in group 25.\n\nThe times are New York times, so they follow US summer and winter time by themselves - see 'US clock' below. Your group 25 windows and group 28 dates keep working alongside this: use them for the releases that have no fixed rule (CPI, PPI, FOMC).\n\nThe table row 'US news (auto) - next' shows the next release it has worked out, in your session time.")
+stAuNfp  = input.bool(true, "  - NFP jobs report - 08:30 New York", group = gAu, tooltip = "Worked out with the Bureau of Labor Statistics' own scheduling rule: the third Friday after the week that contains the 12th of the previous month. That is the first Friday of the month most of the time, but not always - in March 2024 it was the 8th. Two adjustments are built in: a January date on the 1st to 3rd moves one week later, and a date that falls on a US holiday moves to the day before (July 4 on a Friday puts NFP on Thursday the 3rd).\n\nChecked against every release in 2024 and 2025: all correct. A government shutdown can still delay it - add the real date in group 28 if that happens.")
+stAuJc   = input.bool(true, "  - Weekly jobless claims - every Thursday 08:30 New York", group = gAu, tooltip = "Every Thursday. When the Thursday is a US holiday (Thanksgiving, or July 4 / Juneteenth / Christmas / New Year on a Thursday) it comes out on the Wednesday before, and so does this window.")
+stAuIsmM = input.bool(true, "  - ISM Manufacturing PMI - 1st working day 10:00 New York", group = gAu, tooltip = "The first US working day of the month (weekends and US holidays skipped). In January ISM publishes one working day later, and this follows that.")
+stAuIsmS = input.bool(true, "  - ISM Services PMI - 3rd working day 10:00 New York", group = gAu, tooltip = "The third US working day of the month (weekends and US holidays skipped). In January ISM publishes one working day later, and this follows that.")
+stAuPre  = input.int(10, "  - block from this many minutes BEFORE the release", minval = 0, maxval = 240, group = gAu)
+stAuPost = input.int(20, "  - until this many minutes AFTER the release", minval = 1, maxval = 480, group = gAu)
+stUsClk  = input.string("Auto - follows US summer / winter time", "US clock (summer / winter time)", options = ["Auto - follows US summer / winter time", "Always summer time (EDT, UTC-4)", "Always winter time (EST, UTC-5)"], group = gAu, tooltip = "The clock every New York time is read on - the automatic releases above, the US holidays, and your group 25 windows if you tick the box below.\n\nAUTO (recommended): real New York time. US summer time runs from the second Sunday of March to the first Sunday of November, so 08:30 New York is 18:00 in India in summer and 19:00 in winter - the strategy moves by itself, nothing to change twice a year.\n\nALWAYS SUMMER / ALWAYS WINTER: pin the clock to one offset, if you ever need to override it.\n\nThe table row 'US clock' shows which one is in use and what 08:30 New York is in your session time today.")
+stNwNy   = input.bool(false, "Read the group 25 window times in New York time", group = gAu, tooltip = "OFF (default): the group 25 window times are read in your session timezone (group 20), as before.\n\nON: they are read on the US clock above instead. Type the release time the way the US calendar gives it - CPI 0825-0900 - and it follows US summer and winter time by itself. The group 28 dates are still read on your session calendar.")
+stHolTrade = input.bool(true, "Trade on US market holidays", group = gAu, tooltip = "ON (default): US holidays are ordinary days, exactly as before.\n\nOFF: no trading on the US market holidays, from 00:00 to 24:00 New York time: New Year's Day, Martin Luther King Day, Presidents' Day, Good Friday, Memorial Day, Juneteenth, Independence Day, Labor Day, Thanksgiving and Christmas - each worked out by rule every year, including the Friday / Monday a holiday moves to when it falls on a weekend. When the holiday starts, an open trade is closed or left alone according to 'When a window starts' in group 25.\n\nGold still trades on most of these days, but thinly and with an early close - spreads widen and moves are erratic.")
+
+gTc = "30. Broker bridge - symbol, TheConnector"
+stWhSym  = input.string("", "Symbol to send  (blank = the chart's ticker)", group = gTc, tooltip = "The symbol name at your BROKER, if it differs from the chart. The chart is OANDA:XAUUSD, so blank sends XAUUSD. Some brokers call gold GOLD or XAUUSD.r - check the name in MT5's Market Watch and type it exactly. Used by every message format.")
+stTcTag  = input.string("smcgold", "TheConnector tag  (blank = none)", group = gTc, tooltip = "Sent as tag in every entry and exit. The robot stamps it into the position's comment and then only closes positions carrying it, so manual trades and other strategies on the same account and symbol are left alone. TheConnector lowercases it, keeps only letters, digits, - and _, and cuts it to 12 characters - so keep it short and simple. Needs robot 0.0.21 or later, which alerts carrying their own size and stop need anyway.")
+stTcSl   = input.string("sl_price / tp_price - exact prices (recommended)", "TheConnector stop / target fields", options = ["sl_price / tp_price - exact prices (recommended)", "sl / tp - the robot's own price mode"], group = gTc, tooltip = "SL_PRICE / TP_PRICE (recommended): the stop and target are sent as exact prices, for example sl_price 4299.000 - the same levels TradingView uses - and the robot reads them as prices whatever its own price mode says.\n\nSL / TP: the plain fields. Their unit then follows the robot's Price mode setting on TheConnector, which must be set to prices - left on pips, a 4299.000 would be read as 4,299 pips away.")
+
+int    _stCs   = timeframe.in_seconds(timeframe.period)
+string stHtfTf = stHtf == "Auto - paired with the chart" ? (_stCs <= 60 ? "15" : _stCs <= 300 ? "60" : _stCs <= 900 ? "240" : _stCs <= 3600 ? "1D" : _stCs <= 14400 ? "1W" : "1M") : stHtf == "15m" ? "15" : stHtf == "1h" ? "60" : stHtf == "4h" ? "240" : stHtf == "1D" ? "1D" : stHtf == "1W" ? "1W" : "1M"
+bool   stHtfOk = timeframe.in_seconds(stHtfTf) > _stCs
+bool   _u15    = stOn and stR2On and stHtfOk
+// confirmed HTF trend: the last CLOSED higher-timeframe bar, identical on history and live
+f_tfTrC(bool on) =>
+    [_tA, _tB, _tC, _tD] = f_tfPack(on)
+    _tA[1]
+int stT15 = nz(request.security(syminfo.tickerid, _u15 ? stHtfTf : timeframe.period, f_tfTrC(_u15), lookahead = barmerge.lookahead_on), 0)
+
+bool  _stIntra = _stCs < 86400
+bool  stTimeOn = stSessMode == "Always apply" ? true : stSessMode == "Never apply" ? false : _stIntra
+// minutes from t forward to a, on a 24h clock
+f_dAhead(int t, int a) =>
+    ((a - t) % 1440 + 1440) % 1440
+// does the next bar [t, t+len) touch the window [a, b)? handles midnight; a == b means an empty window
+f_ovl(int t, int len, int a, int b) =>
+    int span = ((b - a) % 1440 + 1440) % 1440
+    span > 0 and (f_dAhead(a, t) < span or f_dAhead(t, a) < len)
+int   _bMin = math.max(1, int(_stCs / 60))
+int   _tM   = hour(time_close, stTz) * 60 + minute(time_close, stTz)
+bool  stWin = not stTimeOn or _stCs >= 86400 or stHrOn == stHrOff or f_ovl(_tM, _bMin, stHrOn * 60, stHrOff * 60)
+bool _stDead = stTimeOn and (stHrFlat != stHrOn ? f_ovl(_tM, _bMin, stHrFlat * 60, stHrOn * 60) : f_dAhead(_tM, stHrFlat * 60) < _bMin)
+var bool _deadPrev = false
+bool stFlatNow = _stDead and not _deadPrev
+_deadPrev := _stDead
+int  _stDay  = dayofmonth(time, stTz)
+bool stNewDay = _stDay != nz(_stDay[1], _stDay)
+int  _cDow   = dayofweek(time_close, stTz)
+int  _wkCut  = stWkDay == "Thursday" ? dayofweek.thursday : stWkDay == "Saturday" ? dayofweek.saturday : dayofweek.friday
+bool stWkBlock = not stWk247 and stTimeOn and stWkFlat and ((_cDow == _wkCut and (_tM >= stWkHr * 60 or f_dAhead(_tM, stWkHr * 60) < _bMin)) or (_wkCut != dayofweek.saturday and _cDow == dayofweek.saturday) or _cDow == dayofweek.sunday)
+var bool _wkPrev = false
+bool stWkNow = stWkBlock and not _wkPrev
+_wkPrev := stWkBlock
+// group 28: "3, 12-14 28" -> day-of-month flags 1..31, read once
+f_ndParse(string s) =>
+    d = array.new<bool>(32, false)
+    string t = str.replace_all(str.replace_all(s, ";", ","), " ", ",")
+    for i = 1 to 3
+        t := str.replace_all(str.replace_all(t, ",-", "-"), "-,", "-")
+    parts = str.split(t, ",")
+    for p in parts
+        if str.length(p) > 0
+            if str.contains(p, "-")
+                ab = str.split(p, "-")
+                if array.size(ab) == 2
+                    float x = str.tonumber(array.get(ab, 0))
+                    float y = str.tonumber(array.get(ab, 1))
+                    if not na(x) and not na(y) and x == math.floor(x) and y == math.floor(y)
+                        int lo = int(math.max(1, math.min(x, y)))
+                        int hi = int(math.min(31, math.max(x, y)))
+                        if lo <= hi
+                            for k = lo to hi
+                                array.set(d, k, true)
+            else
+                float x = str.tonumber(p)
+                if not na(x) and x == math.floor(x) and x >= 1 and x <= 31
+                    array.set(d, int(x), true)
+    d
+f_ndText(array<bool> d) =>
+    string t = ""
+    for k = 1 to 31
+        if array.get(d, k)
+            t := t + (t == "" ? "" : ", ") + str.tostring(k)
+    t
+var array<bool> stNdDays = f_ndParse(stNdList)
+var string      stNdTxt  = f_ndText(stNdDays)
+// is a window that STARTS at this moment allowed by group 28?
+f_ndOk(int ms) =>
+    not stNdOn or (array.get(stNdDays, dayofmonth(ms, stTz)) and (stNdScope == "Every month" or (month(ms, stTz) == month(timenow, stTz) and year(ms, stTz) == year(timenow, stTz))))
+
+// "1725-1835" -> minutes of the day; -1 if unreadable
+f_hm(string s, int p) =>
+    float h = str.tonumber(str.substring(s, p, p + 2))
+    float m = str.tonumber(str.substring(s, p + 2, p + 4))
+    na(h) or na(m) ? -1 : int(h) * 60 + int(m)
+// ---- group 29: US calendar by rule, on the New York clock ----
+string _nyTz = stUsClk == "Always summer time (EDT, UTC-4)" ? "UTC-4" : stUsClk == "Always winter time (EST, UTC-5)" ? "UTC-5" : "America/New_York"
+f_dow(int y, int m, int d) =>
+    dayofweek(timestamp("UTC", y, m, d, 12, 0), "UTC")
+f_addD(int y, int m, int d, int n) =>
+    int t = timestamp("UTC", y, m, d, 12, 0) + n * 86400000
+    [year(t, "UTC"), month(t, "UTC"), dayofmonth(t, "UTC")]
+f_nthDow(int y, int m, int w, int n) =>
+    1 + (w - f_dow(y, m, 1) + 7) % 7 + 7 * (n - 1)
+f_lastDow(int y, int m, int w) =>
+    int L = m == 12 ? 31 : dayofmonth(timestamp("UTC", y, m + 1, 1, 12, 0) - 86400000, "UTC")
+    L - (f_dow(y, m, L) - w + 7) % 7
+// a fixed-date holiday on a Saturday is kept on the Friday before, on a Sunday on the Monday after
+f_obs(int y, int M, int D, int m, int d) =>
+    int w = f_dow(y, M, D)
+    m == M and d == (w == 7 ? D - 1 : w == 1 ? D + 1 : D)
+// US market holiday on a New York date, "" if none. gf: count Good Friday (markets shut, government offices open)
+f_usHol(int y, int m, int d, bool gf) =>
+    string r = ""
+    if m == 1 and ((d == 1 and f_dow(y, 1, 1) != 1 and f_dow(y, 1, 1) != 7) or (d == 2 and f_dow(y, 1, 1) == 1))
+        r := "New Year"
+    else if m == 1 and d == f_nthDow(y, 1, dayofweek.monday, 3)
+        r := "Martin Luther King Day"
+    else if m == 2 and d == f_nthDow(y, 2, dayofweek.monday, 3)
+        r := "Presidents' Day"
+    else if m == 5 and d == f_lastDow(y, 5, dayofweek.monday)
+        r := "Memorial Day"
+    else if y >= 2022 and f_obs(y, 6, 19, m, d)
+        r := "Juneteenth"
+    else if f_obs(y, 7, 4, m, d)
+        r := "Independence Day"
+    else if m == 9 and d == f_nthDow(y, 9, dayofweek.monday, 1)
+        r := "Labor Day"
+    else if m == 11 and d == f_nthDow(y, 11, dayofweek.thursday, 4)
+        r := "Thanksgiving"
+    else if f_obs(y, 12, 25, m, d)
+        r := "Christmas"
+    else if gf and (m == 3 or m == 4)
+        // Easter Sunday (Gregorian computus); Good Friday is two days before
+        int a  = y % 19
+        int b  = int(y / 100)
+        int c  = y % 100
+        int h  = (19 * a + b - int(b / 4) - int((b - int((b + 8) / 25) + 1) / 3) + 15) % 30
+        int l  = (32 + 2 * (b % 4) + 2 * int(c / 4) - h - c % 4) % 7
+        int q  = int((a + 11 * h + 22 * l) / 451)
+        [gy, gm, gd] = f_addD(y, int((h + l - 7 * q + 114) / 31), (h + l - 7 * q + 114) % 31 + 1, -2)
+        if m == gm and d == gd
+            r := "Good Friday"
+    r
+// NFP: the BLS rule - third Friday after the week (Sun-Sat) holding the 12th of the previous month
+f_nfp(int y, int m) =>
+    int py = m == 1 ? y - 1 : y
+    int pm = m == 1 ? 12 : m - 1
+    [y1, m1, d1] = f_addD(py, pm, 12 + (7 - f_dow(py, pm, 12)) % 7, 20)
+    int ry = y1
+    int rm = m1
+    int rd = d1
+    if rm == 1 and rd <= 3
+        [y2, m2, d2] = f_addD(ry, rm, rd, 7)
+        ry := y2
+        rm := m2
+        rd := d2
+    if f_usHol(ry, rm, rd, false) != ""
+        [y3, m3, d3] = f_addD(ry, rm, rd, -1)
+        ry := y3
+        rm := m3
+        rd := d3
+    [ry, rm, rd]
+// n-th US working day of the month this date is (0 = not a working day, or later than the 10th)
+f_bday(int y, int m, int d) =>
+    int n = 0
+    if d <= 10 and f_dow(y, m, d) != 1 and f_dow(y, m, d) != 7 and f_usHol(y, m, d, false) == ""
+        for k = 1 to d
+            int w = f_dow(y, m, k)
+            if w != 1 and w != 7 and f_usHol(y, m, k, false) == ""
+                n += 1
+    n
+// the enabled releases on one New York date, as exact instants (na = none that day)
+f_auDay(int y, int m, int d) =>
+    [fy, fm, fd] = f_nfp(y, m)
+    [ty, tm, td] = f_addD(y, m, d, 1)
+    int  w  = f_dow(y, m, d)
+    bool jc = (w == dayofweek.thursday and f_usHol(y, m, d, false) == "") or (w == dayofweek.wednesday and f_usHol(ty, tm, td, false) != "")
+    int  bd = stAuIsmM or stAuIsmS ? f_bday(y, m, d) : 0
+    int  sh = m == 1 ? 1 : 0
+    int  t1 = stAuNfp and fy == y and fm == m and fd == d ? timestamp(_nyTz, y, m, d, 8, 30) : na
+    int  t2 = stAuJc and jc ? timestamp(_nyTz, y, m, d, 8, 30) : na
+    int  t3 = stAuIsmM and bd == 1 + sh ? timestamp(_nyTz, y, m, d, 10, 0) : na
+    int  t4 = stAuIsmS and bd == 3 + sh ? timestamp(_nyTz, y, m, d, 10, 0) : na
+    [t1, t2, t3, t4]
+// today's releases and holiday are worked out once per New York day, not on every bar
+var int    _auKey  = -1
+var int    stAuT1  = na
+var int    stAuT2  = na
+var int    stAuT3  = na
+var int    stAuT4  = na
+var string stHolT0 = ""
+var string stHolT1 = ""
+bool _auUse = _stIntra and (stAuOn or not stHolTrade)
+int  _lenMs = _bMin * 60000
+if _auUse
+    int ny  = year(time_close, _nyTz)
+    int nm  = month(time_close, _nyTz)
+    int nd  = dayofmonth(time_close, _nyTz)
+    int key = ny * 10000 + nm * 100 + nd
+    if key != _auKey
+        _auKey  := key
+        [hy, hm, hd] = f_addD(ny, nm, nd, 1)
+        stHolT0 := stHolTrade ? "" : f_usHol(ny, nm, nd, true)
+        stHolT1 := stHolTrade ? "" : f_usHol(hy, hm, hd, true)
+        if stAuOn
+            [a1, a2, a3, a4] = f_auDay(ny, nm, nd)
+            stAuT1 := a1
+            stAuT2 := a2
+            stAuT3 := a3
+            stAuT4 := a4
+f_auHit(int t) =>
+    not na(t) and time_close < t + stAuPost * 60000 and time_close + _lenMs > t - stAuPre * 60000
+bool stAuNow  = _auUse and stAuOn and (f_auHit(stAuT1) or f_auHit(stAuT2) or f_auHit(stAuT3) or f_auHit(stAuT4))
+bool stHolNow = _auUse and not stHolTrade and (stHolT0 != "" or (stHolT1 != "" and dayofmonth(time_close + _lenMs - 1, _nyTz) != dayofmonth(time_close, _nyTz)))
+int  _tMw     = stNwNy ? hour(time_close, _nyTz) * 60 + minute(time_close, _nyTz) : _tM
+
+// the same test as f_ovl, split into the instance we are inside and the one starting within the next bar,
+// so group 28 can check the date each instance STARTS on (tc = the bar-close instant, t = its minute of day)
+f_nw(bool on, string s, int t, int len, int tc) =>
+    int a = on ? f_hm(s, 0) : -1
+    int b = on ? f_hm(s, 5) : -1
+    bool hit = false
+    if on and a >= 0 and b >= 0
+        int span = ((b - a) % 1440 + 1440) % 1440
+        if span > 0
+            int back = f_dAhead(a, t)
+            int fwd  = f_dAhead(t, a)
+            hit := (back < span and f_ndOk(tc - back * 60000)) or (fwd < len and f_ndOk(tc + fwd * 60000))
+    hit
+bool stNwNow = (_stIntra and (f_nw(stNw1On, stNw1, _tMw, _bMin, time_close) or f_nw(stNw2On, stNw2, _tMw, _bMin, time_close) or f_nw(stNw3On, stNw3, _tMw, _bMin, time_close))) or stAuNow or stHolNow
+
+var float stCeilPrev = na
+var float stFlorPrev = na
+var int   stDir  = 0
+var int   stRule = 0
+var float stSl   = na
+var float stFix  = na
+var float stOpenSl = na
+var float stOpenTgt = na
+var float stPlanTgt = na
+var bool  stOrdLive = false
+var float stLastEnt = na
+var float stLastSl  = na
+var float stLastTgt = na
+var float stLastQ   = na
+var bool  stLastCapQ = false
+var float stLastRisk = na
+var int stCntCho  = 0
+var int stCntBos  = 0
+var int stCntArm  = 0
+var int stCntFill = 0
+var int stCntCanc = 0
+var int stCntTgt  = 0
+var int stCntStop = 0
+var int stCntOpp  = 0
+var int stCntFlat = 0
+var int stCntNews = 0
+var int stCntMc   = 0
+var int stCntR1   = 0
+var int stCntR2   = 0
+var int stCntCap  = 0
+var bool stCapFlag = false
+var int stClosed  = 0
+var int stWhy     = 0
+var float stSeqLoss = 0.0
+var bool  stSeqHalt = false
+var bool  stSeqCapOn = false
+var int   stCntSeqCap = 0
+var int   stArmBar = na
+var int   stDayTrades = 0
+var float stDayPnl = 0.0
+var bool  stDayHalt = false
+var float stPeakEq = na
+var int   stCntSkip = 0
+var int   stCntExp = 0
+var float stCmPaid = 0.0
+var float stCmLast = na
+var float stLastQty = na
+var float stPtPnl  = 0.0
+var bool  stPtHalt = false
+
+f_stPv() =>
+    syminfo.pointvalue <= 0 ? 1.0 : syminfo.pointvalue
+
+// units in one lot, worked out from the ticker itself
+float _cmAuto = str.contains(syminfo.ticker, "XAU") or syminfo.basecurrency == "XAU" or str.contains(syminfo.ticker, "GOLD") ? 100.0 : str.contains(syminfo.ticker, "XAG") or syminfo.basecurrency == "XAG" or str.contains(syminfo.ticker, "SILVER") ? 5000.0 : str.contains(syminfo.ticker, "XPT") or str.contains(syminfo.ticker, "XPD") ? 100.0 : syminfo.type == "forex" ? 100000.0 : 1.0
+float stCmLots = stCmMode == "Per lot - I set the contract size" ? stCmUnit : _cmAuto
+
+// ROUND-TURN cost for ONE unit, in account currency: commission + the broker's spread
+f_stCmU(float ent) =>
+    float c = 0.0
+    if stCmMode == "Auto - per lot, contract size from the ticker" or stCmMode == "Per lot - I set the contract size"
+        c := stCmLots > 0 ? 2.0 * stCmLot / stCmLots : 0.0
+    else if stCmMode == "Percent of trade value"
+        c := 2.0 * stCmPct / 100.0 * math.max(nz(ent), 0.0)
+    c + (stSprd > 0 ? strategy.convert_to_account(stSprd * f_stPv()) : 0.0)
+
+// ROUND-TURN commission that does NOT scale with size, in account currency
+f_stCmF() =>
+    stCmMode == "Fixed cash per order" ? 2.0 * stCmFix : 0.0
+
+f_stQty(float ent, float rsk, float amt) =>
+    float q    = 0.0
+    float _per = 0.0
+    if stSize == "Fixed quantity"
+        q := stQty
+    else if stSize == "Fixed cash per trade"
+        q := ent > 0 ? stCash / ent : 0.0
+    else
+        _per := strategy.convert_to_account(rsk * f_stPv()) + f_stCmU(ent)
+        float _net = math.max(0.0, amt - f_stCmF())
+        q := _per > 0 ? _net / _per : 0.0
+    float _st  = stLotStep > 0 and stCmLots > 0 ? stLotStep * stCmLots : 0.0
+    float _raw = q
+    if _st > 0
+        q := math.round(_raw / _st) * _st
+        if stRndMax > 0 and _per > 0 and amt > 0 and q * _per + f_stCmF() > amt * (1.0 + stRndMax / 100.0)
+            q := math.floor(_raw / _st) * _st
+    float _lim = ent > 0 and stLev > 0 ? strategy.equity * stLev / ent : 0.0
+    bool  _cap = _lim > 0 and q > _lim
+    if _cap
+        q := _st > 0 ? math.floor(_lim / _st) * _st : _lim
+    [q, _cap]
+
+float _stPvA = strategy.convert_to_account(f_stPv())
+float stCmU  = f_stCmU(close)
+float stCmPx = stCmTgt and _stPvA > 0 ? stCmU * (stRR + 1.0) / _stPvA : 0.0
+
+f_stMsg(string act, int dir, float px, float sl, float tp, float q) =>
+    string m = ""
+    if stWhOn
+        string _t  = stWhSym != "" ? stWhSym : syminfo.ticker
+        float  _lt = stWhQty == "Raw units  (exactly what Pine sizes)" or stCmLots <= 0 ? 1.0 : stCmLots
+        string _q  = str.tostring(q / _lt, "#.########")
+        string _p  = str.tostring(px, format.mintick)
+        bool   _br = not na(sl) and not na(tp)
+        string _s  = _br ? str.tostring(sl, format.mintick) : ""
+        string _g  = _br ? str.tostring(tp, format.mintick) : ""
+        string _sd = dir == 1 ? "long" : "short"
+        bool   _op = act == "buy" or act == "sell"
+        string _cm = _op ? act : (dir == 1 ? "closelong" : "closeshort")
+        if stWhMode == "PineConnector"
+            m := _op ? stWhId + "," + _cm + "," + _t + (_br ? ",sl=" + _s + ",tp=" + _g : "") + ",volume=" + _q : stWhId + "," + _cm + "," + _t
+        else if stWhMode == "TheConnector"
+            string _tg = stTcTag != "" ? ',"tag":"' + stTcTag + '"' : ""
+            string _ak = (stWhId != "" ? ',"accessKey":"' + stWhId + '"' : "") + "}"
+            bool   _px = stTcSl == "sl_price / tp_price - exact prices (recommended)"
+            m := _op ? '{"action":"' + _cm + '","symbol":"' + _t + '","volume":' + _q + (_br ? (_px ? ',"sl_price":' + _s + ',"tp_price":' + _g : ',"sl":' + _s + ',"tp":' + _g) : "") + _tg + _ak : '{"action":"' + _cm + '","symbol":"' + _t + '"' + _tg + _ak
+        else if stWhMode == "Plain text"
+            m := act + " " + _t + " side=" + _sd + " qty=" + _q + " entry=" + _p + (_br ? " sl=" + _s + " tp=" + _g : "")
+        else
+            m := '{"id":"' + stWhId + '","action":"' + act + '","side":"' + _sd + '","symbol":"' + _t + '","qty":' + _q + ',"entry":' + _p + ',"sl":' + (_br ? _s : "null") + ',"tp":' + (_br ? _g : "null") + '}'
+    m
+
+// A new day / week starts BEFORE this bar's fills and exits are counted: they happened inside this bar,
+// so they belong to the new day. (Up to v4.1 the reset came after, and an entry or exit on the first bar
+// of a day was wiped from that day's counters.)
+int  _lDay   = int(timestamp("UTC", year(time, stTz), month(time, stTz), dayofmonth(time, stTz), 0, 0) / 86400000)
+int  _lWk    = int(math.floor((_lDay + 3) / 7.0))
+bool stNewWk = _lWk != nz(_lWk[1], _lWk)
+bool _ptDay  = stPtPer == "Each day (starts again tomorrow)"
+bool _ptWk   = stPtPer == "Each week (starts again on Monday)"
+if stNewDay
+    stDayTrades := 0
+    stDayPnl    := 0.0
+    stDayHalt   := false
+if (_ptDay and stNewDay) or (_ptWk and stNewWk)
+    stPtPnl  := 0.0
+    stPtHalt := false
+
+// A NEW ENTRY is detected from the entry bar of the newest trade. Not from the position (an entry whose
+// stop or target hits inside the same bar is already flat when the script runs) and not from trade
+// counts (TradingView's margin-call simulation closes a SLICE of a position as a separate trade).
+var int stEntSeen = -1
+int _ebO = strategy.opentrades > 0 ? strategy.opentrades.entry_bar_index(strategy.opentrades - 1) : -1
+int _ebC = strategy.closedtrades > 0 ? strategy.closedtrades.entry_bar_index(strategy.closedtrades - 1) : -1
+int stEntNow = math.max(_ebO, _ebC)
+if stEntNow > stEntSeen
+    bool  _still = strategy.position_size != 0 and _ebO == stEntNow
+    float _eP = _still ? strategy.position_avg_price : strategy.closedtrades.entry_price(strategy.closedtrades - 1)
+    float _eQ = _still ? math.abs(strategy.position_size) : math.abs(strategy.closedtrades.size(strategy.closedtrades - 1))
+    stOpenSl   := na(stLastSl)  ? stSl      : stLastSl
+    stOpenTgt  := na(stLastTgt) ? stPlanTgt : stLastTgt
+    stDir      := 0
+    stOrdLive  := false
+    stCntFill   += 1
+    stDayTrades += 1
+    if stRule == 2
+        stCntR2 += 1
+    else
+        stCntR1 += 1
+    if stLastCapQ
+        stCntCap += 1
+    stLastRisk := strategy.convert_to_account(_eQ * math.abs(_eP - stSl) * f_stPv()) + _eQ * stCmU + f_stCmF()
+    stCmLast   := _eQ * stCmU + f_stCmF()
+    stLastQty  := _eQ
+    stEntSeen  := stEntNow
+
+if strategy.closedtrades > stClosed
+    int _nCl = strategy.closedtrades - stClosed
+    for _i = 0 to _nCl - 1
+        int   _ix = strategy.closedtrades - 1 - _i
+        float _cmR = math.abs(nz(strategy.closedtrades.commission(_ix)))
+        float _cmE = math.abs(nz(strategy.closedtrades.size(_ix))) * f_stCmU(nz(strategy.closedtrades.entry_price(_ix), close)) + f_stCmF()
+        float _cm  = _cmR > 0 ? _cmR : _cmE
+        stCmPaid  += _cm
+        float _pf = strategy.closedtrades.profit(_ix) - (_cmR > 0 ? 0.0 : _cmE)
+        string _xid = strategy.closedtrades.exit_id(_ix)
+        bool  _part = strategy.opentrades > 0 and strategy.closedtrades.entry_bar_index(_ix) == strategy.opentrades.entry_bar_index(0)
+        if _xid == "L exit" or _xid == "S exit"
+            if _pf > 0
+                stCntTgt += 1
+            else
+                stCntStop += 1
+        else if _part
+            stCntMc += 1
+        else if stWhy == 1
+            stCntOpp += 1
+        else if stWhy == 2
+            stCntFlat += 1
+        else if stWhy == 3
+            stCntNews += 1
+        else
+            stCntMc += 1
+        stDayPnl  := stDayPnl + _pf
+        if _ptDay or _ptWk or strategy.closedtrades.exit_time(_ix) >= stPtFrom
+            stPtPnl += _pf
+        float _debt = stSeqLoss - _pf
+        stSeqLoss := _debt < 0.005 ? 0.0 : _debt
+    if stSeqLoss <= 0 and stSeqCapAct != "Stop permanently"
+        stSeqHalt  := false
+        stSeqCapOn := false
+    stWhy    := 0
+    stClosed := strategy.closedtrades
+
+float stRiskNow = stRisk
+if stSeqMode == "Rule A - recover losses + base profit"
+    stRiskNow := stSeqLoss > 0 ? (stSeqLoss + stRisk) / math.max(stRR, 0.1) : stRisk
+else if stSeqMode == "Rule B - double the losses"
+    stRiskNow := stSeqLoss > 0 ? math.max(stRisk, 2.0 * stSeqLoss) : stRisk
+var bool stPlaced = false
+var float stEntLock = na
+if stSeqMode != "Off" and stRiskNow > stSeqMax
+    if not stSeqCapOn
+        stCntSeqCap += 1
+        stSeqCapOn  := true
+    stRiskNow := stSeqMax
+    if stSeqCapAct != "Clamp to the cap and carry on"
+        stSeqHalt := true
+else
+    stSeqCapOn := false
+
+if stNewDay and stSeqHalt and stSeqCapAct == "Stop for the rest of the day"
+    stSeqHalt := false
+    stSeqLoss := 0.0
+    stSeqCapOn := false
+
+stPeakEq := na(stPeakEq) ? strategy.equity : math.max(stPeakEq, strategy.equity)
+bool stDDHit = stDD > 0 and not na(stPeakEq) and stPeakEq > 0 and (stPeakEq - strategy.equity) / stPeakEq * 100.0 >= stDD
+if stDayLoss > 0 and stDayPnl <= -stDayLoss
+    stDayHalt := true
+if stMaxTrades > 0 and stDayTrades >= stMaxTrades
+    stDayHalt := true
+if stPtOn and stPtPnl >= stPtAmt
+    stPtHalt := true
+
+bool stOnce = stEntMode == "Send once - place it and leave it"
+bool stGo   = stOn and not stSeqHalt and not stDayHalt and not stDDHit and not stWkBlock and not stNwNow and not stPtHalt
+
+if stDir != 0 and strategy.position_size == 0 and (not stGo or (trendDir != 0 and trendDir != stDir))
+    strategy.cancel("L")
+    strategy.cancel("S")
+    stOrdLive := false
+    stCntCanc += 1
+    stDir := 0
+
+if stDir != 0 and strategy.position_size == 0 and not (stOnce and stPlaced)
+    float _live = na
+    if stDir == 1 and not na(florS)
+        _live := florS.price
+    if stDir == -1 and not na(ceilS)
+        _live := ceilS.price
+    if not na(_live)
+        stSl := stDir == 1 ? _live - stSlBuf : _live + stSlBuf
+
+if stWkNow
+    if strategy.position_size != 0
+        strategy.close_all(comment = "Weekend flat", alert_message = f_stMsg("close", strategy.position_size > 0 ? 1 : -1, close, na, na, math.abs(strategy.position_size)))
+        stWhy := 2
+    if stDir != 0
+        stCntCanc += 1
+    strategy.cancel("L")
+    strategy.cancel("S")
+    stOrdLive := false
+    stDir := 0
+
+if stNwNow
+    if stNwExit == "Close any open trade" and strategy.position_size != 0
+        strategy.close_all(comment = stHolNow ? "US holiday" : "News window", alert_message = f_stMsg("close", strategy.position_size > 0 ? 1 : -1, close, na, na, math.abs(strategy.position_size)))
+        stWhy := 3
+    if stDir != 0
+        stCntCanc += 1
+    strategy.cancel("L")
+    strategy.cancel("S")
+    stOrdLive := false
+    stDir := 0
+
+if stExpBars > 0 and stDir != 0 and strategy.position_size == 0 and not na(stArmBar) and bar_index - stArmBar >= stExpBars
+    strategy.cancel("L")
+    strategy.cancel("S")
+    stOrdLive := false
+    stCntExp  += 1
+    stCntCanc += 1
+    stDir := 0
+
+if stFlatNow
+    if strategy.position_size != 0
+        strategy.close_all(comment = "Time flat", alert_message = f_stMsg("close", strategy.position_size > 0 ? 1 : -1, close, na, na, math.abs(strategy.position_size)))
+        stWhy := 2
+    if stDir != 0
+        stCntCanc += 1
+    strategy.cancel("L")
+    strategy.cancel("S")
+    stOrdLive := false
+    stDir := 0
+
+if not stWin
+    strategy.cancel("L")
+    strategy.cancel("S")
+    stOrdLive := false
+    if strategy.position_size == 0
+        if stDir != 0
+            stCntCanc += 1
+        stDir := 0
+
+bool stUseCho = stSigSrc != "BOS only"
+bool stUseBos = stSigSrc != "CHOCH only"
+bool stSigUp = (stUseCho and evChoUp) or (stUseBos and evBosUp)
+bool stSigDn = (stUseCho and evChoDn) or (stUseBos and evBosDn)
+
+bool stOpp = (strategy.position_size > 0 and stSigDn) or (strategy.position_size < 0 and stSigUp)
+if stOn and stRev and stOpp
+    strategy.close_all(comment = "Opposite signal", alert_message = f_stMsg("close", strategy.position_size > 0 ? 1 : -1, close, na, na, math.abs(strategy.position_size)))
+    stWhy := 1
+
+if stUseCho and (evChoUp or evChoDn)
+    stCntCho += 1
+if stUseBos and (evBosUp or evBosDn)
+    stCntBos += 1
+
+if (stSigUp or stSigDn) and stGo
+    if stCancelSig and stDir != 0 and strategy.position_size == 0
+        strategy.cancel("L")
+        strategy.cancel("S")
+        stOrdLive := false
+        stCntCanc += 1
+        stDir := 0
+    bool _take = stWin and (strategy.position_size == 0 or (stOpp and stRev))
+    if _take
+        int   _d   = stSigUp ? 1 : -1
+        float _piv = stSigUp ? stCeilPrev : stFlorPrev
+        float _opl = na
+        if _d == 1 and not na(florS)
+            _opl := florS.price
+        if _d == -1 and not na(ceilS)
+            _opl := ceilS.price
+        bool _agree = (_d == 1 and stT15 == 1) or (_d == -1 and stT15 == -1)
+        bool _use   = _agree ? (stR2On and not na(_piv)) : stR1On
+        if _use and not na(_opl)
+            if stDir != 0
+                stCntCanc += 1
+            strategy.cancel("L")
+            strategy.cancel("S")
+            stOrdLive := false
+            stCntArm  += 1
+            stCapFlag := false
+            stPlaced  := false
+            stEntLock := na
+            stArmBar  := bar_index
+            stDir  := _d
+            stRule := _agree ? 2 : 1
+            stSl   := _d == 1 ? _opl - stSlBuf : _opl + stSlBuf
+            stFix  := _agree ? _piv : na
+
+float stEnt = na
+float stTgt = na
+if strategy.position_size != 0 and not na(stOpenSl)
+    stEnt := strategy.position_avg_price
+    if not na(stOpenTgt)
+        stTgt := stOpenTgt
+    else
+        float _r = math.abs(stEnt - stOpenSl)
+        stTgt := strategy.position_size > 0 ? stEnt + _r * stRR + stCmPx : stEnt - _r * stRR - stCmPx
+else if stDir != 0
+    stEnt := stOnce and stPlaced and not na(stEntLock) ? stEntLock : (stRule == 2 ? stFix : f_retLvl(trendDir, mAnch, mOrig, stPbPct))
+    if not na(stEnt) and not na(stSl)
+        float _r = math.abs(stEnt - stSl)
+        stTgt := stDir == 1 ? stEnt + _r * stRR + stCmPx : stEnt - _r * stRR - stCmPx
+
+if stGo and strategy.position_size == 0 and stDir != 0 and stWin and not na(stEnt) and not na(stTgt) and not na(stSl)
+    bool _sane = stDir == 1 ? stEnt > stSl : stEnt < stSl
+    float _r = math.abs(stEnt - stSl)
+    [_q, _qCap] = f_stQty(stEnt, _r, stRiskNow)
+    bool _lotOk = stWhMinLot <= 0 or stCmLots <= 0 or _q / stCmLots >= stWhMinLot - 1e-9
+    bool _dOk = (stMinStop <= 0 or _r >= stMinStop) and (stMaxStop <= 0 or _r <= stMaxStop) and _lotOk
+    bool _place = _sane and _dOk and _q / (stWhQty == "Raw units  (exactly what Pine sizes)" or stCmLots <= 0 ? 1.0 : stCmLots) >= 0.00000001 and _r > 0 and (not stOnce or not stPlaced)
+    if _place
+        stPlaced  := true
+        stEntLock := stEnt
+        stPlanTgt := stTgt
+        if not stOrdLive or stEnt != stLastEnt or stSl != stLastSl or stTgt != stLastTgt or _q != stLastQ
+            if stDir == 1
+                strategy.entry("L", strategy.long, qty = _q, limit = stEnt, alert_message = f_stMsg("buy", 1, stEnt, stSl, stTgt, _q))
+                strategy.exit("L exit", "L", stop = stSl, limit = stTgt, alert_message = f_stMsg("close", 1, close, stSl, stTgt, _q))
+            else
+                strategy.entry("S", strategy.short, qty = _q, limit = stEnt, alert_message = f_stMsg("sell", -1, stEnt, stSl, stTgt, _q))
+                strategy.exit("S exit", "S", stop = stSl, limit = stTgt, alert_message = f_stMsg("close", -1, close, stSl, stTgt, _q))
+            stOrdLive := true
+            stLastCapQ := _qCap
+            stLastEnt := stEnt
+            stLastSl  := stSl
+            stLastTgt := stTgt
+            stLastQ   := _q
+    else if not _sane or not _dOk or _q / (stWhQty == "Raw units  (exactly what Pine sizes)" or stCmLots <= 0 ? 1.0 : stCmLots) < 0.00000001 or _r <= 0
+        strategy.cancel("L")
+        strategy.cancel("S")
+        stOrdLive := false
+        if not _dOk
+            stCntSkip += 1
+        stCntCanc += 1
+        stDir := 0
+
+if na(stOpenTgt) and strategy.position_size > 0 and not na(stOpenSl) and not na(stTgt)
+    strategy.exit("L exit", "L", stop = stOpenSl, limit = stTgt, alert_message = f_stMsg("close", 1, close, stOpenSl, stTgt, math.abs(strategy.position_size)))
+if na(stOpenTgt) and strategy.position_size < 0 and not na(stOpenSl) and not na(stTgt)
+    strategy.exit("S exit", "S", stop = stOpenSl, limit = stTgt, alert_message = f_stMsg("close", -1, close, stOpenSl, stTgt, math.abs(strategy.position_size)))
+
+stCeilPrev := not na(ceilS) ? ceilS.price : stCeilPrev
+stFlorPrev := not na(florS) ? florS.price : stFlorPrev
+
+plot(stShow and stDir != 0 and strategy.position_size == 0 ? stEnt : na, "Pending entry", color = color.new(color.orange, 0), style = plot.style_linebr, linewidth = 1)
+plot(stShow and (stDir != 0 or strategy.position_size != 0) ? (strategy.position_size != 0 ? stOpenSl : stSl) : na, "Stop", color = color.new(color.red, 0), style = plot.style_linebr, linewidth = 1)
+plot(stShow and (stDir != 0 or strategy.position_size != 0) ? stTgt : na, "Target", color = color.new(color.teal, 0), style = plot.style_linebr, linewidth = 1)
+
+f_stPos(string p) =>
+    p == "Top left" ? position.top_left : p == "Top center" ? position.top_center : p == "Top right" ? position.top_right : p == "Middle left" ? position.middle_left : p == "Middle right" ? position.middle_right : p == "Bottom left" ? position.bottom_left : p == "Bottom center" ? position.bottom_center : position.bottom_right
+
+f_stCell(table t, int r, string a, string b, color c) =>
+    table.cell(t, 0, r, a, text_color = color.silver, text_size = size.small, text_halign = text.align_left)
+    table.cell(t, 1, r, b, text_color = c, text_size = size.small, text_halign = text.align_right)
+
+f_tfName(string tf) =>
+    tf == "15" ? "15m" : tf == "60" ? "1h" : tf == "240" ? "4h" : tf
+
+var table stTbl = na
+if stStatOn and bar_index == last_bar_index
+    if na(stTbl)
+        stTbl := table.new(f_stPos(stStatPos), 2, 35, bgcolor = color.new(color.black, 15), border_color = color.new(color.gray, 60), border_width = 1)
+    int _wait = stDir != 0 and strategy.position_size == 0 ? 1 : 0
+    int _open = strategy.position_size != 0 ? 1 : 0
+    table.cell(stTbl, 0, 0, "STRATEGY", text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 55), text_halign = text.align_left)
+    table.cell(stTbl, 1, 0, "value",    text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 55), text_halign = text.align_right)
+    f_stCell(stTbl, 1,  "CHOCH signals on the chart", stUseCho ? str.tostring(stCntCho) : "off", stUseCho ? color.white : color.gray)
+    f_stCell(stTbl, 2,  "BOS signals on the chart",   stUseBos ? str.tostring(stCntBos) : "off", stUseBos ? color.white : color.gray)
+    f_stCell(stTbl, 3,  "Setups armed",               str.tostring(stCntArm), color.yellow)
+    f_stCell(stTbl, 4,  "Trades entered",             str.tostring(stCntFill) + (_open == 1 ? "  (1 open)" : ""), color.lime)
+    f_stCell(stTbl, 5,  "  - by ENTRY RULE 1 (pullback %)", str.tostring(stCntR1), color.lime)
+    f_stCell(stTbl, 6,  "  - by ENTRY RULE 2 (broken pivot)", str.tostring(stCntR2), color.lime)
+    f_stCell(stTbl, 7,  "Setups cancelled, never filled", str.tostring(stCntCanc) + (_wait == 1 ? "  (+1 waiting)" : ""), color.orange)
+    f_stCell(stTbl, 8,  "Exit - target",              str.tostring(stCntTgt),  color.teal)
+    f_stCell(stTbl, 9,  "Exit - stop",                str.tostring(stCntStop), color.red)
+    f_stCell(stTbl, 10, "Exit - opposite signal",     str.tostring(stCntOpp),  color.fuchsia)
+    f_stCell(stTbl, 11, "Exit - 02:00 flat / weekend", str.tostring(stCntFlat), color.silver)
+    f_stCell(stTbl, 12, "Exit - news window / holiday", (stNw1On or stNw2On or stNw3On or stAuOn or not stHolTrade) ? str.tostring(stCntNews) : "off", stCntNews > 0 ? color.fuchsia : color.gray)
+    f_stCell(stTbl, 13, "Margin calls (Properties)",  str.tostring(stCntMc), stCntMc > 0 ? color.red : color.gray)
+    f_stCell(stTbl, 14, "Trades cut by leverage cap", str.tostring(stCntCap), stCntCap > 0 ? color.orange : color.gray)
+    f_stCell(stTbl, 15, "Skipped - stop distance / min lot", str.tostring(stCntSkip), stCntSkip > 0 ? color.orange : color.gray)
+    f_stCell(stTbl, 16, "Cancelled - expired unfilled", str.tostring(stCntExp), stCntExp > 0 ? color.orange : color.gray)
+    f_stCell(stTbl, 17, "ENTRY rules in use (1 / 2)", stR1On and stR2On ? "1 + 2 (dynamic)" : stR1On ? "1 only (pullback %)" : stR2On ? "2 only (HTF must agree)" : "NONE - both off", stR1On or stR2On ? color.aqua : color.red)
+    f_stCell(stTbl, 18, "RULE 2 higher timeframe",    stR2On ? (stHtfOk ? f_tfName(stHtfTf) : "off (not above chart)") : "off (rule 2 off)", stR2On and stHtfOk ? color.aqua : color.gray)
+    f_stCell(stTbl, 19, "LOSS RECOVERY (A / B)",      stSeqMode == "Off" ? "off" : stSeqMode == "Rule A - recover losses + base profit" ? "A - recover + base" : "B - double the losses", stSeqMode == "Off" ? color.gray : color.orange)
+    f_stCell(stTbl, 20, "Losses carried",             stSeqMode == "Off" ? "off" : str.tostring(math.round(stSeqLoss * 100) / 100), stSeqLoss > 0 ? color.red : color.gray)
+    f_stCell(stTbl, 21, "Risk NEXT trade",            str.tostring(math.round(stRiskNow * 100) / 100), stRiskNow > stRisk ? color.orange : color.white)
+    f_stCell(stTbl, 22, "Risk cap hit / HALT",        stSeqMode == "Off" ? "off" : (str.tostring(stCntSeqCap) + (stSeqHalt ? "  HALTED" : "")), stSeqHalt ? color.red : color.gray)
+    f_stCell(stTbl, 23, "Last trade risk",            na(stLastRisk) ? "-" : (str.tostring(math.round(stLastRisk * 100) / 100) + (na(stLastQty) or stCmLots <= 0 ? "" : "  /  " + str.tostring(stLastQty / stCmLots, "#.#####") + " lots")), color.aqua)
+    f_stCell(stTbl, 24, "Costs last trade",           (stCmMode == "Off" and stSprd <= 0) or na(stCmLast) ? "-" : (str.tostring(math.round(stCmLast * 100) / 100) + (na(stLastRisk) or stLastRisk <= 0 ? "" : "  = " + str.tostring(math.round(stCmLast / stLastRisk * 1000) / 10) + "% of risk")), (stCmMode == "Off" and stSprd <= 0) or na(stCmLast) ? color.gray : (not na(stLastRisk) and stLastRisk > 0 and stCmLast / stLastRisk > 0.25 ? color.red : color.orange))
+    f_stCell(stTbl, 25, "Costs paid total (comm + spread)", (stCmMode == "Off" and stSprd <= 0) ? "off" : str.tostring(math.round(stCmPaid * 100) / 100), stCmPaid > 0 ? color.orange : color.gray)
+    f_stCell(stTbl, 26, "Commission model",           stCmMode == "Off" ? "off" : stCmMode == "Percent of trade value" ? (str.tostring(stCmPct) + "% x2") : stCmMode == "Fixed cash per order" ? (str.tostring(stCmFix) + " x2 / order") : (str.tostring(stCmLot) + "/lot x2, lot=" + str.tostring(stCmLots)), stCmMode == "Off" ? color.gray : color.aqua)
+    f_stCell(stTbl, 27, "Paste into Properties cash/contract", stCmU <= 0 ? "-" : str.tostring(math.round(stCmU / 2.0 * 100000) / 100000), stCmU > 0 ? color.yellow : color.gray)
+    f_stCell(stTbl, 28, "Time filters",               stTimeOn ? "on" : (_stIntra ? "off" : "off (daily+)"), stTimeOn ? color.aqua : color.gray)
+    f_stCell(stTbl, 29, "Profit target (made / target)", not stPtOn ? "off" : (str.tostring(math.round(stPtPnl * 100) / 100) + " / " + str.tostring(stPtAmt) + (_ptDay ? " today" : _ptWk ? " this week" : " total") + (stPtHalt ? "  REACHED" : "")), not stPtOn ? color.gray : stPtHalt ? color.lime : color.white)
+    f_stCell(stTbl, 30, "News windows active on",     not (stNw1On or stNw2On or stNw3On) ? "off (no window on)" : not stNdOn ? "every day" : stNdTxt == "" ? "NO VALID DATES" : (stNdTxt + (stNdScope == "Every month" ? " of every month" : " of " + str.format_time(timenow, "MMM yyyy", stTz))), not (stNw1On or stNw2On or stNw3On) ? color.gray : stNdOn and stNdTxt == "" ? color.red : color.aqua)
+    int ny0 = year(timenow, _nyTz)
+    int nm0 = month(timenow, _nyTz)
+    int nd0 = dayofmonth(timenow, _nyTz)
+    string _auTxt = "off"
+    if stAuOn
+        _auTxt := "none in the next 40 days"
+        int    _bT = na
+        string _bN = ""
+        for k = 0 to 40
+            [ky, km, kd] = f_addD(ny0, nm0, nd0, k)
+            [e1, e2, e3, e4] = f_auDay(ky, km, kd)
+            if not na(e1) and e1 + stAuPost * 60000 > timenow and (na(_bT) or e1 < _bT)
+                _bT := e1
+                _bN := "NFP"
+            if not na(e2) and e2 + stAuPost * 60000 > timenow and (na(_bT) or e2 < _bT)
+                _bT := e2
+                _bN := "Jobless claims"
+            if not na(e3) and e3 + stAuPost * 60000 > timenow and (na(_bT) or e3 < _bT)
+                _bT := e3
+                _bN := "ISM Manufacturing"
+            if not na(e4) and e4 + stAuPost * 60000 > timenow and (na(_bT) or e4 < _bT)
+                _bT := e4
+                _bN := "ISM Services"
+            if not na(_bT)
+                break
+        if not na(_bT)
+            _auTxt := _bN + "  " + str.format_time(_bT, "EEE dd MMM HH:mm", stTz)
+    bool   _sum  = stUsClk == "Always summer time (EDT, UTC-4)" or (stUsClk == "Auto - follows US summer / winter time" and (hour(timenow, "America/New_York") - hour(timenow, "UTC") + 24) % 24 == 20)
+    string _clk  = (_sum ? "summer EDT" : "winter EST") + (stUsClk == "Auto - follows US summer / winter time" ? " (auto)" : " (forced)") + "  08:30 NY = " + str.format_time(timestamp(_nyTz, ny0, nm0, nd0, 8, 30), "HH:mm", stTz)
+    string _hTxt = ""
+    for k = 0 to 370
+        [hy2, hm2, hd2] = f_addD(ny0, nm0, nd0, k)
+        string hn = f_usHol(hy2, hm2, hd2, true)
+        if hn != ""
+            _hTxt := (k == 0 ? "TODAY " : "next ") + hn + " " + str.format_time(timestamp("UTC", hy2, hm2, hd2, 12, 0), "dd MMM", "UTC")
+            break
+    f_stCell(stTbl, 31, "US news (auto) - next",      _auTxt, stAuOn ? color.aqua : color.gray)
+    f_stCell(stTbl, 32, "US clock",                   _clk, color.aqua)
+    f_stCell(stTbl, 33, "US holidays",                (stHolTrade ? "trading normally - " : "NO trading - ") + _hTxt, stHolNow ? color.red : stHolTrade ? color.gray : color.aqua)
+    f_stCell(stTbl, 34, "BLOCKED NOW",                stDDHit ? "drawdown" : stHolNow ? "US holiday" : stNwNow ? "news window" : stWkBlock ? "weekend" : stDayHalt ? "daily limit" : stSeqHalt ? "risk cap" : stPtHalt ? "profit target" : not stOn ? "disabled" : "-", (stDDHit or stNwNow or stWkBlock or stDayHalt or stSeqHalt) ? color.red : stPtHalt ? color.lime : color.gray)
