@@ -32,6 +32,11 @@
    compiler.
 5. Git: `git -c user.email=punit7870@gmail.com -c user.name=Punit commit ...`; end commit messages with
    the Co-Authored-By / Claude-Session lines from the system prompt; no model names in commits.
+   **Keep `main` updated with every new version** (the user's wish): after pushing the work branch,
+   also run `git push origin HEAD:main` (a fast-forward of the same commit). `main` is meant to be the
+   repository's default branch - the user switches it in GitHub Settings (this session's proxy cannot
+   change repository settings). The other branch `claude/pine-script-smc-review-tdosam` is a
+   different project (Market Structure indicator v15.x) - never merge it into `main`.
 6. Be honest: correct earlier mistakes openly; 3 months of data is not enough - say so; never promise
    profit.
 
