@@ -107,6 +107,12 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   19 USD (2026).
 - Scripts: scratchpad only (fx.pkl / atr14.pkl / port112x.py with atrX / modes.py) - rebuild from
   tools/data/gold_m1_utc.npz if needed.
+- **Six recovery rules, 2021-26** (user settings + split 3 + pause 4 losses / 3 days + cap 100,000 'Day',
+  account 10,000, lev 100). One account from Jan 2021: ALL empty - Off 27 Feb 2024, A / C / A+ / C+
+  Mar-Apr 2022, B / B+ 19 Feb 2021. Fresh 10,000 each year (net): Off -3,283 / -3,569 / -2,530 / -1,583
+  / -422 / +1,097 (sum -10,290, never empty); A sum -7,301 (2 empty); B +9,159 (4 empty, 2023 +35,991
+  luck); C -10,717 (2); A+ -17,834 (1); B+ -15,888 (2); C+ -17,948 (1). Page with every month:
+  https://claude.ai/artifact/9SNr14gQjCUEWiWBuTt9Cq (scripts: scratchpad rec6/).
 
 ## Open items / next steps
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,
