@@ -127,6 +127,15 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   Neighbours stable (23 of 28 one-value changes profitable all 6 years). Same setting on 1m: empty 2021;
   5m: -7,398. Next: user checks it in TradingView 15m OANDA, then demo 2-3 months. Page:
   https://claude.ai/artifact/Dr2foQNDBHDN2w552fswBc (scripts: scratchpad c15/, portx.py = port111 + barSec).
+- **1-minute Rule C search (~1,240 runs + ~50,000 shuffled replays)**: NO 1m entry edge. Stop buffer:
+  negative worst (-1 -> -0.28R), wider better (5 -> -0.03..-0.10R; 7-20 about 0). Hours 13-21 / 12-23
+  help. Best 6-year entry: yours + buffer 20 + hours 13-21, recovery off = -116 (-0.007R, break-even).
+  The 12 best on 2021-23 ALL lost on 2024-26. Rule C on these: past +9,513 (pick, all 6 years +) up to
+  +95,137 (hindsight), and 20/20 start dates positive for some - BUT same trades shuffled by day: account
+  emptied 44-93% on 10k; on 100k cap 1,000 average -1,703 (median +5,307, worst 5% -31,880), cap 10,000
+  average -1,043 (worst 5% = whole 100k). Classic martingale illusion. 15m setting: 0% emptied, 1.9%
+  loss when shuffled. Advice: no Rule C on 1m; negative buffer not worth building. Page:
+  https://claude.ai/artifact/UPFGWtDYhMAsuHxD1g98Rv (scripts: scratchpad m1c/, replay = shuffle2.py).
 
 ## Open items / next steps
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,
