@@ -113,6 +113,20 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   / -422 / +1,097 (sum -10,290, never empty); A sum -7,301 (2 empty); B +9,159 (4 empty, 2023 +35,991
   luck); C -10,717 (2); A+ -17,834 (1); B+ -15,888 (2); C+ -17,948 (1). Page with every month:
   https://claude.ai/artifact/9SNr14gQjCUEWiWBuTt9Cq (scripts: scratchpad rec6/).
+- **15-minute chart** (same six-rule test): no account emptied; Off +665 (fresh yearly) / +568 one
+  account; Rule C +926 / +1,238. Only 24-80 trades a year ($50 risk + 1-oz steps skip stops > ~$62);
+  83% of trades closed by the 02:00 force close / weekend; 6 of 359 reached 3R.
+- **Rule C search (~1,300 runs, pick on 2021-23, check on 2024-26)**: 1m 0/126 and 5m 0/126 entry
+  settings profitable on 2021-23; 15m 20/120. Auto 50% mode = the one option that helped every entry
+  setting in BOTH halves (hours 17-23 = in-sample only). BEST: 15m, CHOCH only - auto (eq 50), rule 1+2,
+  pullback 50, target 2R, reverse off, stop buffer 1, cancel-on-new-BOS OFF, Rule C split 1, cap 300
+  "Clamp to the cap and carry on", pause 4 losses / 3 days, hours / force close / weekend as now.
+  One 10,000 account: +629 / +532 / +358 / +514 / +164 / +550 = +2,747, never below 10,000, worst drop
+  765, biggest risk 321, 22 of 62 months losing (worst -413 Sep 2025), 197 trades. Recovery off same
+  entries +1,232 (+0.13R/trade, 95% +0.01..+0.24, t 2.15) -> promising, NOT proven (search bias).
+  Neighbours stable (23 of 28 one-value changes profitable all 6 years). Same setting on 1m: empty 2021;
+  5m: -7,398. Next: user checks it in TradingView 15m OANDA, then demo 2-3 months. Page:
+  https://claude.ai/artifact/Dr2foQNDBHDN2w552fswBc (scripts: scratchpad c15/, portx.py = port111 + barSec).
 
 ## Open items / next steps
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,
