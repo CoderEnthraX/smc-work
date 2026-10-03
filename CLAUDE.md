@@ -141,6 +141,14 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   C+: 22 Jan 2025 / 5 Sep 2024 / 4 Apr 2025); buffer 2.5 also emptied (Aug 2024); Off -1,153. Fresh 10k
   each year: C buf 1.0 = empty 2024, +3,325 2025, +2,978 2026; buf 0.25 / 0 empty every year with C.
   Page (months + Jul-Sep 2026 weeks): https://claude.ai/artifact/SoKqievj1Aep7Fn2dGug8h (scratchpad p24/).
+- **News windows**: v11.1 defaults block NOTHING (master ON, windows 1-3 OFF, automatic US news OFF). With
+  "Automatic US news windows" ON (NFP, jobless claims, ISM M/S; -10/+20 min; close open trades) added to
+  the simulator (scratchpad p24/portn.py + usnews.py, identical when off; 0.74% of minutes blocked):
+  2024-26, 1m, user entries, split 3: pause 4/3 -> C every buffer EMPTY, C+ 0.25 / 0 EMPTY, C+ 1.0 +1,361,
+  Off -720. Pause grid (N 2-8 x D 1-10, 37 settings): best C 1.0 = 4/2 (+8,996 one account), C 0 / 0.25
+  = no pause (+13,200 / +12,206), C+ 1.0 = 4/2, C+ 0.25 = 4/2, C+ 0 = 4/1, Off = 2/5 (+1,010). BUT the
+  shuffle test: Rule C 68-82% emptied, C+ 32-42%, average a loss for all -> luck, not an edge. Page:
+  https://claude.ai/artifact/5TZMG1P6MunBcx9swjDyGy
 
 ## Open items / next steps
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,
