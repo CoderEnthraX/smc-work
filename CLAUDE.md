@@ -94,14 +94,28 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   widest 20% better.
 - Targets (3 months): 3R best profit, 2R smaller drops; break-even / partial / step / trailing all
   reduced profit. Kelly ~7.7% full - stay at 0.5% risk until the edge is proven.
+- **5.75 YEARS (FxPro M1 2021-01-04 .. 2026-10-02, simulator port111, user settings, account 100,000 x
+  leverage 10 = the 10,000 x 100 size cap): v11.1 LOSES.** 2,839 trades, 31% wins, -0.13R/trade (95%
+  -0.18..-0.08), -18,514 at 50 risk. Per year R: 2021 -0.19, 2022 -0.24, 2023 -0.16, 2024 -0.17,
+  2025 -0.04, 2026 +0.04. Costs (cmU 0.6/oz) = 0.09R/trade; before costs still -0.04R (2021-24 negative).
+  Same 3 months OANDA vs FxPro: 85 of ~114 trades identical, +0.14R vs +0.20R -> the feed is fine.
+- All 13 v11.1 choices lose over 2021-26 (against, favourable, equilibrium, against+eq, auto, pause,
+  2R, reverse ON, pullback 50, rule 1 only, rule 2 only, CHOCH+BOS); none positive in 2021-23.
+- ATR minimum stop (skip if stop < X x ATR14 of 1m, X 4..12): no X positive in 2021-23 (-0.17..-0.23R)
+  -> NOT worth a v11.2. The existing fixed "skip if stop closer than" $5 was better (-0.07R 2021-23,
+  -0.015R 2024-26) but still not positive. Stops are 1.5..30x ATR14(1m); median stop 5 USD (2021) ->
+  19 USD (2026).
+- Scripts: scratchpad only (fx.pkl / atr14.pkl / port112x.py with atrX / modes.py) - rebuild from
+  tools/data/gold_m1_utc.npz if needed.
 
 ## Open items / next steps
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,
    floor, groups 36 / 37, daily limits all OFF, Properties initial capital 100,000), MT5 XAUUSD M1 bars
-   2023 -> today, optional 2025 runs (against mode; equilibrium ON). Then: edge per year, stop-size rule,
+   2023 -> today [RECEIVED: tools/data/gold_m1_utc.npz, 2021-2026], optional 2025 runs (against mode; equilibrium ON). Then: edge per year, stop-size rule,
    target from each trade's best point (MFE), hours / days, with vs against the HTF, streaks. Choose
    rules on 2023-24, check them on 2025-26, report in plain English -> v11.2.
-2. **Proposed for v11.2** (needs the user's written permission): (a) automatic minimum stop = X x ATR;
-   (b) edge monitor - pause when the win rate of the last N trades falls below X%.
+2. **v11.2 ATR minimum stop: tested, NOT recommended** (see above). Edge monitor (pause when the win
+   rate of the last N trades falls below X%) not tested. The 5.75-year loss is the real issue: confirm
+   in TradingView (v11.1 one-year backtests), then test any new idea on the 5.75 years BEFORE building.
 3. **Open question**: the auto mode's alternatives - (b) opposite trades from the HTF break until the
    equilibrium touch, then NOTHING; (c) the same, then BOTH directions. Not decided yet.
