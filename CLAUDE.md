@@ -8,6 +8,13 @@
 - Owner: **Punit** (punit7870@gmail.com). Works from a phone. Wants **simple English, short examples with
   numbers, tables**. Times are **IST** (Asia/Kolkata).
 - **Latest version: v11.1** = `SMC_Structure_Strategy_v11.1.txt` + `_NOTES.txt` + `_HANDBOOK.pdf`.
+- **MT5 EA: `SMC_Structure_EA_v11.1.mq5` + `_NOTES.txt`** = v11.1 rules in MQL5 + HEDGE mode (group 33 4th
+  choice; money per side or shared) + group 40 (magic, touch / pending entries, broker clock FxPro UTC+2 EU
+  DST, 20,000 warm-up bars, restart resume <= 5 bars via MT5 global variables, drawing). Same inputs /
+  defaults as TradingView (groups 22 / 30 dropped). Core between `//==CORE-BEGIN==` / `//==CORE-END==` is
+  plain code; checked in `tools/ea` (see its README): core vs simulator 105 runs identical (1 float tie),
+  whole EA in a fake MT5 (tick per 0.01) = core to the cent over 5.75 years, 484 restarts identical. NOT
+  compiled by MetaEditor yet (Windows only) - the user compiles (F7) and reports errors.
 - Work branch: `claude/tradingview-alerts-market-structure-53wugf` (push there; no PRs unless asked).
 - Build / test tools: `tools/` (see `tools/README.md`).
 
@@ -127,6 +134,10 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   Neighbours stable (23 of 28 one-value changes profitable all 6 years). Same setting on 1m: empty 2021;
   5m: -7,398. Next: user checks it in TradingView 15m OANDA, then demo 2-3 months. Page:
   https://claude.ai/artifact/Dr2foQNDBHDN2w552fswBc (scripts: scratchpad c15/, portx.py = port111 + barSec).
+  **CORRECTION (found while checking the EA):** that search used 4h candles from 00:00 UTC. TradingView
+  OANDA and FxPro MT5 4h candles start at 17:00 New York. With the real candles: 186 trades +1,069
+  (2021 +420, 2022 -546, 2023 -472, 2024 -101, 2025 +1,217, 2026 +550); recovery off +61. NOT an
+  every-year winner; told the user (EA notes section 12). 1m results unaffected (15m HTF aligned).
 - **1-minute Rule C search (~1,240 runs + ~50,000 shuffled replays)**: NO 1m entry edge. Stop buffer:
   negative worst (-1 -> -0.28R), wider better (5 -> -0.03..-0.10R; 7-20 about 0). Hours 13-21 / 12-23
   help. Best 6-year entry: yours + buffer 20 + hours 13-21, recovery off = -116 (-0.007R, break-even).
@@ -179,6 +190,9 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   every year. Not worth an MT5 EA. Page: https://claude.ai/artifact/6CZ9PWMAfb516YtBKwAcfs
 
 ## Open items / next steps
+0. **MT5 EA**: user compiles `SMC_Structure_EA_v11.1.mq5` in MetaEditor (F7) and sends any error lines; then
+   Strategy Tester (Every tick based on real ticks) and a demo account. Fix compile errors with a patch, re-run
+   `tools/ea` checks before delivering.
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,
    floor, groups 36 / 37, daily limits all OFF, Properties initial capital 100,000), MT5 XAUUSD M1 bars
    2023 -> today [RECEIVED: tools/data/gold_m1_utc.npz, 2021-2026], optional 2025 runs (against mode; equilibrium ON). Then: edge per year, stop-size rule,

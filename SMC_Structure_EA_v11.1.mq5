@@ -1,0 +1,2953 @@
+//+------------------------------------------------------------------+
+//| SMC Structure EA v11.1 (+ hedge) - MetaTrader 5 Expert Advisor     |
+//| The TradingView strategy "SMC Structure Strategy" v11.1, same      |
+//| rules, plus a hedge mode (longs and shorts at the same time).      |
+//| Owner: Punit. Read SMC_Structure_EA_v11.1_NOTES.txt first.          |
+//+------------------------------------------------------------------+
+#property copyright   "Punit"
+#property version     "11.10"
+#property description "SMC Structure EA v11.1 - the TradingView strategy v11.1 rules in MetaTrader 5, plus a hedge mode."
+#property description "Bar-close logic like TradingView. Test it in the Strategy Tester and on a demo account first."
+
+#include <Trade\Trade.mqh>
+
+//---------------------------------------------------------------- choices
+enum ESig
+{
+   SIG_CHOCH       = 0,   // CHOCH only
+   SIG_BOS         = 1,   // BOS only
+   SIG_BOTH        = 2,   // CHOCH and BOS
+   SIG_CHOCH_FAV   = 3,   // CHOCH only - higher timeframe favourable
+   SIG_BOS_FAV     = 4,   // BOS only - higher timeframe favourable
+   SIG_BOTH_FAV    = 5,   // CHOCH and BOS - higher timeframe favourable
+   SIG_CHOCH_AGN   = 6,   // CHOCH only - against the higher timeframe
+   SIG_BOS_AGN     = 7,   // BOS only - against the higher timeframe
+   SIG_BOTH_AGN    = 8,   // CHOCH and BOS - against the higher timeframe
+   SIG_CHOCH_AUTO  = 9,   // CHOCH only - auto: against HTF to equilibrium, then with HTF
+   SIG_BOS_AUTO    = 10,  // BOS only - auto: against HTF to equilibrium, then with HTF
+   SIG_BOTH_AUTO   = 11   // CHOCH and BOS - auto: against HTF to equilibrium, then with HTF
+};
+enum EEntMode
+{
+   ENT_CONT = 0,      // Continuous - follow the level
+   ENT_ONCE = 1       // Send once - place it and leave it
+};
+enum EHtf
+{
+   HTF_AUTO = 0,      // Auto - paired with the chart
+   HTF_M15 = 1,       // 15m
+   HTF_H1 = 2,        // 1h
+   HTF_H4 = 3,        // 4h
+   HTF_D1 = 4,        // 1D
+   HTF_W1 = 5,        // 1W
+   HTF_MN = 6         // 1M
+};
+enum ESess
+{
+   SESS_AUTO = 0,     // Auto - off on daily charts and above
+   SESS_ALWAYS = 1,   // Always apply
+   SESS_NEVER = 2     // Never apply
+};
+enum EDst
+{
+   DST_NONE = 0,      // No summer time
+   DST_EU = 1,        // European summer time (last Sunday of March - last Sunday of October)
+   DST_US = 2         // US summer time (2nd Sunday of March - 1st Sunday of November)
+};
+enum ESize
+{
+   SIZE_RISK = 0,     // Risk-based off the stop
+   SIZE_QTY = 1,      // Fixed quantity
+   SIZE_CASH = 2      // Fixed cash per trade
+};
+enum ESeq
+{
+   SEQ_OFF = 0,       // Off
+   SEQ_A = 1,         // Rule A - recover losses + base profit
+   SEQ_B = 2,         // Rule B - double the losses
+   SEQ_C = 3,         // Rule C - carry the losses
+   SEQ_AP = 4,        // Rule A+ (only when total P&L is below 0: that loss + amount)
+   SEQ_BP = 5,        // Rule B+ (only when total P&L is below 0: 2 x that loss)
+   SEQ_CP = 6         // Rule C+ (only when total P&L is below 0: that loss)
+};
+enum ECap
+{
+   CAP_CLAMP = 0,     // Clamp to the cap and carry on
+   CAP_DAY = 1,       // Stop for the rest of the day
+   CAP_PERM = 2       // Stop permanently
+};
+enum ESeqFrom
+{
+   SF_ALL = 0,        // The whole history of this EA on this account
+   SF_LIVE = 1,       // When the EA first started on this account (automatic)
+   SF_DATE = 2        // A date I choose
+};
+enum ECm
+{
+   CM_OFF = 0,        // Off
+   CM_AUTO = 1,       // Auto - per lot, contract size from the symbol
+   CM_LOT = 2,        // Per lot - I set the contract size
+   CM_PCT = 3,        // Percent of trade value
+   CM_FIX = 4         // Fixed cash per order
+};
+enum EWkDay
+{
+   WK_THU = 5,        // Thursday
+   WK_FRI = 6,        // Friday
+   WK_SAT = 7         // Saturday
+};
+enum ENwExit
+{
+   NW_CLOSE = 0,      // Close any open trade
+   NW_LEAVE = 1       // Leave open trades alone
+};
+enum EPtPer
+{
+   PT_TOTAL = 0,      // Total since the start date
+   PT_DAY = 1,        // Each day (starts again tomorrow)
+   PT_WEEK = 2        // Each week (starts again on Monday)
+};
+enum ENdScope
+{
+   ND_MONTH = 0,      // This month only
+   ND_EVERY = 1       // Every month
+};
+enum EUsClk
+{
+   US_AUTO = 0,       // Auto - follows US summer / winter time
+   US_EDT = 1,        // Always summer time (EDT, UTC-4)
+   US_EST = 2         // Always winter time (EST, UTC-5)
+};
+enum EDir
+{
+   DIR_BOTH = 0,      // Both
+   DIR_LONG = 1,      // Longs only
+   DIR_SHORT = 2,     // Shorts only
+   DIR_HEDGE = 3      // Hedge - longs and shorts at the same time (two sides)
+};
+enum EHedgeMoney
+{
+   HM_OWN = 0,        // Each side its own (like two TradingView copies)
+   HM_SHARED = 1      // Shared by both sides (one loss memory for the account)
+};
+enum ETrMode
+{
+   TR_LEVEL = 0,      // Behind the CHOCH* level (slower)
+   TR_SWING = 1       // Behind every new swing (faster)
+};
+enum EFl
+{
+   FL_OFF = 0,        // Off
+   FL_SIZE = 1,       // On - size every trade from the cushion (risk grows with profit)
+   FL_CAP = 2         // On - only cap the risk (base / loss recovery, never above the cushion %)
+};
+enum EExec
+{
+   EX_TOUCH = 0,      // Like TradingView: market order when the chart price touches the entry
+   EX_PEND = 1        // Pending limit order at the broker
+};
+
+//---------------------------------------------------------------- settings (same names, order and defaults as TradingView v11.1)
+input group "Market structure - engine rules (change the signals themselves)"
+input bool     InAltMode   = false;   // ALTERNATE rule: BOS is valid only AFTER IDM
+input bool     InPbBodyOn  = false;   // PULLBACK RULE 1 - each of the 3 candles: body bigger than its longest wick
+input bool     InPbBodyRef = false;   // PULLBACK RULE 2 - close beyond the previous candle's BODY (carries rule 1)
+input bool     InPbSwp2    = false;   // PULLBACK RULE 3 - two candles are enough once the opposite live level is taken
+
+input group "20. Strategy - entries, session, targets"
+input bool     InOn        = true;    // Enable trading
+input bool     InR1        = true;    // RULE 1 - pullback % entry
+input bool     InR2        = true;    // RULE 2 - entry at the broken pivot, higher timeframe must AGREE
+input ESig     InSig       = SIG_CHOCH; // Take trades on
+input double   InPb        = 50.0;    //   - RULE 1 pullback % (1 - 99)
+input double   InRR        = 1.0;     // Target - R multiple of the entry-to-stop distance
+input double   InSlBuf     = 0.0;     // Stop buffer beyond the CHOCH* level, in price
+input bool     InRev       = true;    // Opposite signal while in a trade: close and reverse
+input EEntMode InEntMode   = ENT_CONT; // Entry order handling
+input EHtf     InHtf       = HTF_AUTO; // Higher timeframe for RULE 2
+input ESess    InSessMode  = SESS_AUTO; // Time-of-day filters
+input double   InTzHours   = 5.5;     // Session timezone - hours from UTC (India 5.5, London 0, New York -5)
+input EDst     InTzDst     = DST_NONE; // Session timezone - summer time (India: none, London: European, New York: US)
+input int      InHrOn      = 6;       // Take entries from (hour)
+input int      InHrOff     = 23;      // Stop taking entries at (hour)
+input int      InHrFlat    = 2;       // Force-close any open trade at (hour)
+input bool     InShow      = true;    // Draw entry / stop / target levels
+input bool     InStatOn    = true;    // Show the panel (top left of the chart)
+input bool     InAudit     = false;   // Signal audit - write what happened to every signal in the Experts journal
+
+input group "21. Position size and risk"
+input ESize    InSize      = SIZE_RISK; // Position size
+input double   InRisk      = 50.0;    //   - BASE risk per trade, in account currency
+input double   InQty       = 1.0;     //   - fixed quantity (units: 1 = one ounce of gold)
+input double   InCash      = 1000.0;  //   - fixed cash per trade
+input double   InLotStep   = 0.01;    // Round the size to the broker's lot step (0 = off)
+input double   InRndMax    = 25.0;    //   - but never let rounding raise the risk by more than (%)
+input double   InLev       = 30.0;    // Max leverage (position value / equity)
+input ESeq     InSeqMode   = SEQ_OFF; // Loss-recovery sizing
+input double   InSeqMax    = 500.0;   //   - HARD CAP on risk per trade
+input ECap     InCapAct    = CAP_PERM; //   - when the cap is reached
+input double   InSeqAdd    = 50.0;    //   - Rule A: amount added on top of the losses carried
+input ESeqFrom InSeqFrom   = SF_ALL;  //   - loss recovery counts from
+input datetime InSeqFromT  = D'2026.01.01 00:00'; //   - the date (only for 'A date I choose'), UTC
+input double   InSplit     = 1.0;     //   - split the loss over this many trades (1 - 20)
+
+input group "23. Commission / broker charges (used to SIZE trades; real costs come from the broker)"
+input ECm      InCmMode    = CM_AUTO; // Commission model
+input double   InCmLot     = 0.0;     //   - charge per LOT, ONE side
+input double   InCmUnit    = 100.0;   //   - units per lot (manual mode only)
+input double   InCmPct     = 0.05;    //   - percent of trade value, ONE side
+input double   InCmFix     = 3.50;    //   - fixed cash per order
+input bool     InCmTgt     = true;    // Push the target out to cover the commission
+
+input group "24. Safety - every one of these is optional"
+input bool     InCancelSig = true;    // Cancel an unfilled order on ANY new signal
+input int      InExpBars   = 0;       // Cancel an unfilled order after N bars (0 = never)
+input double   InMinStop   = 0.0;     // Skip the setup if the stop is CLOSER than this (price)
+input double   InMaxStop   = 0.0;     // Skip the setup if the stop is FURTHER than this (price)
+input int      InMaxTrades = 0;       // Max trades per day (0 = no limit)
+input double   InDayLoss   = 0.0;     // Stop for the day after losing this much (0 = off)
+input double   InDD        = 0.0;     // Stop after an equity drawdown of this % (0 = off)
+input bool     InWkFlat    = true;    // Flatten and stop before the weekend
+input EWkDay   InWkDay     = WK_FRI;  //   - cutoff day
+input int      InWkHr      = 21;      //   - cutoff hour
+input bool     InWk247     = false;   // Trade 24/7 - allow weekends (crypto)
+input bool     InBosCnl    = true;    // Cancel a waiting order when a new BOS prints before it fills
+
+input group "25. News / blackout windows - no trading inside these times"
+input bool     InNewsOn    = true;    // News windows ON (OFF = no news and no US-holiday blocks at all)
+input ENwExit  InNwExit    = NW_CLOSE; // When a window starts
+input bool     InNw1On     = false;   // Window 1 - block trading
+input string   InNw1       = "1725-1835"; //   - window 1 time (HHMM-HHMM, session timezone)
+input bool     InNw2On     = false;   // Window 2 - block trading
+input string   InNw2       = "1800-1900"; //   - window 2 time
+input bool     InNw3On     = false;   // Window 3 - block trading
+input string   InNw3       = "2330-0030"; //   - window 3 time
+
+input group "26. Live-trading realism"
+input double   InSprd      = 0.0;     // Broker spread, in price, for SIZING (0 = not modelled)
+
+input group "27. Profit target - stop new trades"
+input bool     InPtOn      = false;   // Stop taking new trades once the profit target is reached
+input double   InPtAmt     = 500.0;   //   - profit target, in account currency
+input EPtPer   InPtPer     = PT_TOTAL; //   - count the profit
+input datetime InPtFrom    = D'2000.01.01 00:00'; //   - start date (only for Total), UTC
+
+input group "28. News windows - only on chosen dates"
+input bool     InNdOn      = false;   // News windows work ONLY on the dates below
+input string   InNdList    = "";      //   - dates (day of the month), e.g. 3, 12-14, 28
+input ENdScope InNdScope   = ND_MONTH; //   - these dates are for
+
+input group "29. Automatic US news schedule, US clock, US holidays"
+input bool     InAuOn      = false;   // Automatic US news windows (dates worked out by rule)
+input bool     InAuNfp     = true;    //   - NFP jobs report - 08:30 New York
+input bool     InAuJc      = true;    //   - Weekly jobless claims - every Thursday 08:30 New York
+input bool     InAuIsmM    = true;    //   - ISM Manufacturing PMI - 1st working day 10:00 New York
+input bool     InAuIsmS    = true;    //   - ISM Services PMI - 3rd working day 10:00 New York
+input int      InAuPre     = 10;      //   - block from this many minutes BEFORE the release
+input int      InAuPost    = 20;      //   - until this many minutes AFTER the release
+input EUsClk   InUsClk     = US_AUTO; // US clock (summer / winter time)
+input bool     InNwNy      = false;   // Read the group 25 window times in New York time
+input bool     InHolTrade  = true;    // Trade on US market holidays
+
+input group "31. Stacked BOS trades"
+input int      InMaxOpen   = 0;       // Max trades open at the same time (0 = no limit)
+
+input group "32. Stop management - step stop / break-even"
+input bool     InMvStep    = false;   // Step stop - at every 1R, move the stop up one step
+input bool     InMvBe      = false;   // Break-even only - once a candle CLOSES beyond 1R
+
+input group "33. Trade direction and HEDGE"
+input EDir     InDirMode   = DIR_BOTH; // Trade direction
+input EHedgeMoney InHedgeMoney = HM_OWN; //   - hedge: loss recovery, floor, pause and daily limits
+
+input group "34. v9.0 ideas - each one OFF by default"
+input bool     InBkOn      = false;   // a. Smaller risk for stacked BOS trades
+input double   InBkPct     = 50.0;    //   - risk of each stacked BOS trade, % of the normal risk
+input bool     InHfOn      = false;   // b. Higher-timeframe filter - take a signal only in the higher timeframe direction
+input bool     InTrOn      = false;   // c. Structure trailing stop
+input ETrMode  InTrMode    = TR_LEVEL; //   - the stop follows
+input bool     InLqOn      = false;   // d. Target at the next liquidity (the nearest untaken swing high / low)
+input double   InLqMin     = 1.5;     //   - only a swing at least this far from the entry, in R
+input bool     InPpOn      = false;   // e. Partial profit - a smaller part of every setup takes profit early
+input double   InPpPct     = 50.0;    //   - size of the early part, % of the setup
+input double   InPpR       = 1.0;     //   - early target, in R
+input bool     InPpBe      = true;    //   - then move the rest to break-even
+input bool     InPdOn      = false;   // f. Premium / discount filter - buy only at a discount, sell only at a premium
+input double   InPdPct     = 50.0;    //   - the line, % of the leg (50 = the middle)
+input bool     InLsOn      = false;   // g. Pause for the rest of the day after losses in a row
+input int      InLsN       = 3;       //   - losses in a row
+
+input group "35. Account floor + profit lock"
+input EFl      InFlMode    = FL_OFF;  // Account floor - never lose more than the amount below, keep part of every new high
+input double   InFlAmt     = 2000.0;  //   - the most the account may lose (below the start)
+input double   InFlLock    = 50.0;    //   - lock this % of every new profit high
+input double   InFlPct     = 2.5;     //   - risk per trade, % of the cushion above the floor
+
+input group "36. Pause for days after losses in a row"
+input bool     InLdOn      = false;   // Pause for some days after losses in a row
+input int      InLdN       = 3;       //   - losses in a row
+input int      InLdD       = 2;       //   - days to pause (after the rest of that day)
+
+input group "37. Higher timeframe equilibrium first"
+input bool     InEqOn      = false;   // Trade only after the higher timeframe pulled back to its equilibrium
+input double   InEqPct     = 50.0;    //   - the equilibrium, % pullback of the higher timeframe leg
+
+input group "40. EA - broker, clocks, chart"
+input long     InMagic     = 111001;  // Magic number (a different one on every chart that runs this EA)
+input string   InCmt       = "SMC";   // Order comment (text before the trade id)
+input EExec    InExec      = EX_TOUCH; // How entries are executed
+input int      InSlip      = 30;      // Max slippage for market orders, in points
+input double   InSrvHours  = 2.0;     // Broker server time - hours from UTC in winter (FxPro: 2)
+input EDst     InSrvDst    = DST_EU;  // Broker server time - summer time rule (FxPro: European)
+input int      InWarm      = 20000;   // Bars of history used to build the structure before trading
+input int      InResume    = 5;       // After a restart, keep a waiting setup if at most this many bars were missed
+input bool     InDraw      = true;    // Draw the main structure (BOS* / CHOCH* lines, CHOCH / BOS marks)
+input int      InDrawMax   = 200;     //   - how many past CHOCH / BOS marks to keep
+
+//---------------------------------------------------------------- arrays used by the core (MQL5 version)
+class CArrD
+{
+public:
+   double v[];
+   int    n;
+   CArrD() { n = 0; }
+   void   Clear()           { n = 0; ArrayResize(v, 0, 8192); }
+   void   Add(double x)     { if (n >= ArraySize(v)) ArrayResize(v, n + 1, 8192); v[n] = x; n++; }
+   double At(int i)         { return v[i]; }
+   int    Size()            { return n; }
+   void   DropFirst(int k)  { if (k <= 0) return; if (k >= n) { n = 0; return; } for (int i = 0; i + k < n; i++) v[i] = v[i + k]; n -= k; }
+   void   RemoveAt(int i)   { for (int j = i; j + 1 < n; j++) v[j] = v[j + 1]; n--; }
+};
+class CArrI
+{
+public:
+   int    v[];
+   int    n;
+   CArrI() { n = 0; }
+   void   Clear()           { n = 0; ArrayResize(v, 0, 8192); }
+   void   Add(int x)        { if (n >= ArraySize(v)) ArrayResize(v, n + 1, 8192); v[n] = x; n++; }
+   int    At(int i)         { return v[i]; }
+   int    Size()            { return n; }
+   void   DropFirst(int k)  { if (k <= 0) return; if (k >= n) { n = 0; return; } for (int i = 0; i + k < n; i++) v[i] = v[i + k]; n -= k; }
+   void   RemoveAt(int i)   { for (int j = i; j + 1 < n; j++) v[j] = v[j + 1]; n--; }
+};
+
+//==CORE-BEGIN==
+//+------------------------------------------------------------------+
+//| CORE: the v11.1 rules. Plain code only - the offline test        |
+//| (tools/ea) compiles this same text as C++ and compares every     |
+//| trade with the simulator that matches TradingView.               |
+//| All times in the core are UTC epoch seconds.                     |
+//+------------------------------------------------------------------+
+#define NAD   (-1.0e300)
+#define NAI   (-2147483647)
+#define LNONE (-1)
+#define MAXP  128
+#define MAXF  16
+
+bool   IsNa(double x)            { return x < -1.0e299; }
+double Mx(double a, double b)    { return a > b ? a : b; }
+double Mn(double a, double b)    { return a < b ? a : b; }
+int    MxI(int a, int b)         { return a > b ? a : b; }
+int    MnI(int a, int b)         { return a < b ? a : b; }
+long   FloorDivL(long a, long b) { long q = a / b; if ((a % b != 0) && ((a < 0) != (b < 0))) q--; return q; }
+
+// ---------- calendar arithmetic (no library time functions, so history and live agree) ----------
+long DaysFromCivil(int y, int m, int d)
+{
+   int  yy  = (m <= 2) ? y - 1 : y;
+   long era = (yy >= 0 ? yy : yy - 399) / 400;
+   long yoe = yy - era * 400;
+   int  mp  = (m > 2) ? m - 3 : m + 9;
+   long doy = (153 * mp + 2) / 5 + d - 1;
+   long doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+   return era * 146097 + doe - 719468;
+}
+void CivilFromDays(long zd, int &y, int &m, int &d)
+{
+   long z   = zd + 719468;
+   long era = (z >= 0 ? z : z - 146096) / 146097;
+   long doe = z - era * 146097;
+   long yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+   long doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+   long mp  = (5 * doy + 2) / 153;
+   d = (int)(doy - (153 * mp + 2) / 5 + 1);
+   m = (int)(mp < 10 ? mp + 3 : mp - 9);
+   y = (int)(yoe + era * 400 + (m <= 2 ? 1 : 0));
+}
+// 1 = Sunday ... 7 = Saturday (the TradingView numbering)
+int  DowDays(long z)              { long w = (z + 4) % 7; if (w < 0) w += 7; return (int)w + 1; }
+int  DaysInMonth(int y, int m)    { int y2 = m == 12 ? y + 1 : y; int m2 = m == 12 ? 1 : m + 1; return (int)(DaysFromCivil(y2, m2, 1) - DaysFromCivil(y, m, 1)); }
+long NthSunday(int y, int m, int n) { long d1 = DaysFromCivil(y, m, 1); int w = DowDays(d1); return d1 + ((8 - w) % 7) + 7 * (n - 1); }
+long LastSunday(int y, int m)     { int L = DaysInMonth(y, m); long dl = DaysFromCivil(y, m, L); return dl - (DowDays(dl) - 1); }
+// offset of a clock from UTC at the instant utc. rule: 0 none, 1 EU summer time, 2 US summer time
+long TzOff(long utc, long base, int rule)
+{
+   if (rule == 0) return base;
+   int y = 0, m = 0, d = 0;
+   CivilFromDays(FloorDivL(utc, 86400), y, m, d);
+   long s = 0, e = 0;
+   if (rule == 1) { s = LastSunday(y, 3) * 86400 + 3600; e = LastSunday(y, 10) * 86400 + 3600; }
+   else           { s = NthSunday(y, 3, 2) * 86400 + 7200 - base; e = NthSunday(y, 11, 1) * 86400 + 7200 - (base + 3600); }
+   return (utc >= s && utc < e) ? base + 3600 : base;
+}
+long LocToUtc(long loc, long base, int rule) { long u = loc - base; long off = TzOff(u, base, rule); return loc - off; }
+int  MinOfDay(long loc)                      { long s = loc % 86400; if (s < 0) s += 86400; return (int)(s / 60); }
+int  DAhead(int t, int a)                    { return ((a - t) % 1440 + 1440) % 1440; }
+// does the bar [t, t+len) touch the window [a, b)? (TradingView f_ovl)
+bool Ovl(int t, int len, int a, int b)       { int span = ((b - a) % 1440 + 1440) % 1440; return span > 0 && (DAhead(a, t) < span || DAhead(t, a) < len); }
+
+// ---------- dynamic arrays used by the core (MQL5 and C++ each define CArrD / CArrI) ----------
+
+// ---------- settings ----------
+class CSet
+{
+public:
+   bool   altMode, pbBodyOn, pbBodyRef, pbSwp2;
+   bool   on, r1, r2;
+   int    sig;
+   double pb, rr, slBuf;
+   bool   rev, once;
+   int    sessMode;
+   long   tzBase;
+   int    tzRule;
+   int    hrOn, hrOff, hrFlat;
+   int    sizeMode;
+   double risk, qty, cash, lotStep, rndMax, lev;
+   int    seqMode;
+   double seqMax;
+   int    capAct;
+   double seqAdd;
+   int    seqFrom;
+   long   seqFromT;
+   double split;
+   int    cmMode;
+   double cmLot, cmUnit, cmPct, cmFix;
+   bool   cmTgt;
+   bool   cancelSig;
+   int    expBars;
+   double minStop, maxStop;
+   int    maxTrades;
+   double dayLoss, dd;
+   bool   wkFlat;
+   int    wkDay, wkHr;
+   bool   wk247, bosCnl;
+   bool   newsOn;
+   int    nwExit;
+   bool   nw1On, nw2On, nw3On;
+   int    nw1A, nw1B, nw2A, nw2B, nw3A, nw3B;
+   double sprd;
+   bool   ptOn;
+   double ptAmt;
+   int    ptPer;
+   long   ptFrom;
+   bool   ndOn;
+   bool   ndDays[32];
+   int    ndScope;
+   bool   auOn, auNfp, auJc, auIsmM, auIsmS;
+   int    auPre, auPost, usClk;
+   bool   nwNy, holTrade;
+   int    maxOpen;
+   bool   mvStep, mvBe;
+   int    dirMode, hedgeMoney;
+   bool   bkOn;
+   double bkPct;
+   bool   hfOn, trOn;
+   int    trMode;
+   bool   lqOn;
+   double lqMin;
+   bool   ppOn;
+   double ppPct, ppR;
+   bool   ppBe, pdOn;
+   double pdPct;
+   bool   lsOn;
+   int    lsN;
+   int    flMode;
+   double flAmt, flLock, flPct;
+   bool   ldOn;
+   int    ldN, ldD;
+   bool   eqOn;
+   double eqPct;
+   // broker facts, set by the adapter
+   int    cs;
+   double cmLots, uv, minLot, tick;
+   bool   htfOk;
+   // worked out by Derive()
+   bool   fav, agn, autoM, useCho, useBos, hfEff, u15, timeOn, intra, mvOn, mgOn, seqPlus;
+   int    bMin, mvKMax;
+   CSet() { for (int i = 0; i < 32; i++) ndDays[i] = false; }
+   void Derive()
+   {
+      fav    = sig >= 3 && sig <= 5;
+      agn    = sig >= 6 && sig <= 8;
+      autoM  = sig >= 9;
+      int b  = sig % 3;
+      useCho = b != 1;
+      useBos = b != 0;
+      hfEff  = hfOn || fav;
+      u15    = on && (r2 || hfEff || eqOn || agn || autoM) && htfOk;
+      intra  = cs < 86400;
+      timeOn = sessMode == 1 ? true : (sessMode == 2 ? false : intra);
+      bMin   = MxI(1, cs / 60);
+      mvOn   = mvStep || mvBe;
+      mgOn   = mvOn || trOn || (ppOn && ppBe);
+      mvKMax = MxI(0, (int)MathCeil(rr - 1e-9) - 1);
+      seqPlus = seqMode >= 4;
+   }
+};
+CSet S;
+
+// ---------- time helpers on the chosen clocks ----------
+long SessLoc(long utc) { return utc + TzOff(utc, S.tzBase, S.tzRule); }
+long NyOff(long utc)   { if (S.usClk == 1) return -14400; if (S.usClk == 2) return -18000; return TzOff(utc, -18000, 2); }
+long NyLoc(long utc)   { return utc + NyOff(utc); }
+int  DomOf(long loc)   { int y = 0, m = 0, d = 0; CivilFromDays(FloorDivL(loc, 86400), y, m, d); return d; }
+
+// ---------- US calendar (group 29), exactly as the Pine code ----------
+int  UDow(int y, int m, int d) { return DowDays(DaysFromCivil(y, m, d)); }
+void UAddD(int y, int m, int d, int n, int &ry, int &rm, int &rd) { CivilFromDays(DaysFromCivil(y, m, d) + n, ry, rm, rd); }
+int  UNthDow(int y, int m, int w, int n) { return 1 + (w - UDow(y, m, 1) + 7) % 7 + 7 * (n - 1); }
+int  ULastDow(int y, int m, int w) { int L = DaysInMonth(y, m); return L - (UDow(y, m, L) - w + 7) % 7; }
+bool UObs(int y, int MM, int DD, int m, int d) { int w = UDow(y, MM, DD); return m == MM && d == (w == 7 ? DD - 1 : (w == 1 ? DD + 1 : DD)); }
+// 0 = no holiday; 1 New Year, 2 Martin Luther King, 3 Presidents, 4 Memorial, 5 Juneteenth, 6 Independence, 7 Labor,
+// 8 Thanksgiving, 9 Christmas, 10 Good Friday (only when gf)
+int UsHol(int y, int m, int d, bool gf)
+{
+   if (m == 1 && ((d == 1 && UDow(y, 1, 1) != 1 && UDow(y, 1, 1) != 7) || (d == 2 && UDow(y, 1, 1) == 1))) return 1;
+   if (m == 1 && d == UNthDow(y, 1, 2, 3)) return 2;
+   if (m == 2 && d == UNthDow(y, 2, 2, 3)) return 3;
+   if (m == 5 && d == ULastDow(y, 5, 2)) return 4;
+   if (y >= 2022 && UObs(y, 6, 19, m, d)) return 5;
+   if (UObs(y, 7, 4, m, d)) return 6;
+   if (m == 9 && d == UNthDow(y, 9, 2, 1)) return 7;
+   if (m == 11 && d == UNthDow(y, 11, 5, 4)) return 8;
+   if (UObs(y, 12, 25, m, d)) return 9;
+   if (gf && (m == 3 || m == 4))
+   {
+      int a  = y % 19;
+      int b  = y / 100;
+      int c  = y % 100;
+      int h  = (19 * a + b - b / 4 - (b - (b + 8) / 25 + 1) / 3 + 15) % 30;
+      int l  = (32 + 2 * (b % 4) + 2 * (c / 4) - h - c % 4) % 7;
+      int q  = (a + 11 * h + 22 * l) / 451;
+      int gy = 0, gm = 0, gd = 0;
+      UAddD(y, (h + l - 7 * q + 114) / 31, (h + l - 7 * q + 114) % 31 + 1, -2, gy, gm, gd);
+      if (m == gm && d == gd) return 10;
+   }
+   return 0;
+}
+string UsHolName(int k)
+{
+   if (k == 1) return "New Year";
+   if (k == 2) return "Martin Luther King Day";
+   if (k == 3) return "Presidents' Day";
+   if (k == 4) return "Memorial Day";
+   if (k == 5) return "Juneteenth";
+   if (k == 6) return "Independence Day";
+   if (k == 7) return "Labor Day";
+   if (k == 8) return "Thanksgiving";
+   if (k == 9) return "Christmas";
+   if (k == 10) return "Good Friday";
+   return "";
+}
+// NFP: third Friday after the week (Sun-Sat) holding the 12th of the previous month
+void UNfp(int y, int m, int &ry, int &rm, int &rd)
+{
+   int py = m == 1 ? y - 1 : y;
+   int pm = m == 1 ? 12 : m - 1;
+   UAddD(py, pm, 12 + (7 - UDow(py, pm, 12)) % 7, 20, ry, rm, rd);
+   int a = 0, b = 0, c = 0;
+   if (rm == 1 && rd <= 3) { UAddD(ry, rm, rd, 7, a, b, c); ry = a; rm = b; rd = c; }
+   if (UsHol(ry, rm, rd, false) != 0) { UAddD(ry, rm, rd, -1, a, b, c); ry = a; rm = b; rd = c; }
+}
+// n-th US working day of the month (0 = not a working day, or later than the 10th)
+int UBday(int y, int m, int d)
+{
+   int n = 0;
+   if (d <= 10 && UDow(y, m, d) != 1 && UDow(y, m, d) != 7 && UsHol(y, m, d, false) == 0)
+      for (int k = 1; k <= d; k++)
+      {
+         int w = UDow(y, m, k);
+         if (w != 1 && w != 7 && UsHol(y, m, k, false) == 0) n++;
+      }
+   return n;
+}
+long NyInstant(int y, int m, int d, int hh, int mm)
+{
+   long loc = DaysFromCivil(y, m, d) * 86400 + hh * 3600 + mm * 60;
+   if (S.usClk == 1) return loc + 14400;
+   if (S.usClk == 2) return loc + 18000;
+   return LocToUtc(loc, -18000, 2);
+}
+// the enabled releases on one New York date (LNONE = none)
+void UAuDay(int y, int m, int d, long &t1, long &t2, long &t3, long &t4)
+{
+   int fy = 0, fm = 0, fd = 0, ty = 0, tm = 0, td = 0;
+   UNfp(y, m, fy, fm, fd);
+   UAddD(y, m, d, 1, ty, tm, td);
+   int  w  = UDow(y, m, d);
+   bool jc = (w == 5 && UsHol(y, m, d, false) == 0) || (w == 4 && UsHol(ty, tm, td, false) != 0);
+   int  bd = (S.auIsmM || S.auIsmS) ? UBday(y, m, d) : 0;
+   int  sh = m == 1 ? 1 : 0;
+   t1 = (S.auNfp && fy == y && fm == m && fd == d) ? NyInstant(y, m, d, 8, 30) : LNONE;
+   t2 = (S.auJc && jc) ? NyInstant(y, m, d, 8, 30) : LNONE;
+   t3 = (S.auIsmM && bd == 1 + sh) ? NyInstant(y, m, d, 10, 0) : LNONE;
+   t4 = (S.auIsmS && bd == 3 + sh) ? NyInstant(y, m, d, 10, 0) : LNONE;
+}
+
+// ---------- structure engine (main tier) ----------
+struct Trk
+{
+   bool   isHigh;
+   double potential;
+   int    potentialBar;
+   int    count;
+   double refLevel;
+   bool   swept;
+};
+void TrkInit(Trk &t, bool hi) { t.isHigh = hi; t.potential = NAD; t.potentialBar = NAI; t.count = 0; t.refLevel = NAD; t.swept = false; }
+// TradingView SwingTracker.update: a swing confirms after 3 pullback candles (2 once the opposite level is swept)
+void TrkUpdate(Trk &t, double swpLvl, double o, double h, double l, double c, int bi, double &confP, int &confB)
+{
+   confP = NAD;
+   confB = NAI;
+   bool   bearC = c < o;
+   bool   bullC = c > o;
+   double bd    = MathAbs(c - o);
+   double wk    = Mx(h - Mx(o, c), Mn(o, c) - l);
+   bool   pbQ   = !(S.pbBodyOn || S.pbBodyRef) || bd > wk;
+   bool   pb    = (t.isHigh ? bearC : bullC) && pbQ;
+   double rf    = S.pbBodyRef ? (t.isHigh ? Mn(o, c) : Mx(o, c)) : (t.isHigh ? l : h);
+   bool newExt  = IsNa(t.potential) || (t.isHigh ? h >= t.potential : l <= t.potential);
+   if (newExt)
+   {
+      t.potential    = t.isHigh ? h : l;
+      t.potentialBar = bi;
+      t.count        = pb ? 1 : 0;
+      t.refLevel     = pb ? rf : NAD;
+      t.swept        = false;
+      return;
+   }
+   if (!IsNa(swpLvl) && (t.isHigh ? l < swpLvl : h > swpLvl)) t.swept = true;
+   if (!pb) return;
+   bool beyond = !IsNa(t.refLevel) && (t.isHigh ? c < t.refLevel : c > t.refLevel);
+   if (t.count == 0) { t.count = 1; t.refLevel = rf; }
+   else if ((t.count == 1 && beyond && t.swept) || (t.count == 2 && beyond))
+   {
+      confP          = t.potential;
+      confB          = t.potentialBar;
+      t.potential    = t.isHigh ? h : l;
+      t.potentialBar = bi;
+      t.count        = 1;
+      t.refLevel     = rf;
+      t.swept        = false;
+   }
+   else if (t.count == 1 && beyond) { t.count = 2; t.refLevel = rf; }
+}
+
+// a live structure line: the ceiling (BOS* / CHOCH* above the price) or the floor
+struct SLn
+{
+   bool   ok;
+   int    x1;
+   double price;
+   int    sid;
+   int    born;
+   double swpP;
+   int    swpB;
+   double refP;
+   double idmP;
+   int    idmB;
+   bool   idmHit;
+   bool   swpT;
+};
+void SLnMake(SLn &s, double p, int b, int sid, int born)
+{
+   s.ok = true; s.x1 = b; s.price = p; s.sid = sid; s.born = born; s.swpP = NAD; s.swpB = NAI; s.refP = NAD;
+   s.idmP = NAD; s.idmB = NAI; s.idmHit = false; s.swpT = false;
+}
+
+class CEngine
+{
+public:
+   CArrD  bufHi, bufLo, msLoP, msHiP;
+   CArrI  msLoB, msHiB, mnHiB, mnLoB;
+   double allHi, allLo, mRunHi, mRunLo;
+   Trk    hiT, loT;
+   int    trendDir, bi;
+   SLn    cel, flr;
+   bool   evBU, evBD, evCU, evCD;
+   double swH, swL;
+   double brkP;     // the level broken on this bar (drawing)
+   int    brkX;
+   CEngine() { Reset(); }
+   void Reset()
+   {
+      bufHi.Clear(); bufLo.Clear(); msLoP.Clear(); msHiP.Clear(); msLoB.Clear(); msHiB.Clear(); mnHiB.Clear(); mnLoB.Clear();
+      allHi = NAD; allLo = NAD; mRunHi = NAD; mRunLo = NAD;
+      TrkInit(hiT, true); TrkInit(loT, false);
+      trendDir = 0; bi = -1;
+      cel.ok = false; flr.ok = false;
+      evBU = false; evBD = false; evCU = false; evCD = false; swH = NAD; swL = NAD; brkP = NAD; brkX = NAI;
+   }
+   // f_retExtreme (inc = false: up to the previous bar) / f_retExtInc (inc = true: up to this bar)
+   void RetExt(int fromBar, bool findHigh, bool inc, double &p, int &b)
+   {
+      int sz = bufLo.Size();
+      int jEnd = sz - 1;
+      p = NAD;
+      b = NAI;
+      if (inc ? jEnd < 0 : jEnd <= 0) return;
+      int last = inc ? jEnd : jEnd - 1;
+      int j0   = MxI(0, MnI(fromBar - bi + sz, last));
+      int base = bi - sz + 1;
+      for (int j = j0; j <= last; j++)
+      {
+         double v = findHigh ? bufHi.At(j) : bufLo.At(j);
+         if (IsNa(p) || (findHigh ? v >= p : v <= p)) { p = v; b = base + j; }
+      }
+   }
+   bool SwpConf(CArrI &arrB, int swpB)
+   {
+      if (swpB == NAI) return false;
+      for (int i = arrB.Size() - 1; i >= 0; i--)
+      {
+         int cb = arrB.At(i);
+         if (cb == swpB) return true;
+         if (cb < swpB) return false;
+      }
+      return false;
+   }
+   void LastMinor(bool wantLow, int beforeBar, double &p, int &b)
+   {
+      p = NAD;
+      b = NAI;
+      if (wantLow)
+      {
+         for (int i = msLoB.Size() - 1; i >= 0; i--)
+            if (msLoB.At(i) < beforeBar) { p = msLoP.At(i); b = msLoB.At(i); return; }
+      }
+      else
+      {
+         for (int i = msHiB.Size() - 1; i >= 0; i--)
+            if (msHiB.At(i) < beforeBar) { p = msHiP.At(i); b = msHiB.At(i); return; }
+      }
+   }
+   // the inducement (IDM) of a new line - only the ALTERNATE rule uses it
+   void ArmIdm(SLn &s, double h, double l)
+   {
+      if (!s.ok) return;
+      bool isCeil = s.sid == 0 || s.sid == 2;
+      double ip = NAD;
+      int ib = NAI;
+      LastMinor(isCeil, s.x1, ip, ib);
+      s.idmP = ip;
+      s.idmB = ib;
+      s.idmHit = false;
+      if (!IsNa(ip))
+      {
+         double xp = NAD;
+         int xb = NAI;
+         RetExt(s.x1, !isCeil, false, xp, xb);
+         bool past = !IsNa(xp) && (isCeil ? xp < ip : xp > ip);
+         bool now  = isCeil ? l < ip : h > ip;
+         if (past || now) s.idmHit = true;
+      }
+   }
+   void Step(double o, double h, double l, double c)
+   {
+      bi++;
+      evBU = false; evBD = false; evCU = false; evCD = false; brkP = NAD; brkX = NAI;
+      bufHi.Add(h);
+      bufLo.Add(l);
+      if (bufHi.Size() > 5150) { int cut = bufHi.Size() - 4900; bufHi.DropFirst(cut); bufLo.DropFirst(cut); }
+      allHi = IsNa(allHi) ? h : Mx(allHi, h);
+      allLo = IsNa(allLo) ? l : Mn(allLo, l);
+      int n = bufHi.Size();
+      if (bi >= 2 && n >= 3)
+      {
+         double l1 = bufLo.At(n - 2), l2 = bufLo.At(n - 3), h1 = bufHi.At(n - 2), h2 = bufHi.At(n - 3);
+         if (l1 < l2 && l1 < l) { msLoB.Add(bi - 1); msLoP.Add(l1); if (msLoB.Size() > 200) { msLoB.DropFirst(1); msLoP.DropFirst(1); } }
+         if (h1 > h2 && h1 > h) { msHiB.Add(bi - 1); msHiP.Add(h1); if (msHiB.Size() > 200) { msHiB.DropFirst(1); msHiP.DropFirst(1); } }
+      }
+      double swpH = (S.pbSwp2 && flr.ok) ? flr.price : NAD;
+      double swpL = (S.pbSwp2 && cel.ok) ? cel.price : NAD;
+      double phP = NAD, plP = NAD;
+      int    phB = NAI, plB = NAI;
+      TrkUpdate(hiT, swpH, o, h, l, c, bi, phP, phB);
+      TrkUpdate(loT, swpL, o, h, l, c, bi, plP, plB);
+      swH = phP;
+      swL = plP;
+      if (!IsNa(phP)) { mnHiB.Add(phB); if (mnHiB.Size() > 300) mnHiB.DropFirst(1); }
+      if (!IsNa(plP)) { mnLoB.Add(plB); if (mnLoB.Size() > 300) mnLoB.DropFirst(1); }
+      if (!IsNa(phP))
+      {
+         bool cSw = cel.ok && !IsNa(cel.swpP);
+         bool cEq = cel.ok && phP == cel.price;
+         bool adopt = trendDir == 0 ? (phP >= allHi && !cSw && !cEq) : !cel.ok;
+         if (adopt) { SLnMake(cel, phP, phB, trendDir == -1 ? 2 : 0, bi); ArmIdm(cel, h, l); }
+      }
+      if (!IsNa(plP))
+      {
+         bool fSw = flr.ok && !IsNa(flr.swpP);
+         bool fEq = flr.ok && plP == flr.price;
+         bool adopt = trendDir == 0 ? (plP <= allLo && !fSw && !fEq) : !flr.ok;
+         if (adopt) { SLnMake(flr, plP, plB, trendDir == 1 ? 3 : 1, bi); ArmIdm(flr, h, l); }
+      }
+      if (cel.ok && !cel.idmHit && !IsNa(cel.idmP) && l < cel.idmP) cel.idmHit = true;
+      if (flr.ok && !flr.idmHit && !IsNa(flr.idmP) && h > flr.idmP) flr.idmHit = true;
+      // the ceiling
+      if (cel.ok && bi > cel.born)
+      {
+         if (c > cel.price && (trendDir == -1 || !S.altMode || cel.idmHit || IsNa(cel.idmP)))
+         {
+            bool isCho = trendDir == -1;
+            evCU = isCho;
+            evBU = !isCho;
+            brkP = cel.price;
+            brkX = cel.x1;
+            double rp = NAD;
+            int rb = NAI;
+            RetExt(cel.x1, false, true, rp, rb);
+            if (!IsNa(rp)) { SLnMake(flr, rp, rb, 3, bi); ArmIdm(flr, h, l); }
+            trendDir = 1;
+            cel.ok = false;
+         }
+         else
+         {
+            if (h > cel.price)
+            {
+               if (IsNa(cel.swpP) || h > cel.swpP) { cel.swpP = h; cel.swpB = bi; cel.swpT = false; }
+               if (S.altMode && !cel.idmHit && !IsNa(cel.idmP) && c > cel.price && !IsNa(cel.swpP))
+               {
+                  double mp = cel.swpP;
+                  int mb = cel.swpB, md = cel.sid;
+                  SLnMake(cel, mp, mb, md, bi);
+                  ArmIdm(cel, h, l);
+               }
+            }
+            if (!IsNa(cel.swpP) && IsNa(cel.refP)) { double rp = NAD; int rb = NAI; RetExt(cel.x1, false, false, rp, rb); cel.refP = rp; }
+            if (cel.swpB != NAI && cel.swpB == bi && trendDir == 1 && !IsNa(cel.refP) && l < cel.refP) cel.swpT = true;
+            if (trendDir == 1 && !IsNa(cel.swpP) && !IsNa(cel.refP) && l < cel.refP && (!cel.swpT || SwpConf(mnHiB, cel.swpB)))
+            {
+               double sp = cel.swpP;
+               int sb = cel.x1, sd = cel.sid;
+               SLnMake(cel, sp, sb, sd, bi);
+               ArmIdm(cel, h, l);
+            }
+         }
+      }
+      // the floor
+      if (flr.ok && bi > flr.born)
+      {
+         if (c < flr.price && (trendDir == 1 || !S.altMode || flr.idmHit || IsNa(flr.idmP)))
+         {
+            bool isCho = trendDir == 1;
+            evCD = isCho;
+            evBD = !isCho;
+            brkP = flr.price;
+            brkX = flr.x1;
+            double rp = NAD;
+            int rb = NAI;
+            RetExt(flr.x1, true, true, rp, rb);
+            if (!IsNa(rp)) { SLnMake(cel, rp, rb, 2, bi); ArmIdm(cel, h, l); }
+            trendDir = -1;
+            flr.ok = false;
+         }
+         else
+         {
+            if (l < flr.price)
+            {
+               if (IsNa(flr.swpP) || l < flr.swpP) { flr.swpP = l; flr.swpB = bi; flr.swpT = false; }
+               if (S.altMode && !flr.idmHit && !IsNa(flr.idmP) && c < flr.price && !IsNa(flr.swpP))
+               {
+                  double mp = flr.swpP;
+                  int mb = flr.swpB, md = flr.sid;
+                  SLnMake(flr, mp, mb, md, bi);
+                  ArmIdm(flr, h, l);
+               }
+            }
+            if (!IsNa(flr.swpP) && IsNa(flr.refP)) { double rp = NAD; int rb = NAI; RetExt(flr.x1, true, false, rp, rb); flr.refP = rp; }
+            if (flr.swpB != NAI && flr.swpB == bi && trendDir == -1 && !IsNa(flr.refP) && h > flr.refP) flr.swpT = true;
+            if (trendDir == -1 && !IsNa(flr.swpP) && !IsNa(flr.refP) && h > flr.refP && (!flr.swpT || SwpConf(mnLoB, flr.swpB)))
+            {
+               double sp = flr.swpP;
+               int sb = flr.x1, sd = flr.sid;
+               SLnMake(flr, sp, sb, sd, bi);
+               ArmIdm(flr, h, l);
+            }
+         }
+      }
+      if (evBU || evBD || evCU || evCD) { mRunHi = h; mRunLo = l; }
+      else { mRunHi = IsNa(mRunHi) ? h : Mx(mRunHi, h); mRunLo = IsNa(mRunLo) ? l : Mn(mRunLo, l); }
+   }
+   void Anchors(double &a, double &g)
+   {
+      a = NAD;
+      g = NAD;
+      if (trendDir == 1)       { a = mRunHi; g = mRunLo; if (flr.ok) g = flr.price; }
+      else if (trendDir == -1) { a = mRunLo; g = mRunHi; if (cel.ok) g = cel.price; }
+   }
+};
+CEngine EN;
+
+double RetLvl(int d, double anch, double orig, double pct)
+{
+   if (d == 1 && !IsNa(anch) && !IsNa(orig) && anch > orig) return anch - (anch - orig) * pct / 100.0;
+   if (d == -1 && !IsNa(anch) && !IsNa(orig) && orig > anch) return anch + (orig - anch) * pct / 100.0;
+   return NAD;
+}
+
+// ---------- higher-timeframe engine (fed with CLOSED higher-timeframe candles) ----------
+class CHtf
+{
+public:
+   Trk    tkHi, tkLo;
+   double tAllHi, tAllLo, tRunLo, tRunHi, tCeil, tFlor, outO, outX;
+   int    tCeilB, tFlorB, tTrend, evN, hb;
+   CHtf() { Reset(); }
+   void Reset()
+   {
+      TrkInit(tkHi, true); TrkInit(tkLo, false);
+      tAllHi = NAD; tAllLo = NAD; tRunLo = NAD; tRunHi = NAD; tCeil = NAD; tFlor = NAD; outO = NAD; outX = NAD;
+      tCeilB = NAI; tFlorB = NAI; tTrend = 0; evN = 0; hb = -1;
+   }
+   void Step(double o, double h, double l, double c)
+   {
+      hb++;
+      tAllHi = IsNa(tAllHi) ? h : Mx(tAllHi, h);
+      tAllLo = IsNa(tAllLo) ? l : Mn(tAllLo, l);
+      tRunLo = IsNa(tRunLo) ? l : Mn(tRunLo, l);
+      tRunHi = IsNa(tRunHi) ? h : Mx(tRunHi, h);
+      double cfH = NAD, cfL = NAD;
+      int cbH = NAI, cbL = NAI;
+      TrkUpdate(tkHi, S.pbSwp2 ? tFlor : NAD, o, h, l, c, hb, cfH, cbH);
+      TrkUpdate(tkLo, S.pbSwp2 ? tCeil : NAD, o, h, l, c, hb, cfL, cbL);
+      if (!IsNa(cfH))
+      {
+         bool ad = tTrend == 0 ? cfH >= tAllHi : IsNa(tCeil);
+         if (ad || (!IsNa(tCeil) && cfH == tCeil)) { tCeil = cfH; tCeilB = hb; tRunLo = l; }
+      }
+      if (!IsNa(cfL))
+      {
+         bool ad = tTrend == 0 ? cfL <= tAllLo : IsNa(tFlor);
+         if (ad || (!IsNa(tFlor) && cfL == tFlor)) { tFlor = cfL; tFlorB = hb; tRunHi = h; }
+      }
+      if (!IsNa(tCeil) && tCeilB != NAI && hb > tCeilB && c > tCeil)
+      { tTrend = 1; tFlor = tRunLo; tFlorB = hb; tRunHi = h; tCeil = NAD; tCeilB = NAI; evN++; }
+      else if (!IsNa(tFlor) && tFlorB != NAI && hb > tFlorB && c < tFlor)
+      { tTrend = -1; tCeil = tRunHi; tCeilB = hb; tRunLo = l; tFlor = NAD; tFlorB = NAI; evN++; }
+      if (tTrend == 1)       { outX = tRunHi; outO = IsNa(tFlor) ? tRunLo : tFlor; }
+      else if (tTrend == -1) { outX = tRunLo; outO = IsNa(tCeil) ? tRunHi : tCeil; }
+      else                   { outO = NAD; outX = NAD; }
+   }
+};
+CHtf HT;
+
+// ---------- what the broker reports for one side on one bar ----------
+struct PosRec
+{
+   long   id;
+   long   ticket;
+   int    dir;
+   double q;
+   double ent;
+   double sl;
+   double tgt;
+   long   tOpen;
+   int    seq;
+   int    piece;
+};
+struct FillRec
+{
+   long   id;
+   int    dir;
+   double q;
+   double ent;
+   long   t;
+   int    seq;
+   int    piece;
+   bool   atOpen;   // filled at once when the order was sent (the price was already through it)
+};
+struct ClsRec
+{
+   long   id;
+   int    dir;
+   double q;
+   double pnl;
+   long   tIn;
+   long   tOut;
+   int    seq;
+   int    piece;
+   int    why;      // 1 stop, 2 target, 0 anything else
+};
+class CSideIO
+{
+public:
+   int     nPos, nFill, nCls;
+   PosRec  pos[MAXP];
+   FillRec fill[MAXF];
+   ClsRec  cls[MAXP];
+   CSideIO() { Clear(); }
+   void Clear() { nPos = 0; nFill = 0; nCls = 0; }
+};
+CSideIO g_io[2];
+
+// a trade whose stop the strategy manages (group 32, trailing stop, break-even after the early profit)
+struct TrkRec
+{
+   long   id;
+   long   ticket;
+   int    dir;
+   double ent;
+   double r;
+   double be;
+   double sl;
+   double tgt;
+   double q;
+   int    step;
+   int    bar;
+   bool   mv;
+   bool   pp;
+   int    seq;
+   int    piece;
+};
+
+// ---------- broker actions (the MQL5 part sends real orders; the test emulates TradingView) ----------
+void BkCancel(int side);
+void BkCancelPiece(int side, int piece);
+void BkPlace(int side, int seq, int piece, int dir, double ent, double sl, double tgt, double q);
+void BkCloseAll(int side, string why);
+void BkSetStop(int side, long ticket, int dir, double sl, double tgt);
+void BkNote(int side, string msg);
+
+// ---------- state shared by both sides ----------
+int    g_nSides = 1;
+int    g_sideMi[2];
+int    g_sideDir[2];
+bool   g_dry = false;
+long   g_t = 0, g_now = 0;
+double g_o = 0, g_h = 0, g_l = 0, g_c = 0, g_eq = 0;
+int    g_tM = 0;
+bool   g_win = true, g_flatNow = false, g_wkBlock = false, g_wkNow = false, g_nwNow = false, g_holNow = false;
+bool   g_deadPrev = false, g_wkPrev = false;
+int    g_T15 = 0, g_htE = 0, g_prevE = 0, g_autoDir = 0;
+double g_htO = NAD, g_htX = NAD;
+bool   g_eqOpen = false, g_eqBlock = false, g_firstBar = true;
+double g_cmU = 0, g_cmPx = 0, g_mAnch = NAD, g_mOrig = NAD, g_eqLvl = NAD;
+double g_ceilPrev = NAD, g_florPrev = NAD;
+CArrD  g_lqH, g_lqL;
+int    g_auKey = -1, g_holT0 = 0, g_holT1 = 0;
+long   g_auT1 = LNONE, g_auT2 = LNONE, g_auT3 = LNONE, g_auT4 = LNONE;
+
+// ---------- costs and size (f_stCmU / f_stCmF / f_stQty) ----------
+double CmU(double ent)
+{
+   double c = 0.0;
+   if (S.cmMode == 1 || S.cmMode == 2) c = S.cmLots > 0 ? 2.0 * S.cmLot / S.cmLots : 0.0;
+   else if (S.cmMode == 3) c = 2.0 * S.cmPct / 100.0 * Mx(ent, 0.0) * S.uv;
+   return c + (S.sprd > 0 ? S.sprd * S.uv : 0.0);
+}
+double CmF()    { return S.cmMode == 4 ? 2.0 * S.cmFix : 0.0; }
+double LotDiv() { return S.cmLots > 0 ? S.cmLots : 1.0; }
+void Qty(double ent, double rsk, double amt, double pos, double &q, bool &cap)
+{
+   q = 0.0;
+   double per = 0.0;
+   double val = ent > 0 ? ent * S.uv : 0.0;
+   if (S.sizeMode == 1) q = S.qty;
+   else if (S.sizeMode == 2) q = val > 0 ? S.cash / val : 0.0;
+   else
+   {
+      per = rsk * S.uv + CmU(ent);
+      double net = Mx(0.0, amt - CmF());
+      q = per > 0 ? net / per : 0.0;
+   }
+   double st  = (S.lotStep > 0 && S.cmLots > 0) ? S.lotStep * S.cmLots : 0.0;
+   double raw = q;
+   if (st > 0)
+   {
+      q = MathFloor(raw / st + 0.5) * st;
+      if (S.rndMax > 0 && per > 0 && amt > 0 && q * per + CmF() > amt * (1.0 + S.rndMax / 100.0)) q = MathFloor(raw / st) * st;
+   }
+   double lim = (val > 0 && S.lev > 0) ? Mx(0.0, g_eq * S.lev / val - MathAbs(pos)) : 0.0;
+   cap = val > 0 && S.lev > 0 && q > lim;
+   if (cap) q = st > 0 ? MathFloor(lim / st) * st : lim;
+}
+// nearest untaken swing at or beyond lim (idea d)
+double LqNear(int dir, double lim)
+{
+   double b = NAD;
+   if (IsNa(lim)) return b;
+   if (dir == 1)
+   {
+      for (int i = 0; i < g_lqH.Size(); i++) { double v = g_lqH.At(i); if (v >= lim && (IsNa(b) || v < b)) b = v; }
+   }
+   else
+   {
+      for (int i = 0; i < g_lqL.Size(); i++) { double v = g_lqL.At(i); if (v <= lim && (IsNa(b) || v > b)) b = v; }
+   }
+   return b;
+}
+
+// ---------- news windows (groups 25, 28, 29) ----------
+bool NdOk(long ts)
+{
+   if (!S.ndOn) return true;
+   long lt = SessLoc(ts);
+   int y = 0, m = 0, d = 0, ny = 0, nm = 0, nd = 0;
+   CivilFromDays(FloorDivL(lt, 86400), y, m, d);
+   if (!S.ndDays[d]) return false;
+   if (S.ndScope == 1) return true;
+   CivilFromDays(FloorDivL(SessLoc(g_now), 86400), ny, nm, nd);
+   return m == nm && y == ny;
+}
+bool NwHit(bool on, int a, int b, int t, int len, long tc)
+{
+   if (!on || a < 0 || b < 0) return false;
+   int span = ((b - a) % 1440 + 1440) % 1440;
+   if (span <= 0) return false;
+   int back = DAhead(a, t);
+   int fwd  = DAhead(t, a);
+   return (back < span && NdOk(tc - (long)back * 60)) || (fwd < len && NdOk(tc + (long)fwd * 60));
+}
+bool AuHit(long T, long tc, long lenS) { return T != LNONE && tc < T + (long)S.auPost * 60 && tc + lenS > T - (long)S.auPre * 60; }
+void NewsFlags(long tc)
+{
+   bool auNow = false;
+   g_holNow = false;
+   bool auUse = S.newsOn && S.intra && (S.auOn || !S.holTrade);
+   long lenS = (long)S.bMin * 60;
+   if (auUse)
+   {
+      int y = 0, m = 0, d = 0;
+      CivilFromDays(FloorDivL(NyLoc(tc), 86400), y, m, d);
+      int key = y * 10000 + m * 100 + d;
+      if (key != g_auKey)
+      {
+         g_auKey = key;
+         int hy = 0, hm = 0, hd = 0;
+         UAddD(y, m, d, 1, hy, hm, hd);
+         g_holT0 = S.holTrade ? 0 : UsHol(y, m, d, true);
+         g_holT1 = S.holTrade ? 0 : UsHol(hy, hm, hd, true);
+         if (S.auOn) UAuDay(y, m, d, g_auT1, g_auT2, g_auT3, g_auT4);
+      }
+      if (S.auOn) auNow = AuHit(g_auT1, tc, lenS) || AuHit(g_auT2, tc, lenS) || AuHit(g_auT3, tc, lenS) || AuHit(g_auT4, tc, lenS);
+      if (!S.holTrade) g_holNow = g_holT0 != 0 || (g_holT1 != 0 && DomOf(NyLoc(tc + lenS - 1)) != DomOf(NyLoc(tc)));
+   }
+   int tMw = S.nwNy ? MinOfDay(NyLoc(tc)) : g_tM;
+   bool win = S.intra && (NwHit(S.nw1On, S.nw1A, S.nw1B, tMw, S.bMin, tc) || NwHit(S.nw2On, S.nw2A, S.nw2B, tMw, S.bMin, tc) || NwHit(S.nw3On, S.nw3A, S.nw3B, tMw, S.bMin, tc));
+   g_nwNow = S.newsOn && (win || auNow || g_holNow);
+}
+
+// ---------- money: loss recovery, floor, daily limits, pause (one per side, or one shared) ----------
+class CMoney
+{
+public:
+   double seqLoss, seqTot, flPnl, flPeak, dayPnl, ptPnl, peakEq, riskNow, flFloor, flCush, flRisk;
+   bool   seqHalt, seqCapOn, dayHalt, ptHalt, ddHit;
+   int    cntSeqCap, dayTrades, lsRun, cntLs, ldRun, cntLd, prevDom;
+   long   ldUntil, prevWk, liveT;
+   CMoney() { liveT = LNONE; Reset(); }
+   void Reset()
+   {
+      seqLoss = 0; seqTot = 0; flPnl = 0; flPeak = 0; dayPnl = 0; ptPnl = 0; peakEq = NAD; riskNow = 0; flFloor = 0; flCush = 0; flRisk = 0;
+      seqHalt = false; seqCapOn = false; dayHalt = false; ptHalt = false; ddHit = false;
+      cntSeqCap = 0; dayTrades = 0; lsRun = 0; cntLs = 0; ldRun = 0; cntLd = 0; prevDom = -1;
+      ldUntil = LNONE; prevWk = LNONE;
+   }
+   double Car()        { return S.seqPlus ? Mx(0.0, -seqTot) : seqLoss; }
+   bool   Counts(long tIn)
+   {
+      if (S.seqFrom == 0) return true;
+      if (S.seqFrom == 2) return tIn >= S.seqFromT;
+      return liveT != LNONE && tIn >= liveT;
+   }
+   bool   LdHalt(long t) { return S.ldOn && ldUntil != LNONE && t < ldUntil; }
+   long   LdUntil(long t)
+   {
+      long dn0 = FloorDivL(SessLoc(t), 86400);
+      int n = 0, k = 0;
+      while (n < S.ldD && k < 500)
+      {
+         k++;
+         int w = DowDays(dn0 + k);
+         if (S.wk247 || (w != 7 && w != 1)) n++;
+      }
+      return LocToUtc((dn0 + k + 1) * 86400, S.tzBase, S.tzRule);
+   }
+   // the start of a bar (t = its open): new day / new week resets, before this bar's fills and exits are counted
+   void NewBar(long t)
+   {
+      long dn = FloorDivL(SessLoc(t), 86400);
+      int y = 0, m = 0, d = 0;
+      CivilFromDays(dn, y, m, d);
+      bool newDay = prevDom >= 0 && d != prevDom;
+      prevDom = d;
+      long wk = FloorDivL(dn + 3, 7);
+      bool newWk = prevWk != LNONE && wk != prevWk;
+      prevWk = wk;
+      if (newDay) { dayTrades = 0; dayPnl = 0; dayHalt = false; lsRun = 0; }
+      if (newDay && seqHalt && S.capAct == 1) { seqHalt = false; seqLoss = 0; seqTot = 0; seqCapOn = false; }
+      if ((S.ptPer == 1 && newDay) || (S.ptPer == 2 && newWk)) { ptPnl = 0; ptHalt = false; }
+   }
+   // the trades closed on this bar (all sides that use this money), added together, oldest first
+   void Closes(int mi)
+   {
+      int ks[256];
+      int ix[256];
+      int n = 0;
+      for (int k = 0; k < g_nSides; k++)
+      {
+         if (g_sideMi[k] != mi) continue;
+         for (int i = 0; i < g_io[k].nCls && n < 256; i++)
+         {
+            int j = n;
+            while (j > 0 && g_io[ks[j - 1]].cls[ix[j - 1]].tOut > g_io[k].cls[i].tOut) { ks[j] = ks[j - 1]; ix[j] = ix[j - 1]; j--; }
+            ks[j] = k;
+            ix[j] = i;
+            n++;
+         }
+      }
+      if (n == 0) return;
+      double sqSum = 0;
+      for (int a = 0; a < n; a++)
+      {
+         double pf = g_io[ks[a]].cls[ix[a]].pnl;
+         dayPnl += pf;
+         if (S.ptPer != 0 || g_io[ks[a]].cls[ix[a]].tOut >= S.ptFrom) ptPnl += pf;
+         if (Counts(g_io[ks[a]].cls[ix[a]].tIn)) sqSum += pf;
+      }
+      double debt = seqLoss - sqSum;
+      seqLoss = debt < 0.005 ? 0.0 : debt;
+      seqTot += sqSum;
+      flPnl  += sqSum;
+      flPeak  = Mx(flPeak, flPnl);
+      if (Car() <= 0.005 && S.capAct != 2) { seqHalt = false; seqCapOn = false; }
+      for (int a = 0; a < n; a++)
+      {
+         if (g_io[ks[a]].cls[ix[a]].piece == 1) continue;
+         double gp = g_io[ks[a]].cls[ix[a]].pnl;
+         long   gx = g_io[ks[a]].cls[ix[a]].tOut;
+         lsRun = gp < 0 ? lsRun + 1 : 0;
+         if (S.ldOn && Counts(g_io[ks[a]].cls[ix[a]].tIn) && !(ldUntil != LNONE && gx < ldUntil))
+         {
+            ldRun = gp < 0 ? ldRun + 1 : (gp > 0 ? 0 : ldRun);
+            if (ldRun >= S.ldN) { ldUntil = LdUntil(gx); ldRun = 0; cntLd++; }
+         }
+      }
+   }
+   // the risk of the next order (Rule A / B / C, A+ / B+ / C+, the hard cap, the account floor)
+   void Risk()
+   {
+      riskNow = S.risk;
+      double car = Car();
+      if (S.seqMode == 1 || S.seqMode == 4) riskNow = car > 0.005 ? Mx(S.risk, (car + S.seqAdd) / S.split) : S.risk;
+      else if (S.seqMode == 2 || S.seqMode == 5) riskNow = car > 0.005 ? Mx(S.risk, 2.0 * car / S.split) : S.risk;
+      else if (S.seqMode == 3 || S.seqMode == 6) riskNow = car > 0.005 ? Mx(S.risk, car / S.split) : S.risk;
+      if (S.seqMode != 0 && S.flMode != 1 && riskNow > S.seqMax)
+      {
+         if (!seqCapOn) { cntSeqCap++; seqCapOn = true; }
+         riskNow = S.seqMax;
+         if (S.capAct != 0) seqHalt = true;
+      }
+      else seqCapOn = false;
+      flFloor = -S.flAmt + S.flLock / 100.0 * flPeak;
+      flCush  = Mx(0.0, flPnl - flFloor);
+      flRisk  = S.flPct / 100.0 * flCush;
+      if (S.flMode == 1) riskNow = flRisk;
+      else if (S.flMode == 2) riskNow = Mn(riskNow, flRisk);
+   }
+   void Halts(double eq, bool withEq)
+   {
+      if (withEq)
+      {
+         peakEq = IsNa(peakEq) ? eq : Mx(peakEq, eq);
+         ddHit = S.dd > 0 && !IsNa(peakEq) && peakEq > 0 && (peakEq - eq) / peakEq * 100.0 >= S.dd;
+      }
+      if (S.dayLoss > 0 && dayPnl <= -S.dayLoss) dayHalt = true;
+      if (S.maxTrades > 0 && dayTrades >= S.maxTrades) dayHalt = true;
+      if (S.lsOn && lsRun >= S.lsN && !dayHalt) { dayHalt = true; cntLs++; }
+      if (S.ptOn && ptPnl >= S.ptAmt) ptHalt = true;
+   }
+};
+CMoney g_money[2];
+
+// ---------- one strategy side: Both / Longs only / Shorts only, or one half of the hedge ----------
+class CSide
+{
+public:
+   int    k, dirF, mi;
+   int    dir, rule, armBar, seq;
+   double sl, fix, lastEnt, lastSl, lastTgt, lastQ, entLock, addRk, lastTp1, openSl, openTgt, planTgt, ent, tgt;
+   bool   ordLive, lastCapQ, placed, ppSent;
+   string closeWhy, last;
+   int    cntArm, cntFill, cntCanc, cntSkip, cntR1, cntR2, cntDir, cntHf, cntPd, cntBosCnl, cntExp, cntCap, cntMoves;
+   int    ntrk;
+   TrkRec trk[MAXP];
+   CSide() { k = 0; dirF = 0; mi = 0; Reset(); }
+   void Reset()
+   {
+      dir = 0; rule = 0; armBar = NAI; seq = 0;
+      sl = NAD; fix = NAD; lastEnt = NAD; lastSl = NAD; lastTgt = NAD; lastQ = NAD; entLock = NAD; addRk = 1.0; lastTp1 = NAD;
+      openSl = NAD; openTgt = NAD; planTgt = NAD; ent = NAD; tgt = NAD;
+      ordLive = false; lastCapQ = false; placed = false; ppSent = false;
+      closeWhy = ""; last = "";
+      cntArm = 0; cntFill = 0; cntCanc = 0; cntSkip = 0; cntR1 = 0; cntR2 = 0; cntDir = 0; cntHf = 0; cntPd = 0; cntBosCnl = 0; cntExp = 0; cntCap = 0; cntMoves = 0;
+      ntrk = 0;
+   }
+   double PosSize()        { double s = 0; for (int i = 0; i < g_io[k].nPos; i++) s += g_io[k].pos[i].dir * g_io[k].pos[i].q; return s; }
+   int    PosIndex(long id) { for (int i = 0; i < g_io[k].nPos; i++) if (g_io[k].pos[i].id == id) return i; return -1; }
+   int    TrkIndex(long id) { for (int i = 0; i < ntrk; i++) if (trk[i].id == id) return i; return -1; }
+   void   TrkRemove(int i)  { for (int j = i; j + 1 < ntrk; j++) trk[j] = trk[j + 1]; ntrk--; }
+   string Id()              { return (dir == 1 ? "L" : "S") + IntegerToString(seq); }
+   void   Note(string s)    { last = s; BkNote(k, s); }
+   void   CancelSent()      { if (ordLive) BkCancel(k); ordLive = false; }
+   void   Cancel(string why) { Note(why); CancelSent(); cntCanc++; dir = 0; }
+   // an entry filled on this bar (TradingView's newest entry bar)
+   void OnFills()
+   {
+      if (g_io[k].nFill == 0) return;
+      openSl  = IsNa(lastSl) ? sl : lastSl;
+      openTgt = IsNa(lastTgt) ? planTgt : lastTgt;
+      if (S.mgOn && !IsNa(openSl) && !IsNa(openTgt))
+      {
+         for (int i = 0; i < g_io[k].nFill; i++)
+         {
+            long id = g_io[k].fill[i].id;
+            int pi = PosIndex(id);
+            if (pi < 0 || TrkIndex(id) >= 0 || ntrk >= MAXP) continue;
+            // TradingView's entry price: the limit level, or the bar open when the price was already through it
+            double kp  = (!g_io[k].fill[i].atOpen && g_io[k].pos[pi].seq == seq && !IsNa(lastEnt)) ? lastEnt : g_io[k].pos[pi].ent;
+            double kq  = g_io[k].pos[pi].q;
+            int    kd  = g_io[k].pos[pi].dir;
+            bool   kpp = g_io[k].pos[pi].piece == 1;
+            double psl = IsNa(g_io[k].pos[pi].sl) ? openSl : g_io[k].pos[pi].sl;
+            double ptg = g_io[k].pos[pi].tgt;
+            if (IsNa(ptg)) ptg = (kpp && !IsNa(lastTp1)) ? lastTp1 : openTgt;
+            double cst = S.uv > 0 ? (g_cmU + (kq > 0 ? CmF() / kq : 0.0)) / S.uv : 0.0;
+            trk[ntrk].id = id;
+            trk[ntrk].ticket = g_io[k].pos[pi].ticket;
+            trk[ntrk].dir = kd;
+            trk[ntrk].ent = kp;
+            trk[ntrk].r = MathAbs(kp - psl);
+            trk[ntrk].be = kd == 1 ? kp + cst : kp - cst;
+            trk[ntrk].sl = psl;
+            trk[ntrk].tgt = ptg;
+            trk[ntrk].q = kq;
+            trk[ntrk].step = 0;
+            trk[ntrk].bar = EN.bi;
+            trk[ntrk].mv = false;
+            trk[ntrk].pp = false;
+            trk[ntrk].seq = g_io[k].pos[pi].seq;
+            trk[ntrk].piece = g_io[k].pos[pi].piece;
+            ntrk++;
+         }
+      }
+      // the two parts of a setup fill together; a part still waiting is cancelled
+      if (ppSent) BkCancel(k);
+      ppSent = false;
+      if (dir != 0) Note(Id() + " FILLED");
+      dir = 0;
+      ordLive = false;
+      cntFill++;
+      g_money[mi].dayTrades++;
+      if (rule == 2) cntR2++; else cntR1++;
+      if (lastCapQ) cntCap++;
+   }
+   // idea e: the early part closed in profit by its own target or stop - the rest goes to break-even
+   void OnCloses()
+   {
+      if (!S.ppOn) return;
+      for (int i = 0; i < g_io[k].nCls; i++)
+      {
+         if (g_io[k].cls[i].piece != 1 || g_io[k].cls[i].why == 0 || g_io[k].cls[i].pnl <= 0) continue;
+         for (int j = 0; j < ntrk; j++)
+            if (trk[j].seq == g_io[k].cls[i].seq && trk[j].piece == 0 && trk[j].dir == g_io[k].cls[i].dir) trk[j].pp = true;
+      }
+   }
+   // group 32 step stop / break-even, idea c trailing stop, idea e break-even - at the bar close
+   void Manage()
+   {
+      for (int i = ntrk - 1; i >= 0; i--)
+      {
+         int pi = PosIndex(trk[i].id);
+         if (pi < 0) { TrkRemove(i); continue; }
+         double ns = trk[i].sl;
+         int    td = trk[i].dir;
+         double tr = trk[i].r;
+         if (S.mvOn && S.mvKMax >= 1 && tr > 0)
+         {
+            int kk = trk[i].step;
+            if (S.mvStep)
+            {
+               double ref = EN.bi == trk[i].bar ? g_c : (td == 1 ? g_h : g_l);
+               int got = (int)MathFloor((td == 1 ? ref - trk[i].ent : trk[i].ent - ref) / tr);
+               kk = MxI(trk[i].step, MnI(got, S.mvKMax));
+            }
+            else if (trk[i].step == 0 && (td == 1 ? g_c >= trk[i].ent + tr : g_c <= trk[i].ent - tr)) kk = 1;
+            double cc = kk == 1 ? trk[i].be : (td == 1 ? Mx(trk[i].be, trk[i].ent + (kk - 1) * tr) : Mn(trk[i].be, trk[i].ent - (kk - 1) * tr));
+            if (kk > trk[i].step && (td == 1 ? cc < trk[i].ent + kk * tr : cc > trk[i].ent - kk * tr))
+            {
+               ns = td == 1 ? Mx(ns, cc) : Mn(ns, cc);
+               trk[i].step = kk;
+            }
+         }
+         if (S.trOn && EN.bi > trk[i].bar)
+         {
+            double lv = NAD;
+            if (S.trMode == 1) lv = td == 1 ? EN.swL : EN.swH;
+            else if (td == 1 && EN.trendDir == 1 && EN.flr.ok) lv = EN.flr.price;
+            else if (td == -1 && EN.trendDir == -1 && EN.cel.ok) lv = EN.cel.price;
+            if (!IsNa(lv))
+            {
+               double l2 = td == 1 ? lv - S.slBuf : lv + S.slBuf;
+               if (td == 1 ? l2 < g_c : l2 > g_c) ns = td == 1 ? Mx(ns, l2) : Mn(ns, l2);
+            }
+         }
+         if (trk[i].pp && S.ppBe) ns = td == 1 ? Mx(ns, trk[i].be) : Mn(ns, trk[i].be);
+         if (ns != trk[i].sl)
+         {
+            trk[i].sl = ns;
+            trk[i].mv = true;
+            BkSetStop(k, g_io[k].pos[pi].ticket, td, ns, trk[i].tgt);
+            cntMoves++;
+         }
+      }
+   }
+   string Blocked()
+   {
+      if (!S.on) return "trading off";
+      if (g_money[mi].ddHit) return "drawdown stop";
+      if (g_holNow) return "US holiday";
+      if (g_nwNow) return "news window";
+      if (g_wkBlock) return "weekend";
+      if (g_money[mi].dayHalt) return "daily limit";
+      if (g_money[mi].seqHalt) return "risk cap";
+      if (g_money[mi].ptHalt) return "profit target";
+      if (g_money[mi].LdHalt(g_t)) return "loss pause (days)";
+      if (g_eqBlock) return "waiting for the higher timeframe equilibrium";
+      return "";
+   }
+   // everything after the exits: cancels, closes, a new signal, the order
+   void Decide()
+   {
+      double pos = PosSize();
+      int    nOpen = g_io[k].nPos;
+      int    td = EN.trendDir;
+      string blk = Blocked();
+      bool   go = blk == "";
+      closeWhy = "";
+      if (dir != 0 && (!go || (td != 0 && td != dir))) Cancel(!go ? "CANCELLED - blocked (" + blk + ")" : "CANCELLED - trend flipped");
+      if (S.fav && dir != 0 && g_T15 != dir) Cancel("CANCELLED - higher timeframe flipped");
+      if (S.agn && dir != 0 && g_T15 != -dir) Cancel("CANCELLED - higher timeframe now agrees");
+      if (S.autoM && dir != 0 && dir != g_autoDir) Cancel("CANCELLED - auto mode switched side");
+      if (S.bosCnl && dir != 0 && armBar != NAI && EN.bi > armBar && ((dir == 1 && EN.evBU) || (dir == -1 && EN.evBD)))
+      {
+         cntBosCnl++;
+         Cancel("CANCELLED - new BOS before the fill");
+      }
+      // RULE 1 follows the live level; RULE 2 keeps the stop it was armed with
+      if (dir != 0 && rule != 2 && !(S.once && placed))
+      {
+         double live = NAD;
+         if (dir == 1 && EN.flr.ok) live = EN.flr.price;
+         if (dir == -1 && EN.cel.ok) live = EN.cel.price;
+         if (!IsNa(live)) sl = dir == 1 ? live - S.slBuf : live + S.slBuf;
+      }
+      if (g_wkNow)
+      {
+         if (pos != 0) closeWhy = "Weekend flat";
+         if (dir != 0) { cntCanc++; Note("CANCELLED - weekend"); }
+         CancelSent();
+         dir = 0;
+      }
+      if (g_nwNow)
+      {
+         if (S.nwExit == 0 && pos != 0) closeWhy = g_holNow ? "US holiday" : "News window";
+         if (dir != 0) { cntCanc++; Note(g_holNow ? "CANCELLED - US holiday" : "CANCELLED - news window"); }
+         CancelSent();
+         dir = 0;
+      }
+      if (S.expBars > 0 && dir != 0 && armBar != NAI && EN.bi - armBar >= S.expBars) { cntExp++; Cancel("CANCELLED - expired"); }
+      if (g_flatNow)
+      {
+         if (pos != 0) closeWhy = "Time flat";
+         if (dir != 0) { cntCanc++; Note("CANCELLED - force-close hour"); }
+         CancelSent();
+         dir = 0;
+      }
+      if (!g_win)
+      {
+         CancelSent();
+         if (dir != 0) { cntCanc++; Note("CANCELLED - session ended"); }
+         dir = 0;
+      }
+      bool sigUp = (S.useCho && EN.evCU) || (S.useBos && EN.evBU);
+      bool sigDn = (S.useCho && EN.evCD) || (S.useBos && EN.evBD);
+      bool opp   = (pos > 0 && sigDn) || (pos < 0 && sigUp);
+      bool oppCh = (pos > 0 && EN.evCD) || (pos < 0 && EN.evCU);
+      if (S.on && S.rev && (opp || oppCh)) closeWhy = opp ? "Opposite signal" : "Opposite CHOCH";
+      string sg = ((EN.evCU || EN.evCD) && S.useCho) ? "CHOCH" : "BOS";
+      sg = sg + (sigUp ? " up" : " dn");
+      if ((sigUp || sigDn) && !go) Note(sg + ": SKIP - " + blk);
+      if ((sigUp || sigDn) && go)
+      {
+         if (S.cancelSig && dir != 0) Cancel("CANCELLED - new signal");
+         bool addB = S.useBos && ((pos > 0 && EN.evBU) || (pos < 0 && EN.evBD));
+         bool full = addB && S.maxOpen > 0 && nOpen >= S.maxOpen;
+         addB = addB && !full;
+         bool take  = g_win && (pos == 0 || (opp && S.rev) || addB);
+         bool dirNo = dirF != 0 && (sigUp ? dirF == -1 : dirF == 1);
+         if (dirNo) cntDir++;
+         if (take && !dirNo)
+         {
+            int    d    = sigUp ? 1 : -1;
+            double piv  = sigUp ? g_ceilPrev : g_florPrev;
+            double opl  = NAD;
+            if (d == 1 && EN.flr.ok) opl = EN.flr.price;
+            if (d == -1 && EN.cel.ok) opl = EN.cel.price;
+            bool agree = (d == 1 && g_T15 == 1) || (d == -1 && g_T15 == -1);
+            bool agst  = (d == 1 && g_T15 == -1) || (d == -1 && g_T15 == 1);
+            bool use = false;
+            if (S.autoM)     use = g_autoDir != 0 && d == g_autoDir && (g_eqOpen ? ((S.r2 && !IsNa(piv)) || (!S.r2 && S.r1)) : S.r1);
+            else if (S.agn)  use = agst && S.r1;
+            else if (agree)  use = (S.r2 && !IsNa(piv)) || (!S.r2 && S.r1);
+            else             use = S.r1 && !S.hfEff;
+            if ((S.autoM && !use) || (!S.autoM && S.agn && !agst && S.r1) || (!S.autoM && !S.agn && !agree && S.r1 && S.hfEff)) cntHf++;
+            if (use && !IsNa(opl))
+            {
+               if (dir != 0) cntCanc++;
+               CancelSent();
+               cntArm++;
+               placed  = false;
+               entLock = NAD;
+               armBar  = EN.bi;
+               seq++;
+               ppSent  = false;
+               addRk   = (addB && S.bkOn) ? S.bkPct / 100.0 : 1.0;
+               dir     = d;
+               rule    = (agree && S.r2 && !S.agn) ? 2 : 1;
+               sl      = d == 1 ? opl - S.slBuf : opl + S.slBuf;
+               fix     = rule == 2 ? piv : NAD;
+               Note(sg + ": " + Id() + (rule == 2 ? " R2" : " R1") + " ARMED");
+            }
+            else if (!use) Note(sg + ": SKIP - " + (S.autoM ? "auto mode side / rule" : (S.agn ? "not against the higher timeframe" : (agree ? "no broken pivot" : "higher timeframe filter"))));
+            else Note(sg + ": SKIP - no stop level");
+         }
+         else Note(sg + ": SKIP - " + (dirNo ? "trade direction" : (!g_win ? "outside session hours" : (opp ? "in a trade (reverse is off)" : (full ? "max trades open" : "already in a trade the same way")))));
+      }
+      // the plan: entry, stop, target
+      ent = NAD;
+      tgt = NAD;
+      if (dir != 0)
+      {
+         ent = (S.once && placed && !IsNa(entLock)) ? entLock : (rule == 2 ? fix : RetLvl(td, g_mAnch, g_mOrig, S.pb));
+         if (!IsNa(ent) && !IsNa(sl))
+         {
+            double r = MathAbs(ent - sl);
+            tgt = dir == 1 ? ent + r * S.rr + g_cmPx : ent - r * S.rr - g_cmPx;
+            if (S.lqOn)
+            {
+               double lq = LqNear(dir, dir == 1 ? ent + S.lqMin * r : ent - S.lqMin * r);
+               if (!IsNa(lq)) tgt = lq;
+            }
+         }
+      }
+      if (go && dir != 0 && (pos == 0 || (dir == 1 ? pos > 0 : pos < 0)) && g_win && !IsNa(ent) && !IsNa(tgt) && !IsNa(sl))
+      {
+         bool   sane = dir == 1 ? ent > sl : ent < sl;
+         double r = MathAbs(ent - sl);
+         double q = 0.0;
+         bool   qCap = false;
+         Qty(ent, r, g_money[mi].riskNow * addRk, pos, q, qCap);
+         bool lotOk = S.minLot <= 0 || S.cmLots <= 0 || q / S.cmLots >= S.minLot - 1e-9;
+         bool dOk   = (S.minStop <= 0 || r >= S.minStop) && (S.maxStop <= 0 || r <= S.maxStop) && lotOk;
+         double pdL = S.pdOn ? RetLvl(td, g_mAnch, g_mOrig, S.pdPct) : NAD;
+         bool pdOk  = !S.pdOn || (!IsNa(pdL) && (dir == 1 ? ent <= pdL + S.tick / 2 : ent >= pdL - S.tick / 2));
+         bool qOk   = q / LotDiv() >= 0.00000001;
+         if (sane && dOk && pdOk && qOk && r > 0 && (!S.once || !placed))
+         {
+            placed  = true;
+            entLock = ent;
+            planTgt = tgt;
+            if (!ordLive || ent != lastEnt || sl != lastSl || tgt != lastTgt || q != lastQ)
+            {
+               double q1 = 0.0;
+               if (S.ppOn)
+               {
+                  double stp = (S.lotStep > 0 && S.cmLots > 0) ? S.lotStep * S.cmLots : 0.0;
+                  q1 = stp > 0 ? MathFloor(q * S.ppPct / 100.0 / stp + 0.5) * stp : q * S.ppPct / 100.0;
+                  double lt1 = LotDiv();
+                  bool tiny = q1 / lt1 < 0.00000001 || (q - q1) / lt1 < 0.00000001 ||
+                              (S.minLot > 0 && S.cmLots > 0 && (q1 / S.cmLots < S.minLot - 1e-9 || (q - q1) / S.cmLots < S.minLot - 1e-9));
+                  if (tiny || q1 >= q) q1 = 0.0;
+               }
+               BkPlace(k, seq, 0, dir, ent, sl, tgt, q - q1);
+               if (q1 > 0)
+               {
+                  double add = (S.cmTgt && S.uv > 0) ? g_cmU * (S.ppR + 1.0) / S.uv : 0.0;
+                  double tp1 = dir == 1 ? ent + r * S.ppR + add : ent - r * S.ppR - add;
+                  tp1 = dir == 1 ? Mn(tp1, tgt) : Mx(tp1, tgt);
+                  BkPlace(k, seq, 1, dir, ent, sl, tp1, q1);
+                  ppSent  = true;
+                  lastTp1 = tp1;
+               }
+               else if (ppSent) { BkCancelPiece(k, 1); ppSent = false; }
+               ordLive  = true;
+               lastCapQ = qCap;
+               lastEnt  = ent;
+               lastSl   = sl;
+               lastTgt  = tgt;
+               lastQ    = q;
+            }
+         }
+         else if (!sane || !dOk || !pdOk || !qOk || r <= 0)
+         {
+            Note(!sane ? "CANCELLED - entry beyond the stop" : (!pdOk ? "CANCELLED - premium / discount filter" : (!lotOk ? "CANCELLED - below the minimum lot" : (!dOk ? "CANCELLED - stop too close / too far" : "CANCELLED - size is zero"))));
+            CancelSent();
+            if (!dOk) cntSkip++;
+            if (!pdOk) cntPd++;
+            cntCanc++;
+            dir = 0;
+         }
+      }
+      if (closeWhy != "") BkCloseAll(k, closeWhy);
+   }
+};
+CSide g_side[2];
+
+// ---------- setup and one bar ----------
+void CoreSetup()
+{
+   S.Derive();
+   EN.Reset();
+   HT.Reset();
+   g_nSides = S.dirMode == 3 ? 2 : 1;
+   for (int k = 0; k < 2; k++)
+   {
+      g_side[k].Reset();
+      g_side[k].k = k;
+      g_sideDir[k] = S.dirMode == 1 ? 1 : (S.dirMode == 2 ? -1 : (S.dirMode == 3 ? (k == 0 ? 1 : -1) : 0));
+      g_side[k].dirF = g_sideDir[k];
+      g_sideMi[k] = (S.dirMode == 3 && S.hedgeMoney == 0) ? k : 0;
+      g_side[k].mi = g_sideMi[k];
+      g_money[k].Reset();
+      g_io[k].Clear();
+   }
+   g_deadPrev = false; g_wkPrev = false; g_T15 = 0; g_htE = 0; g_prevE = 0; g_autoDir = 0;
+   g_eqOpen = false; g_eqBlock = false; g_firstBar = true; g_ceilPrev = NAD; g_florPrev = NAD;
+   g_lqH.Clear(); g_lqL.Clear();
+   g_auKey = -1; g_holT0 = 0; g_holT1 = 0; g_auT1 = LNONE; g_auT2 = LNONE; g_auT3 = LNONE; g_auT4 = LNONE;
+}
+// one CLOSED chart bar. t = its open (UTC). ht* = the higher timeframe after its last CLOSED candle
+void CoreBar(long t, double o, double h, double l, double c, double eq, int htT, double htO, double htX, int htE)
+{
+   g_t = t; g_o = o; g_h = h; g_l = l; g_c = c; g_eq = eq;
+   EN.Step(o, h, l, c);
+   EN.Anchors(g_mAnch, g_mOrig);
+   g_T15 = S.u15 ? htT : 0;
+   g_htO = S.u15 ? htO : NAD;
+   g_htX = S.u15 ? htX : NAD;
+   g_htE = S.u15 ? htE : 0;
+   // the session clock, at the bar CLOSE
+   long tc  = t + S.cs;
+   long loc = SessLoc(tc);
+   g_tM = MinOfDay(loc);
+   g_win = !S.timeOn || S.cs >= 86400 || S.hrOn == S.hrOff || Ovl(g_tM, S.bMin, S.hrOn * 60, S.hrOff * 60);
+   bool dead = S.timeOn && (S.hrFlat != S.hrOn ? Ovl(g_tM, S.bMin, S.hrFlat * 60, S.hrOn * 60) : DAhead(g_tM, S.hrFlat * 60) < S.bMin);
+   g_flatNow = dead && !g_deadPrev;
+   g_deadPrev = dead;
+   int cDow = DowDays(FloorDivL(loc, 86400));
+   g_wkBlock = !S.wk247 && S.timeOn && S.wkFlat && ((cDow == S.wkDay && (g_tM >= S.wkHr * 60 || DAhead(g_tM, S.wkHr * 60) < S.bMin)) || (S.wkDay != 7 && cDow == 7) || cDow == 1);
+   g_wkNow = g_wkBlock && !g_wkPrev;
+   g_wkPrev = g_wkBlock;
+   NewsFlags(tc);
+   g_cmU  = CmU(c);
+   g_cmPx = (S.cmTgt && S.uv > 0) ? g_cmU * (S.rr + 1.0) / S.uv : 0.0;
+   if (!g_dry)
+   {
+      int nm = (S.dirMode == 3 && S.hedgeMoney == 0) ? 2 : 1;
+      for (int m = 0; m < nm; m++) g_money[m].NewBar(t);
+      for (int k = 0; k < g_nSides; k++) g_side[k].OnFills();
+      for (int m = 0; m < nm; m++) g_money[m].Closes(m);
+      for (int k = 0; k < g_nSides; k++) { g_side[k].OnCloses(); g_side[k].Manage(); }
+   }
+   // idea d: the liquidity pools (untaken swing highs / lows)
+   if (S.lqOn)
+   {
+      if (!IsNa(EN.swH)) { g_lqH.Add(EN.swH); if (g_lqH.Size() > 60) g_lqH.DropFirst(1); }
+      if (!IsNa(EN.swL)) { g_lqL.Add(EN.swL); if (g_lqL.Size() > 60) g_lqL.DropFirst(1); }
+      for (int i = g_lqH.Size() - 1; i >= 0; i--) if (g_lqH.At(i) <= h) g_lqH.RemoveAt(i);
+      for (int i = g_lqL.Size() - 1; i >= 0; i--) if (g_lqL.At(i) >= l) g_lqL.RemoveAt(i);
+   }
+   if (!g_dry)
+   {
+      int nm = (S.dirMode == 3 && S.hedgeMoney == 0) ? 2 : 1;
+      for (int m = 0; m < nm; m++) { g_money[m].Risk(); g_money[m].Halts(eq, true); }
+   }
+   // group 37 / auto modes: a new higher-timeframe CHOCH / BOS closes the gate, a touch of the equilibrium opens it
+   if (!g_firstBar && g_htE != g_prevE) g_eqOpen = false;
+   g_prevE = g_htE;
+   g_firstBar = false;
+   g_eqLvl = RetLvl(g_T15, g_htX, g_htO, S.eqPct);
+   if ((S.eqOn || S.autoM) && !g_eqOpen && !IsNa(g_eqLvl) && ((g_T15 == 1 && l <= g_eqLvl) || (g_T15 == -1 && h >= g_eqLvl))) g_eqOpen = true;
+   g_eqBlock = S.eqOn && !S.autoM && !g_eqOpen;
+   g_autoDir = S.autoM ? (g_eqOpen ? g_T15 : -g_T15) : 0;
+   if (!g_dry)
+      for (int k = 0; k < g_nSides; k++) g_side[k].Decide();
+   if (EN.cel.ok) g_ceilPrev = EN.cel.price;
+   if (EN.flr.ok) g_florPrev = EN.flr.price;
+}
+//==CORE-END==
+
+//+------------------------------------------------------------------+
+//| MT5 PART: real orders, deals, clocks, restart safety, drawing.   |
+//| The core above decides; this part only carries the decisions out |
+//| and reports back what the broker did, bar by bar.                |
+//+------------------------------------------------------------------+
+CTrade          g_trade;
+string          g_sym;
+ENUM_TIMEFRAMES g_tf, g_htf;
+int             g_cs = 60, g_htfSec = 900;
+double          g_contract = 100, g_volMin = 0.01, g_volMax = 100, g_volStep = 0.01, g_tickSize = 0.01, g_point = 0.01;
+int             g_digits = 2;
+bool            g_ready = false, g_tester = false, g_visual = false, g_netting = false, g_htfUse = false, g_badInit = false;
+datetime        g_lastBar = 0;      // open time (server) of the last processed CLOSED bar
+datetime        g_curOpen = 0;      // open time (server) of the bar in progress
+datetime        g_htfFed = 0;       // open time (server) of the last higher-timeframe candle fed to the engine
+string          g_P = "";           // prefix of this EA's global variables and chart objects
+ENUM_ORDER_TYPE_TIME g_otime = ORDER_TIME_GTC;
+long            g_srvBase = 7200;
+
+// the orders the core wants: [side * 2 + piece]. Touch mode: watched by the EA. Pending mode: mirrored at the broker.
+struct VOrd
+{
+   bool   on;
+   int    seq;
+   int    dir;
+   double ent;
+   double sl;
+   double tgt;
+   double lots;
+   long   ticket;
+   int    fails;
+};
+VOrd     g_vb[4];
+ulong    g_clsTk[];                 // trades to close at market (retried until done)
+string   g_clsWhy[];
+ulong    g_stpTk[];                 // stop moves to send (retried until done)
+double   g_stpSl[];
+int      g_stpDir[];
+ulong    g_done[];                  // deals already reported to the core
+datetime g_doneT[];
+string   g_note[2];
+datetime g_bt[];                    // open time of every processed bar: g_bt[i] = bar index g_btBase + i
+int      g_btBase = 0;
+int      g_mark = 0;                // CHOCH / BOS marks drawn so far
+string   g_lastErr = "";
+bool     g_dealFlag = true;         // a deal happened (OnTradeTransaction) - the history needs reading
+long     g_gapPos[];                // trades opened at once because the price was already through the entry
+bool     g_inBar = false;           // true while the orders of a just-closed bar are being carried out
+
+//---------------------------------------------------------------- functions defined further down
+void DrawBar(MqlRates &r);
+void DrawLive(datetime tNow);
+void Panel();
+void ExecuteAll();
+bool TryInit();
+
+//---------------------------------------------------------------- small helpers
+long     SrvToUtc(datetime s) { return LocToUtc((long)s, g_srvBase, (int)InSrvDst); }
+datetime UtcToSrv(long u)     { return (datetime)(u + TzOff(u, g_srvBase, (int)InSrvDst)); }
+double   UnitValue()
+{
+   double tv = SymbolInfoDouble(g_sym, SYMBOL_TRADE_TICK_VALUE);
+   double ts = SymbolInfoDouble(g_sym, SYMBOL_TRADE_TICK_SIZE);
+   if (tv <= 0 || ts <= 0 || g_contract <= 0) return S.uv > 0 ? S.uv : 1.0;
+   return tv / ts / g_contract;
+}
+double NormDn(double p) { return NormalizeDouble(MathFloor(p / g_tickSize + 1e-7) * g_tickSize, g_digits); }
+double NormUp(double p) { return NormalizeDouble(MathCeil(p / g_tickSize - 1e-7) * g_tickSize, g_digits); }
+double NormLots(double q)
+{
+   double lots = q / g_contract;
+   lots = MathFloor(lots / g_volStep + 1e-6) * g_volStep;
+   if (lots > g_volMax) lots = g_volMax;
+   return NormalizeDouble(lots, 8);
+}
+double StopsGap() { return (double)SymbolInfoInteger(g_sym, SYMBOL_TRADE_STOPS_LEVEL) * g_point; }
+int    SideOf(int dir) { return S.dirMode == 3 ? (dir == 1 ? 0 : 1) : 0; }
+string TradeId(int dir, int seq, int piece) { return (dir == 1 ? "L" : "S") + IntegerToString(seq) + (piece == 1 ? "p" : ""); }
+string CmtOf(int dir, int seq, int piece) { return InCmt + " " + TradeId(dir, seq, piece); }
+void   Log(string s) { Print(s); g_lastErr = s; }
+// "SMC L12p" -> seq 12, piece 1
+bool ParseCmt(string c, int &seq, int &piece)
+{
+   seq = -1;
+   piece = 0;
+   string pre = InCmt + " ";
+   if (StringFind(c, pre) != 0) return false;
+   string t = StringSubstr(c, StringLen(pre));
+   int e = StringLen(t);
+   if (e < 2) return false;
+   ushort c0 = StringGetCharacter(t, 0);
+   if (c0 != 'L' && c0 != 'S') return false;
+   if (StringGetCharacter(t, e - 1) == 'p') { piece = 1; e--; }
+   string num = StringSubstr(t, 1, e - 1);
+   for (int i = 0; i < StringLen(num); i++) { ushort ch = StringGetCharacter(num, i); if (ch < '0' || ch > '9') return false; }
+   seq = (int)StringToInteger(num);
+   return true;
+}
+bool IsDigits(string s) { if (StringLen(s) == 0) return false; for (int i = 0; i < StringLen(s); i++) { ushort ch = StringGetCharacter(s, i); if (ch < '0' || ch > '9') return false; } return true; }
+// "1725-1835" -> minutes of the day of the part starting at p; -1 if unreadable
+int Hm(string s, int p)
+{
+   string h = StringSubstr(s, p, 2), m = StringSubstr(s, p + 2, 2);
+   if (!IsDigits(h) || !IsDigits(m)) return -1;
+   return (int)StringToInteger(h) * 60 + (int)StringToInteger(m);
+}
+// group 28: "3, 12-14 28" -> day-of-month flags
+void NdParse(string s)
+{
+   for (int i = 0; i < 32; i++) S.ndDays[i] = false;
+   string t = s;
+   StringReplace(t, ";", ",");
+   StringReplace(t, " ", ",");
+   for (int i = 0; i < 3; i++) { StringReplace(t, ",-", "-"); StringReplace(t, "-,", "-"); }
+   string parts[];
+   int n = StringSplit(t, ',', parts);
+   for (int i = 0; i < n; i++)
+   {
+      string p = parts[i];
+      if (StringLen(p) == 0) continue;
+      if (StringFind(p, "-") >= 0)
+      {
+         string ab[];
+         if (StringSplit(p, '-', ab) == 2 && IsDigits(ab[0]) && IsDigits(ab[1]))
+         {
+            int x = (int)StringToInteger(ab[0]), y = (int)StringToInteger(ab[1]);
+            int lo = MxI(1, MnI(x, y)), hi = MnI(31, MxI(x, y));
+            for (int k = lo; k <= hi; k++) S.ndDays[k] = true;
+         }
+      }
+      else if (IsDigits(p))
+      {
+         int x = (int)StringToInteger(p);
+         if (x >= 1 && x <= 31) S.ndDays[x] = true;
+      }
+   }
+}
+string NdText() { string t = ""; for (int k = 1; k <= 31; k++) if (S.ndDays[k]) t = t + (t == "" ? "" : ", ") + IntegerToString(k); return t; }
+
+//---------------------------------------------------------------- settings from the inputs
+void FillSettings()
+{
+   S.altMode = InAltMode; S.pbBodyOn = InPbBodyOn; S.pbBodyRef = InPbBodyRef; S.pbSwp2 = InPbSwp2;
+   S.on = InOn; S.r1 = InR1; S.r2 = InR2; S.sig = (int)InSig;
+   S.pb = InPb; S.rr = InRR; S.slBuf = InSlBuf; S.rev = InRev; S.once = InEntMode == ENT_ONCE;
+   S.sessMode = (int)InSessMode; S.tzBase = (long)MathRound(InTzHours * 3600.0); S.tzRule = (int)InTzDst;
+   S.hrOn = InHrOn; S.hrOff = InHrOff; S.hrFlat = InHrFlat;
+   S.sizeMode = (int)InSize; S.risk = InRisk; S.qty = InQty; S.cash = InCash; S.lotStep = InLotStep; S.rndMax = InRndMax; S.lev = InLev;
+   S.seqMode = (int)InSeqMode; S.seqMax = InSeqMax; S.capAct = (int)InCapAct; S.seqAdd = InSeqAdd;
+   S.seqFrom = (int)InSeqFrom; S.seqFromT = (long)InSeqFromT; S.split = InSplit;
+   S.cmMode = (int)InCmMode; S.cmLot = InCmLot; S.cmUnit = InCmUnit; S.cmPct = InCmPct; S.cmFix = InCmFix; S.cmTgt = InCmTgt;
+   S.cancelSig = InCancelSig; S.expBars = InExpBars; S.minStop = InMinStop; S.maxStop = InMaxStop; S.maxTrades = InMaxTrades;
+   S.dayLoss = InDayLoss; S.dd = InDD; S.wkFlat = InWkFlat; S.wkDay = (int)InWkDay; S.wkHr = InWkHr; S.wk247 = InWk247; S.bosCnl = InBosCnl;
+   S.newsOn = InNewsOn; S.nwExit = (int)InNwExit; S.nw1On = InNw1On; S.nw2On = InNw2On; S.nw3On = InNw3On;
+   S.nw1A = Hm(InNw1, 0); S.nw1B = Hm(InNw1, 5); S.nw2A = Hm(InNw2, 0); S.nw2B = Hm(InNw2, 5); S.nw3A = Hm(InNw3, 0); S.nw3B = Hm(InNw3, 5);
+   S.sprd = InSprd; S.ptOn = InPtOn; S.ptAmt = InPtAmt; S.ptPer = (int)InPtPer; S.ptFrom = (long)InPtFrom;
+   S.ndOn = InNdOn; S.ndScope = (int)InNdScope; NdParse(InNdList);
+   S.auOn = InAuOn; S.auNfp = InAuNfp; S.auJc = InAuJc; S.auIsmM = InAuIsmM; S.auIsmS = InAuIsmS; S.auPre = InAuPre; S.auPost = InAuPost;
+   S.usClk = (int)InUsClk; S.nwNy = InNwNy; S.holTrade = InHolTrade;
+   S.maxOpen = InMaxOpen; S.mvStep = InMvStep; S.mvBe = InMvBe; S.dirMode = (int)InDirMode; S.hedgeMoney = (int)InHedgeMoney;
+   S.bkOn = InBkOn; S.bkPct = InBkPct; S.hfOn = InHfOn; S.trOn = InTrOn; S.trMode = (int)InTrMode; S.lqOn = InLqOn; S.lqMin = InLqMin;
+   S.ppOn = InPpOn; S.ppPct = InPpPct; S.ppR = InPpR; S.ppBe = InPpBe; S.pdOn = InPdOn; S.pdPct = InPdPct; S.lsOn = InLsOn; S.lsN = InLsN;
+   S.flMode = (int)InFlMode; S.flAmt = InFlAmt; S.flLock = InFlLock; S.flPct = InFlPct;
+   S.ldOn = InLdOn; S.ldN = InLdN; S.ldD = InLdD; S.eqOn = InEqOn; S.eqPct = InEqPct;
+   S.cs = g_cs;
+   S.cmLots = InCmMode == CM_LOT ? InCmUnit : g_contract;
+   S.uv = 1.0;
+   S.uv = UnitValue();
+   S.minLot = g_volMin;
+   S.tick = g_tickSize;
+   S.htfOk = g_htfSec > g_cs;
+}
+string CheckInputs()
+{
+   if (InPb < 1 || InPb > 99) return "RULE 1 pullback % must be 1 - 99";
+   if (InRR < 0.1 || InRR > 20) return "Target R must be 0.1 - 20";
+   if (InSlBuf < 0) return "Stop buffer cannot be negative";
+   if (InHrOn < 0 || InHrOn > 23 || InHrOff < 0 || InHrOff > 23 || InHrFlat < 0 || InHrFlat > 23 || InWkHr < 0 || InWkHr > 23) return "Hours must be 0 - 23";
+   if (InTzHours < -12 || InTzHours > 14 || InSrvHours < -12 || InSrvHours > 14) return "Timezone hours must be -12 .. 14";
+   if (InRisk < 0.01 || InQty <= 0 || InCash < 0.01) return "Risk / quantity / cash must be above 0";
+   if (InLotStep < 0 || InRndMax < 0 || InRndMax > 500) return "Lot step / rounding limit out of range";
+   if (InLev < 1 || InLev > 500) return "Max leverage must be 1 - 500";
+   if (InSeqMax < 0.01 || InSeqAdd < 0) return "Hard cap / Rule A amount out of range";
+   if (InSplit < 1 || InSplit > 20) return "Split must be 1 - 20";
+   if (InCmLot < 0 || InCmUnit <= 0 || InCmPct < 0 || InCmFix < 0 || InSprd < 0) return "Commission / spread values cannot be negative";
+   if (InExpBars < 0 || InMinStop < 0 || InMaxStop < 0 || InMaxTrades < 0 || InDayLoss < 0 || InDD < 0 || InDD > 100) return "Safety values out of range";
+   if (InAuPre < 0 || InAuPre > 240 || InAuPost < 1 || InAuPost > 480) return "US news minutes out of range";
+   if (InMaxOpen < 0 || InMaxOpen > 100) return "Max trades open must be 0 - 100";
+   if (InBkPct < 1 || InBkPct > 100 || InLqMin < 0.1 || InPpPct < 1 || InPpPct > 99 || InPpR < 0.1 || InPdPct < 1 || InPdPct > 99 || InLsN < 1) return "A group 34 value is out of range";
+   if (InFlAmt < 0.01 || InFlLock < 0 || InFlLock > 100 || InFlPct < 0.5 || InFlPct > 50) return "Account floor values out of range";
+   if (InLdN < 1 || InLdN > 50 || InLdD < 1 || InLdD > 60) return "Pause values out of range";
+   if (InEqPct < 1 || InEqPct > 99) return "Equilibrium % must be 1 - 99";
+   if (InWarm < 500) return "Use at least 500 bars of history";
+   if (StringLen(InCmt) < 1 || StringLen(InCmt) > 16 || StringFind(InCmt, " ") >= 0) return "Order comment: 1 - 16 characters, no spaces";
+   return "";
+}
+ENUM_TIMEFRAMES HtfOf()
+{
+   if (InHtf == HTF_M15) return PERIOD_M15;
+   if (InHtf == HTF_H1) return PERIOD_H1;
+   if (InHtf == HTF_H4) return PERIOD_H4;
+   if (InHtf == HTF_D1) return PERIOD_D1;
+   if (InHtf == HTF_W1) return PERIOD_W1;
+   if (InHtf == HTF_MN) return PERIOD_MN1;
+   if (g_cs <= 60) return PERIOD_M15;
+   if (g_cs <= 300) return PERIOD_H1;
+   if (g_cs <= 900) return PERIOD_H4;
+   if (g_cs <= 3600) return PERIOD_D1;
+   if (g_cs <= 14400) return PERIOD_W1;
+   return PERIOD_MN1;
+}
+string TfName(ENUM_TIMEFRAMES tf)
+{
+   string s = EnumToString(tf);
+   StringReplace(s, "PERIOD_", "");
+   return s;
+}
+
+//---------------------------------------------------------------- broker actions asked for by the core
+void BkCancel(int side) { g_vb[side * 2].on = false; g_vb[side * 2 + 1].on = false; }
+void BkCancelPiece(int side, int piece) { g_vb[side * 2 + piece].on = false; }
+void BkPlace(int side, int seq, int piece, int dir, double ent, double sl, double tgt, double q)
+{
+   int i = side * 2 + piece;
+   if (!g_vb[i].on || g_vb[i].seq != seq || g_vb[i].dir != dir) g_vb[i].fails = 0;
+   g_vb[i].on   = true;
+   g_vb[i].seq  = seq;
+   g_vb[i].dir  = dir;
+   g_vb[i].ent  = ent;
+   g_vb[i].sl   = sl;
+   g_vb[i].tgt  = tgt;
+   g_vb[i].lots = NormLots(q);
+   if (g_vb[i].lots < g_volMin - 1e-9) { g_vb[i].on = false; Log("Order " + TradeId(dir, seq, piece) + " skipped: " + DoubleToString(g_vb[i].lots, 2) + " lots is below the broker minimum"); }
+}
+void BkCloseAll(int side, string why)
+{
+   for (int i = 0; i < g_io[side].nPos; i++)
+   {
+      ulong tk = (ulong)g_io[side].pos[i].ticket;
+      bool have = false;
+      for (int j = 0; j < ArraySize(g_clsTk); j++) if (g_clsTk[j] == tk) have = true;
+      if (have) continue;
+      int n = ArraySize(g_clsTk);
+      ArrayResize(g_clsTk, n + 1);
+      ArrayResize(g_clsWhy, n + 1);
+      g_clsTk[n] = tk;
+      g_clsWhy[n] = why;
+   }
+}
+void BkSetStop(int side, long ticket, int dir, double sl, double tgt)
+{
+   for (int j = 0; j < ArraySize(g_stpTk); j++)
+      if (g_stpTk[j] == (ulong)ticket) { g_stpSl[j] = sl; g_stpDir[j] = dir; return; }
+   int n = ArraySize(g_stpTk);
+   ArrayResize(g_stpTk, n + 1);
+   ArrayResize(g_stpSl, n + 1);
+   ArrayResize(g_stpDir, n + 1);
+   g_stpTk[n] = (ulong)ticket;
+   g_stpSl[n] = sl;
+   g_stpDir[n] = dir;
+}
+void BkNote(int side, string msg)
+{
+   g_note[side] = msg;
+   if (InAudit && !g_dry) Print("[", S.dirMode == 3 ? (side == 0 ? "long side" : "short side") : "strategy", "] ", TimeToString(UtcToSrv(g_t), TIME_DATE | TIME_MINUTES), " ", msg);
+}
+
+//---------------------------------------------------------------- deals already reported
+bool IsDone(ulong dk) { for (int i = ArraySize(g_done) - 1; i >= 0; i--) if (g_done[i] == dk) return true; return false; }
+void MarkDone(ulong dk, datetime t)
+{
+   int n = ArraySize(g_done);
+   ArrayResize(g_done, n + 1, 1024);
+   ArrayResize(g_doneT, n + 1, 1024);
+   g_done[n] = dk;
+   g_doneT[n] = t;
+}
+void TrimDone(datetime older)
+{
+   int n = ArraySize(g_done), w = 0;
+   for (int i = 0; i < n; i++) if (g_doneT[i] >= older) { g_done[w] = g_done[i]; g_doneT[w] = g_doneT[i]; w++; }
+   ArrayResize(g_done, w, 1024);
+   ArrayResize(g_doneT, w, 1024);
+}
+bool OurDeal(ulong dk)
+{
+   if (HistoryDealGetString(dk, DEAL_SYMBOL) != g_sym || HistoryDealGetInteger(dk, DEAL_MAGIC) != InMagic) return false;
+   long ty = HistoryDealGetInteger(dk, DEAL_TYPE);
+   return ty == DEAL_TYPE_BUY || ty == DEAL_TYPE_SELL;
+}
+bool PosOpenNow(long pid)
+{
+   for (int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong tk = PositionGetTicket(i);
+      if (tk == 0) continue;
+      if (PositionGetInteger(POSITION_IDENTIFIER) == pid && PositionGetInteger(POSITION_MAGIC) == InMagic) return true;
+   }
+   return false;
+}
+// one position from its deals: in-deal facts, total money (profit + commission + swap + fee), last exit
+bool PosSummary(long pid, datetime &tIn, datetime &tOut, double &pnl, int &dir, double &q, double &ent, int &seq, int &piece, int &why)
+{
+   if (!HistorySelectByPosition(pid)) return false;
+   tIn = 0; tOut = 0; pnl = 0; dir = 0; q = 0; ent = 0; seq = -1; piece = 0; why = 0;
+   bool haveIn = false;
+   int n = HistoryDealsTotal();
+   for (int i = 0; i < n; i++)
+   {
+      ulong dk = HistoryDealGetTicket(i);
+      if (dk == 0 || !OurDeal(dk)) continue;
+      pnl += HistoryDealGetDouble(dk, DEAL_PROFIT) + HistoryDealGetDouble(dk, DEAL_COMMISSION) + HistoryDealGetDouble(dk, DEAL_SWAP) + HistoryDealGetDouble(dk, DEAL_FEE);
+      long en = HistoryDealGetInteger(dk, DEAL_ENTRY);
+      datetime dt = (datetime)HistoryDealGetInteger(dk, DEAL_TIME);
+      if (en == DEAL_ENTRY_IN && !haveIn)
+      {
+         haveIn = true;
+         tIn = dt;
+         dir = HistoryDealGetInteger(dk, DEAL_TYPE) == DEAL_TYPE_BUY ? 1 : -1;
+         q = HistoryDealGetDouble(dk, DEAL_VOLUME) * g_contract;
+         ent = HistoryDealGetDouble(dk, DEAL_PRICE);
+         ParseCmt(HistoryDealGetString(dk, DEAL_COMMENT), seq, piece);
+      }
+      else if (en != DEAL_ENTRY_IN && dt >= tOut)
+      {
+         tOut = dt;
+         long rs = HistoryDealGetInteger(dk, DEAL_REASON);
+         why = rs == DEAL_REASON_SL ? 1 : (rs == DEAL_REASON_TP ? 2 : 0);
+      }
+   }
+   return haveIn;
+}
+void AddPos(int k, long pid, long tk, int dir, double q, double ent, double sl, double tp, long tOpen, int seq, int piece)
+{
+   if (g_io[k].nPos >= MAXP) return;
+   int i = g_io[k].nPos++;
+   g_io[k].pos[i].id = pid; g_io[k].pos[i].ticket = tk; g_io[k].pos[i].dir = dir; g_io[k].pos[i].q = q; g_io[k].pos[i].ent = ent;
+   g_io[k].pos[i].sl = sl; g_io[k].pos[i].tgt = tp; g_io[k].pos[i].tOpen = tOpen; g_io[k].pos[i].seq = seq; g_io[k].pos[i].piece = piece;
+}
+void AddCls(int k, long pid, int dir, double q, double pnl, long tIn, long tOut, int seq, int piece, int why)
+{
+   if (g_io[k].nCls >= MAXP) return;
+   int i = g_io[k].nCls++;
+   g_io[k].cls[i].id = pid; g_io[k].cls[i].dir = dir; g_io[k].cls[i].q = q; g_io[k].cls[i].pnl = pnl; g_io[k].cls[i].tIn = tIn;
+   g_io[k].cls[i].tOut = tOut; g_io[k].cls[i].seq = seq; g_io[k].cls[i].piece = piece; g_io[k].cls[i].why = why;
+}
+// what happened up to tEnd (the open of the next bar): open trades at the bar close, entries and exits of this bar
+void GatherIO(datetime tEnd)
+{
+   for (int k = 0; k < 2; k++) g_io[k].Clear();
+   for (int i = 0; i < PositionsTotal(); i++)
+   {
+      ulong tk = PositionGetTicket(i);
+      if (tk == 0) continue;
+      if (PositionGetString(POSITION_SYMBOL) != g_sym || PositionGetInteger(POSITION_MAGIC) != InMagic) continue;
+      datetime to = (datetime)PositionGetInteger(POSITION_TIME);
+      if (to >= tEnd) continue;
+      int dir = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY ? 1 : -1;
+      int seq = -1, piece = 0;
+      ParseCmt(PositionGetString(POSITION_COMMENT), seq, piece);
+      double sl = PositionGetDouble(POSITION_SL), tp = PositionGetDouble(POSITION_TP);
+      AddPos(SideOf(dir), PositionGetInteger(POSITION_IDENTIFIER), (long)tk, dir, PositionGetDouble(POSITION_VOLUME) * g_contract,
+             PositionGetDouble(POSITION_PRICE_OPEN), sl > 0 ? sl : NAD, tp > 0 ? tp : NAD, SrvToUtc(to), seq, piece);
+   }
+   if (!g_dealFlag) return;
+   if (!HistorySelect(tEnd - 9 * 86400, TimeCurrent() + 86400)) return;
+   bool later = false;
+   long closedIds[], afterIds[];
+   int nc = 0, na = 0;
+   int nd = HistoryDealsTotal();
+   for (int i = 0; i < nd; i++)
+   {
+      ulong dk = HistoryDealGetTicket(i);
+      if (dk == 0 || !OurDeal(dk)) continue;
+      datetime dt = (datetime)HistoryDealGetInteger(dk, DEAL_TIME);
+      long en = HistoryDealGetInteger(dk, DEAL_ENTRY);
+      long pid = HistoryDealGetInteger(dk, DEAL_POSITION_ID);
+      if (dt >= tEnd) later = true;
+      if (en == DEAL_ENTRY_IN)
+      {
+         if (dt >= tEnd || IsDone(dk)) continue;
+         MarkDone(dk, dt);
+         int dir = HistoryDealGetInteger(dk, DEAL_TYPE) == DEAL_TYPE_BUY ? 1 : -1;
+         int k = SideOf(dir);
+         if (g_io[k].nFill >= MAXF) continue;
+         int seq = -1, piece = 0;
+         ParseCmt(HistoryDealGetString(dk, DEAL_COMMENT), seq, piece);
+         int f = g_io[k].nFill++;
+         g_io[k].fill[f].id = pid; g_io[k].fill[f].dir = dir; g_io[k].fill[f].q = HistoryDealGetDouble(dk, DEAL_VOLUME) * g_contract;
+         g_io[k].fill[f].ent = HistoryDealGetDouble(dk, DEAL_PRICE); g_io[k].fill[f].t = SrvToUtc(dt); g_io[k].fill[f].seq = seq; g_io[k].fill[f].piece = piece;
+         g_io[k].fill[f].atOpen = false;
+         for (int x = 0; x < ArraySize(g_gapPos); x++) if (g_gapPos[x] == pid) g_io[k].fill[f].atOpen = true;
+      }
+      else if (dt >= tEnd)
+      {
+         bool have = false;
+         for (int j = 0; j < na; j++) if (afterIds[j] == pid) have = true;
+         if (!have) { ArrayResize(afterIds, na + 1); afterIds[na++] = pid; }
+      }
+      else if (!IsDone(dk))
+      {
+         MarkDone(dk, dt);
+         bool have = false;
+         for (int j = 0; j < nc; j++) if (closedIds[j] == pid) have = true;
+         if (!have) { ArrayResize(closedIds, nc + 1); closedIds[nc++] = pid; }
+      }
+   }
+   TrimDone(tEnd - 10 * 86400);
+   g_dealFlag = later;
+   datetime tIn = 0, tOut = 0;
+   double pnl = 0, q = 0, ent = 0;
+   int dir = 0, seq = -1, piece = 0, why = 0;
+   // trades open at the bar close that closed since (on the first tick of the new bar)
+   for (int j = 0; j < na; j++)
+   {
+      if (PosOpenNow(afterIds[j])) continue;
+      if (!PosSummary(afterIds[j], tIn, tOut, pnl, dir, q, ent, seq, piece, why)) continue;
+      if (tIn >= tEnd) continue;
+      AddPos(SideOf(dir), afterIds[j], afterIds[j], dir, q, ent, NAD, NAD, SrvToUtc(tIn), seq, piece);
+   }
+   // trades that closed during this bar (a trade only counts once it is fully closed)
+   for (int j = 0; j < nc; j++)
+   {
+      if (PosOpenNow(closedIds[j])) continue;
+      if (!PosSummary(closedIds[j], tIn, tOut, pnl, dir, q, ent, seq, piece, why)) continue;
+      AddCls(SideOf(dir), closedIds[j], dir, q, pnl, SrvToUtc(tIn), SrvToUtc(tOut), seq, piece, why);
+   }
+   for (int k = 0; k < 2; k++)   // oldest exit first
+      for (int a = 1; a < g_io[k].nCls; a++)
+         for (int b = a; b > 0 && g_io[k].cls[b - 1].tOut > g_io[k].cls[b].tOut; b--)
+         {
+            ClsRec tmp = g_io[k].cls[b];
+            g_io[k].cls[b] = g_io[k].cls[b - 1];
+            g_io[k].cls[b - 1] = tmp;
+         }
+}
+
+//---------------------------------------------------------------- carrying out the core's decisions
+bool RetryCode(uint rc)
+{
+   return rc == TRADE_RETCODE_REQUOTE || rc == TRADE_RETCODE_PRICE_CHANGED || rc == TRADE_RETCODE_PRICE_OFF || rc == TRADE_RETCODE_TIMEOUT ||
+          rc == TRADE_RETCODE_CONNECTION || rc == TRADE_RETCODE_TOO_MANY_REQUESTS || rc == TRADE_RETCODE_LOCKED || rc == TRADE_RETCODE_FROZEN ||
+          rc == TRADE_RETCODE_MARKET_CLOSED || rc == TRADE_RETCODE_SERVER_DISABLES_AT || rc == TRADE_RETCODE_CLIENT_DISABLES_AT || rc == TRADE_RETCODE_TRADE_DISABLED;
+}
+void DoCloses()
+{
+   for (int j = ArraySize(g_clsTk) - 1; j >= 0; j--)
+   {
+      bool gone = !PositionSelectByTicket(g_clsTk[j]);
+      if (!gone)
+      {
+         if (g_trade.PositionClose(g_clsTk[j], (ulong)InSlip)) gone = true;
+         else
+         {
+            uint rc = g_trade.ResultRetcode();
+            if (!RetryCode(rc)) { Log("Close of #" + IntegerToString((long)g_clsTk[j]) + " (" + g_clsWhy[j] + ") failed: " + g_trade.ResultRetcodeDescription()); gone = true; }
+         }
+      }
+      if (gone)
+      {
+         int n = ArraySize(g_clsTk);
+         for (int x = j; x + 1 < n; x++) { g_clsTk[x] = g_clsTk[x + 1]; g_clsWhy[x] = g_clsWhy[x + 1]; }
+         ArrayResize(g_clsTk, n - 1);
+         ArrayResize(g_clsWhy, n - 1);
+      }
+   }
+}
+void CloseNow(ulong tk, string why)
+{
+   for (int j = 0; j < ArraySize(g_clsTk); j++) if (g_clsTk[j] == tk) return;
+   int n = ArraySize(g_clsTk);
+   ArrayResize(g_clsTk, n + 1);
+   ArrayResize(g_clsWhy, n + 1);
+   g_clsTk[n] = tk;
+   g_clsWhy[n] = why;
+}
+void DoStops()
+{
+   for (int j = ArraySize(g_stpTk) - 1; j >= 0; j--)
+   {
+      bool done = true;
+      if (PositionSelectByTicket(g_stpTk[j]))
+      {
+         int    dir = g_stpDir[j];
+         double sl  = dir == 1 ? NormDn(g_stpSl[j]) : NormUp(g_stpSl[j]);
+         double tp  = PositionGetDouble(POSITION_TP);
+         double bid = SymbolInfoDouble(g_sym, SYMBOL_BID), ask = SymbolInfoDouble(g_sym, SYMBOL_ASK);
+         double gap = StopsGap();
+         // the price is already beyond the new stop: TradingView fills it at once - close at market
+         if ((dir == 1 && bid <= sl) || (dir == -1 && ask >= sl)) CloseNow(g_stpTk[j], "moved stop already passed");
+         else if (MathAbs(PositionGetDouble(POSITION_SL) - sl) >= g_tickSize / 2)
+         {
+            if ((dir == 1 && bid - sl < gap) || (dir == -1 && sl - ask < gap)) done = false;   // too close for the broker now - try again
+            else if (!g_trade.PositionModify(g_stpTk[j], sl, tp))
+            {
+               uint rc = g_trade.ResultRetcode();
+               if (RetryCode(rc) || rc == TRADE_RETCODE_INVALID_STOPS) done = false;
+               else Log("Stop move of #" + IntegerToString((long)g_stpTk[j]) + " failed: " + g_trade.ResultRetcodeDescription());
+            }
+         }
+      }
+      if (done)
+      {
+         int n = ArraySize(g_stpTk);
+         for (int x = j; x + 1 < n; x++) { g_stpTk[x] = g_stpTk[x + 1]; g_stpSl[x] = g_stpSl[x + 1]; g_stpDir[x] = g_stpDir[x + 1]; }
+         ArrayResize(g_stpTk, n - 1);
+         ArrayResize(g_stpSl, n - 1);
+         ArrayResize(g_stpDir, n - 1);
+      }
+   }
+}
+// a market order for book entry i (the entry was touched, or a pending order cannot be placed because the price is already through it)
+void SendMarket(int i)
+{
+   int    dir = g_vb[i].dir;
+   double bid = SymbolInfoDouble(g_sym, SYMBOL_BID), ask = SymbolInfoDouble(g_sym, SYMBOL_ASK);
+   double sl  = dir == 1 ? NormDn(g_vb[i].sl) : NormUp(g_vb[i].sl);
+   double tp  = dir == 1 ? NormUp(g_vb[i].tgt) : NormDn(g_vb[i].tgt);
+   double ref = dir == 1 ? bid : ask, gap = StopsGap();
+   string id  = TradeId(dir, g_vb[i].seq, i % 2);
+   if ((dir == 1 && (sl >= ref - gap || tp <= ref + gap)) || (dir == -1 && (sl <= ref + gap || tp >= ref - gap)))
+   {
+      Log("Entry " + id + " skipped: the price is already past its stop or target (TradingView would open and close it at once)");
+      g_vb[i].on = false;
+      return;
+   }
+   bool ok = dir == 1 ? g_trade.Buy(g_vb[i].lots, g_sym, 0.0, sl, tp, CmtOf(dir, g_vb[i].seq, i % 2))
+                      : g_trade.Sell(g_vb[i].lots, g_sym, 0.0, sl, tp, CmtOf(dir, g_vb[i].seq, i % 2));
+   uint rc = g_trade.ResultRetcode();
+   if (ok && (rc == TRADE_RETCODE_DONE || rc == TRADE_RETCODE_DONE_PARTIAL || rc == TRADE_RETCODE_PLACED))
+   {
+      g_vb[i].on = false;
+      if (g_inBar)
+      {
+         int n = ArraySize(g_gapPos);
+         if (n >= 50) { for (int x = 0; x + 1 < n; x++) g_gapPos[x] = g_gapPos[x + 1]; n--; }
+         ArrayResize(g_gapPos, n + 1);
+         g_gapPos[n] = (long)g_trade.ResultOrder();
+      }
+      return;
+   }
+   if (RetryCode(rc) && g_vb[i].fails < 50) { g_vb[i].fails++; return; }
+   Log("Entry " + id + " REFUSED by the broker: " + g_trade.ResultRetcodeDescription());
+   g_vb[i].on = false;
+}
+// touch mode: fill when the chart price (bid) reaches the entry - what TradingView does on its chart
+void CheckTouch()
+{
+   double bid = SymbolInfoDouble(g_sym, SYMBOL_BID);
+   if (bid <= 0) return;
+   for (int i = 0; i < 4; i++)   // the level on the price grid, rounded the safe way (a buy lower, a sell higher), like a pending order
+      if (g_vb[i].on && ((g_vb[i].dir == 1 && bid <= NormDn(g_vb[i].ent)) || (g_vb[i].dir == -1 && bid >= NormUp(g_vb[i].ent)))) SendMarket(i);
+}
+bool PosWithComment(string cmt)
+{
+   for (int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong tk = PositionGetTicket(i);
+      if (tk == 0) continue;
+      if (PositionGetString(POSITION_SYMBOL) == g_sym && PositionGetInteger(POSITION_MAGIC) == InMagic && PositionGetString(POSITION_COMMENT) == cmt) return true;
+   }
+   return false;
+}
+bool OurOrder(ulong tk)
+{
+   if (!OrderSelect(tk)) return false;
+   return OrderGetString(ORDER_SYMBOL) == g_sym && OrderGetInteger(ORDER_MAGIC) == InMagic;
+}
+// pending mode: keep one broker order per book entry, equal to what the core wants
+void SyncPending()
+{
+   double bid = SymbolInfoDouble(g_sym, SYMBOL_BID), ask = SymbolInfoDouble(g_sym, SYMBOL_ASK);
+   if (bid <= 0 || ask <= 0) return;
+   double gap = StopsGap();
+   for (int i = 0; i < 4; i++)
+   {
+      ulong tk = (ulong)g_vb[i].ticket;
+      bool exists = tk != 0 && OurOrder(tk);
+      if (!g_vb[i].on)
+      {
+         if (exists) { if (g_trade.OrderDelete(tk) || !OurOrder(tk)) g_vb[i].ticket = 0; }
+         else g_vb[i].ticket = 0;
+         continue;
+      }
+      int    dir = g_vb[i].dir;
+      double px  = dir == 1 ? NormDn(g_vb[i].ent) : NormUp(g_vb[i].ent);
+      double sl  = dir == 1 ? NormDn(g_vb[i].sl) : NormUp(g_vb[i].sl);
+      double tp  = dir == 1 ? NormUp(g_vb[i].tgt) : NormDn(g_vb[i].tgt);
+      string cmt = CmtOf(dir, g_vb[i].seq, i % 2);
+      if (exists)
+      {
+         bool sameSetup = OrderGetString(ORDER_COMMENT) == cmt && MathAbs(OrderGetDouble(ORDER_VOLUME_CURRENT) - g_vb[i].lots) < g_volStep / 2;
+         if (!sameSetup)
+         {   // another setup or another size: replace the order (a pending order's size cannot be changed)
+            if (!g_trade.OrderDelete(tk)) continue;
+            g_vb[i].ticket = 0;
+            exists = false;
+            tk = 0;
+         }
+      }
+      if (exists)
+      {
+         bool same = MathAbs(OrderGetDouble(ORDER_PRICE_OPEN) - px) < g_tickSize / 2 && MathAbs(OrderGetDouble(ORDER_SL) - sl) < g_tickSize / 2 && MathAbs(OrderGetDouble(ORDER_TP) - tp) < g_tickSize / 2;
+         if (same) continue;
+         if ((dir == 1 && px >= ask) || (dir == -1 && px <= bid))
+         {   // the new entry is already through the price: TradingView fills at once - delete and buy / sell at market
+            if (g_trade.OrderDelete(tk)) { g_vb[i].ticket = 0; SendMarket(i); }
+            continue;
+         }
+         if (!g_trade.OrderModify(tk, px, sl, tp, g_otime, 0))
+         {
+            uint rc = g_trade.ResultRetcode();
+            if (!RetryCode(rc) && rc != TRADE_RETCODE_INVALID_PRICE && rc != TRADE_RETCODE_INVALID_STOPS) Log("Order change " + cmt + " failed: " + g_trade.ResultRetcodeDescription());
+         }
+         continue;
+      }
+      if (tk != 0)
+      {   // our order is gone: filled -> done; cancelled / expired / rejected -> place it again; not known yet -> wait
+         if (PosWithComment(cmt)) { g_vb[i].on = false; g_vb[i].ticket = 0; continue; }
+         if (!HistoryOrderSelect(tk)) continue;
+         long st = HistoryOrderGetInteger(tk, ORDER_STATE);
+         if (st == ORDER_STATE_FILLED || st == ORDER_STATE_PARTIAL) { g_vb[i].on = false; g_vb[i].ticket = 0; continue; }
+         if (st != ORDER_STATE_CANCELED && st != ORDER_STATE_EXPIRED && st != ORDER_STATE_REJECTED) continue;
+         if (st == ORDER_STATE_REJECTED) g_vb[i].fails++;
+         g_vb[i].ticket = 0;
+         if (g_vb[i].fails > 5) { Log("Order " + cmt + " REFUSED by the broker 5 times - setup dropped"); g_vb[i].on = false; continue; }
+      }
+      if ((dir == 1 && px >= ask) || (dir == -1 && px <= bid)) { SendMarket(i); continue; }
+      if ((dir == 1 && ask - px < gap) || (dir == -1 && px - bid < gap)) continue;   // too close for a pending order now - wait
+      bool ok = dir == 1 ? g_trade.BuyLimit(g_vb[i].lots, px, g_sym, sl, tp, g_otime, 0, cmt)
+                         : g_trade.SellLimit(g_vb[i].lots, px, g_sym, sl, tp, g_otime, 0, cmt);
+      uint rc = g_trade.ResultRetcode();
+      if (ok && (rc == TRADE_RETCODE_DONE || rc == TRADE_RETCODE_PLACED)) g_vb[i].ticket = (long)g_trade.ResultOrder();
+      else if (!RetryCode(rc))
+      {
+         g_vb[i].fails++;
+         if (g_vb[i].fails > 5) { Log("Order " + cmt + " REFUSED by the broker: " + g_trade.ResultRetcodeDescription()); g_vb[i].on = false; }
+      }
+   }
+}
+void ExecuteAll()
+{
+   g_inBar = true;
+   DoCloses();
+   DoStops();
+   DoCloses();
+   if (InExec == EX_TOUCH) CheckTouch();
+   else SyncPending();
+   g_inBar = false;
+}
+void DeleteOurPending()
+{
+   for (int i = OrdersTotal() - 1; i >= 0; i--)
+   {
+      ulong tk = OrderGetTicket(i);
+      if (tk != 0 && OurOrder(tk)) g_trade.OrderDelete(tk);
+   }
+   for (int i = 0; i < 4; i++) { g_vb[i].on = false; g_vb[i].ticket = 0; }
+}
+
+//---------------------------------------------------------------- higher timeframe: closed candles only
+datetime HtfOpenOf(datetime t)
+{
+   int sh = iBarShift(g_sym, g_htf, t, false);
+   if (sh < 0) return 0;
+   return iTime(g_sym, g_htf, sh);
+}
+// feed every higher-timeframe candle that closed before the candle holding this chart bar
+bool FeedHtf(datetime barOpen)
+{
+   if (!g_htfUse) return true;
+   datetime hc = HtfOpenOf(barOpen);
+   if (hc == 0) return false;
+   if (hc <= g_htfFed + 1) return true;
+   MqlRates hr[];
+   int n = CopyRates(g_sym, g_htf, g_htfFed + 1, hc - 1, hr);
+   if (n < 0) return false;
+   for (int i = 0; i < n; i++)
+      if (hr[i].time > g_htfFed && hr[i].time < hc) { HT.Step(hr[i].open, hr[i].high, hr[i].low, hr[i].close); g_htfFed = hr[i].time; }
+   return true;
+}
+
+//---------------------------------------------------------------- bar times (for drawing) and one bar
+void PushBarTime(datetime t)
+{
+   int n = ArraySize(g_bt);
+   if (n >= 7000)
+   {
+      for (int i = 0; i + 1000 < n; i++) g_bt[i] = g_bt[i + 1000];
+      n -= 1000;
+      g_btBase += 1000;
+   }
+   ArrayResize(g_bt, n + 1, 1024);
+   g_bt[n] = t;
+}
+datetime TimeOfBar(int bi)
+{
+   int n = ArraySize(g_bt);
+   if (n == 0) return 0;
+   int i = bi - g_btBase;
+   if (i < 0) i = 0;
+   if (i >= n) i = n - 1;
+   return g_bt[i];
+}
+int BarOfTime(datetime t)
+{
+   for (int i = ArraySize(g_bt) - 1; i >= 0; i--) if (g_bt[i] <= t) return g_btBase + i;
+   return NAI;
+}
+void ProcessBar(MqlRates &r, bool dry, datetime tEnd)
+{
+   FeedHtf(r.time);
+   if (!dry) GatherIO(tEnd);
+   S.uv  = UnitValue();
+   g_now = SrvToUtc(TimeCurrent());
+   g_dry = dry;
+   PushBarTime(r.time);
+   int    ht = 0, he = 0;
+   double ho = NAD, hx = NAD;
+   if (g_htfUse) { ht = HT.tTrend; ho = HT.outO; hx = HT.outX; he = HT.evN; }
+   CoreBar(SrvToUtc(r.time), r.open, r.high, r.low, r.close, dry ? 0.0 : AccountInfoDouble(ACCOUNT_EQUITY), ht, ho, hx, he);
+   if (InDraw && (!g_tester || g_visual)) DrawBar(r);
+}
+
+//---------------------------------------------------------------- loss memory etc. rebuilt from this EA's real deals
+void ReplayMoney(datetime tLimit)
+{
+   if (!HistorySelect(0, TimeCurrent() + 86400)) return;
+   long pids[];
+   datetime dts[];
+   long ens[];
+   int n = 0;
+   int nd = HistoryDealsTotal();
+   for (int i = 0; i < nd; i++)
+   {
+      ulong dk = HistoryDealGetTicket(i);
+      if (dk == 0 || !OurDeal(dk)) continue;
+      datetime dt = (datetime)HistoryDealGetInteger(dk, DEAL_TIME);
+      if (dt >= tLimit) continue;
+      MarkDone(dk, dt);
+      ArrayResize(pids, n + 1, 1024); ArrayResize(dts, n + 1, 1024); ArrayResize(ens, n + 1, 1024);
+      pids[n] = HistoryDealGetInteger(dk, DEAL_POSITION_ID);
+      dts[n] = dt;
+      ens[n] = HistoryDealGetInteger(dk, DEAL_ENTRY);
+      n++;
+   }
+   if (n == 0) return;
+   // events: entries (by their bar) and closed trades (by the bar of their last exit)
+   long   evBar[];
+   int    evKind[], evSide[], evSeq[], evPiece[], evWhy[], evDir[];
+   double evPnl[], evQ[];
+   long   evIn[], evOut[], evPid[];
+   int    ne = 0;
+   long   seen[];
+   int    ns = 0;
+   for (int i = 0; i < n; i++)
+   {
+      bool have = false;
+      for (int j = 0; j < ns; j++) if (seen[j] == pids[i]) { have = true; break; }
+      if (have) continue;
+      ArrayResize(seen, ns + 1, 1024);
+      seen[ns++] = pids[i];
+      datetime tIn = 0, tOut = 0;
+      double pnl = 0, q = 0, ent = 0;
+      int dir = 0, seq = -1, piece = 0, why = 0;
+      if (!PosSummary(pids[i], tIn, tOut, pnl, dir, q, ent, seq, piece, why)) continue;
+      int add = 1;
+      bool closed = tOut > 0 && tOut < tLimit && !PosOpenNow(pids[i]);
+      if (closed) add = 2;
+      for (int ai = 0; ai < add; ai++)
+      {
+         ArrayResize(evBar, ne + 1, 1024); ArrayResize(evKind, ne + 1, 1024); ArrayResize(evSide, ne + 1, 1024); ArrayResize(evSeq, ne + 1, 1024);
+         ArrayResize(evPiece, ne + 1, 1024); ArrayResize(evWhy, ne + 1, 1024); ArrayResize(evDir, ne + 1, 1024); ArrayResize(evPnl, ne + 1, 1024);
+         ArrayResize(evQ, ne + 1, 1024); ArrayResize(evIn, ne + 1, 1024); ArrayResize(evOut, ne + 1, 1024); ArrayResize(evPid, ne + 1, 1024);
+         datetime te = ai == 0 ? tIn : tOut;
+         int sh = iBarShift(g_sym, g_tf, te, false);
+         evBar[ne] = sh >= 0 ? (long)iTime(g_sym, g_tf, sh) : (long)te;
+         evKind[ne] = ai;         // 0 entry, 1 close
+         evSide[ne] = SideOf(dir); evSeq[ne] = seq; evPiece[ne] = piece; evWhy[ne] = why; evDir[ne] = dir; evPnl[ne] = pnl; evQ[ne] = q;
+         evIn[ne] = SrvToUtc(tIn); evOut[ne] = SrvToUtc(tOut); evPid[ne] = pids[i];
+         ne++;
+      }
+   }
+   // in time order (bar, then exit time)
+   int ord[];
+   ArrayResize(ord, ne);
+   for (int i = 0; i < ne; i++) ord[i] = i;
+   for (int sa = 1; sa < ne; sa++)
+      for (int sb = sa; sb > 0; sb--)
+      {
+         int x = ord[sb - 1], y = ord[sb];
+         bool swap = evBar[x] > evBar[y] || (evBar[x] == evBar[y] && evKind[x] == 1 && evKind[y] == 1 && evOut[x] > evOut[y]);
+         if (!swap) break;
+         ord[sb - 1] = y;
+         ord[sb] = x;
+      }
+   int nm = (S.dirMode == 3 && S.hedgeMoney == 0) ? 2 : 1;
+   int ev = 0;
+   while (ev < ne)
+   {
+      long bar = evBar[ord[ev]];
+      for (int k = 0; k < 2; k++) g_io[k].Clear();
+      bool filled[2];
+      filled[0] = false;
+      filled[1] = false;
+      while (ev < ne && evBar[ord[ev]] == bar)
+      {
+         int e = ord[ev];
+         if (evKind[e] == 0) filled[evSide[e]] = true;
+         else AddCls(evSide[e], evPid[e], evDir[e], evQ[e], evPnl[e], evIn[e], evOut[e], evSeq[e], evPiece[e], evWhy[e]);
+         ev++;
+      }
+      for (int m = 0; m < nm; m++) g_money[m].NewBar(SrvToUtc((datetime)bar));
+      for (int k = 0; k < g_nSides; k++) if (filled[k]) g_money[g_sideMi[k]].dayTrades++;
+      for (int m = 0; m < nm; m++) { g_money[m].Closes(m); g_money[m].Risk(); g_money[m].Halts(0.0, false); }
+   }
+   for (int k = 0; k < 2; k++) g_io[k].Clear();
+}
+
+//---------------------------------------------------------------- restart safety: the waiting setup and the managed stops
+string GvSide(int k, string f) { return g_P + "s" + IntegerToString(k) + f; }
+void   GvSet(string name, double v) { GlobalVariableSet(name, v); }
+double GvGet(string name, double def) { return GlobalVariableCheck(name) ? GlobalVariableGet(name) : def; }
+void SaveState(datetime barTime)
+{
+   if (g_tester) return;
+   for (int k = 0; k < g_nSides; k++)
+   {
+      GvSet(GvSide(k, "dir"), g_side[k].dir);       GvSet(GvSide(k, "rule"), g_side[k].rule);   GvSet(GvSide(k, "sl"), g_side[k].sl);
+      GvSet(GvSide(k, "fix"), g_side[k].fix);       GvSet(GvSide(k, "ol"), g_side[k].ordLive ? 1 : 0);
+      GvSet(GvSide(k, "le"), g_side[k].lastEnt);    GvSet(GvSide(k, "ls"), g_side[k].lastSl);   GvSet(GvSide(k, "lt"), g_side[k].lastTgt);
+      GvSet(GvSide(k, "lq"), g_side[k].lastQ);      GvSet(GvSide(k, "lc"), g_side[k].lastCapQ ? 1 : 0);
+      GvSet(GvSide(k, "pl"), g_side[k].placed ? 1 : 0); GvSet(GvSide(k, "el"), g_side[k].entLock);
+      GvSet(GvSide(k, "ab"), g_side[k].armBar == NAI ? -1.0 : (double)TimeOfBar(g_side[k].armBar));
+      GvSet(GvSide(k, "seq"), g_side[k].seq);       GvSet(GvSide(k, "ak"), g_side[k].addRk);    GvSet(GvSide(k, "ps"), g_side[k].ppSent ? 1 : 0);
+      GvSet(GvSide(k, "tp1"), g_side[k].lastTp1);   GvSet(GvSide(k, "os"), g_side[k].openSl);   GvSet(GvSide(k, "ot"), g_side[k].openTgt);
+      GvSet(GvSide(k, "pt"), g_side[k].planTgt);
+      for (int j = 0; j < g_side[k].ntrk; j++)
+      {
+         string id = IntegerToString(g_side[k].trk[j].id);
+         GvSet(g_P + "r" + id, g_side[k].trk[j].r);
+         GvSet(g_P + "k" + id, g_side[k].trk[j].step + (g_side[k].trk[j].mv ? 10 : 0) + (g_side[k].trk[j].pp ? 100 : 0));
+         GvSet(g_P + "b" + id, (double)TimeOfBar(g_side[k].trk[j].bar));
+         GvSet(g_P + "e" + id, g_side[k].trk[j].ent);
+      }
+   }
+   for (int i = 0; i < 4; i++)
+   {
+      string v = g_P + "v" + IntegerToString(i);
+      GvSet(v + "on", g_vb[i].on ? 1 : 0); GvSet(v + "seq", g_vb[i].seq); GvSet(v + "dir", g_vb[i].dir); GvSet(v + "ent", g_vb[i].ent);
+      GvSet(v + "sl", g_vb[i].sl); GvSet(v + "tg", g_vb[i].tgt); GvSet(v + "lot", g_vb[i].lots); GvSet(v + "tk", (double)g_vb[i].ticket);
+   }
+   GvSet(g_P + "T", (double)barTime);
+   GvSet(g_P + "mode", (double)(InDirMode * 10 + InExec));
+   GvSet(g_P + "cs", (double)g_cs);
+}
+void RestoreSides()
+{
+   for (int k = 0; k < g_nSides; k++)
+   {
+      g_side[k].dir = (int)GvGet(GvSide(k, "dir"), 0);      g_side[k].rule = (int)GvGet(GvSide(k, "rule"), 0);
+      g_side[k].sl = GvGet(GvSide(k, "sl"), NAD);           g_side[k].fix = GvGet(GvSide(k, "fix"), NAD);
+      g_side[k].ordLive = GvGet(GvSide(k, "ol"), 0) > 0.5;
+      g_side[k].lastEnt = GvGet(GvSide(k, "le"), NAD);      g_side[k].lastSl = GvGet(GvSide(k, "ls"), NAD);
+      g_side[k].lastTgt = GvGet(GvSide(k, "lt"), NAD);      g_side[k].lastQ = GvGet(GvSide(k, "lq"), NAD);
+      g_side[k].lastCapQ = GvGet(GvSide(k, "lc"), 0) > 0.5; g_side[k].placed = GvGet(GvSide(k, "pl"), 0) > 0.5;
+      g_side[k].entLock = GvGet(GvSide(k, "el"), NAD);
+      double ab = GvGet(GvSide(k, "ab"), -1);
+      g_side[k].armBar = ab < 0 ? NAI : BarOfTime((datetime)ab);
+      g_side[k].addRk = GvGet(GvSide(k, "ak"), 1.0);        g_side[k].ppSent = GvGet(GvSide(k, "ps"), 0) > 0.5;
+      g_side[k].lastTp1 = GvGet(GvSide(k, "tp1"), NAD);     g_side[k].openSl = GvGet(GvSide(k, "os"), NAD);
+      g_side[k].openTgt = GvGet(GvSide(k, "ot"), NAD);      g_side[k].planTgt = GvGet(GvSide(k, "pt"), NAD);
+   }
+   for (int i = 0; i < 4; i++)
+   {
+      string v = g_P + "v" + IntegerToString(i);
+      g_vb[i].on = GvGet(v + "on", 0) > 0.5; g_vb[i].seq = (int)GvGet(v + "seq", 0); g_vb[i].dir = (int)GvGet(v + "dir", 0);
+      g_vb[i].ent = GvGet(v + "ent", 0); g_vb[i].sl = GvGet(v + "sl", 0); g_vb[i].tgt = GvGet(v + "tg", 0); g_vb[i].lots = GvGet(v + "lot", 0);
+      g_vb[i].ticket = (long)GvGet(v + "tk", 0); g_vb[i].fails = 0;
+      if (g_vb[i].on && (i / 2 >= g_nSides || g_vb[i].dir == 0 || g_vb[i].lots <= 0)) g_vb[i].on = false;
+   }
+}
+// managed stops (group 32, trailing, break-even) for the trades open now
+void RebuildTrk()
+{
+   for (int k = 0; k < 2; k++) g_side[k].ntrk = 0;
+   if (!S.mgOn) return;
+   for (int i = 0; i < PositionsTotal(); i++)
+   {
+      ulong tk = PositionGetTicket(i);
+      if (tk == 0) continue;
+      if (PositionGetString(POSITION_SYMBOL) != g_sym || PositionGetInteger(POSITION_MAGIC) != InMagic) continue;
+      int    dir = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY ? 1 : -1;
+      int    k   = SideOf(dir);
+      if (k >= g_nSides || g_side[k].ntrk >= MAXP) continue;
+      long   pid = PositionGetInteger(POSITION_IDENTIFIER);
+      string id  = IntegerToString(pid);
+      double ent = GvGet(g_P + "e" + IntegerToString(PositionGetInteger(POSITION_IDENTIFIER)), PositionGetDouble(POSITION_PRICE_OPEN));
+      double sl = PositionGetDouble(POSITION_SL), tp = PositionGetDouble(POSITION_TP);
+      double q   = PositionGetDouble(POSITION_VOLUME) * g_contract;
+      int    seq = -1, piece = 0;
+      ParseCmt(PositionGetString(POSITION_COMMENT), seq, piece);
+      double cst = S.uv > 0 ? (CmU(ent) + (q > 0 ? CmF() / q : 0.0)) / S.uv : 0.0;
+      int    kf  = (int)GvGet(g_P + "k" + id, 0);
+      double bt  = GvGet(g_P + "b" + id, -1);
+      int    j   = g_side[k].ntrk++;
+      g_side[k].trk[j].id = pid; g_side[k].trk[j].ticket = (long)tk; g_side[k].trk[j].dir = dir; g_side[k].trk[j].ent = ent;
+      g_side[k].trk[j].r = GvGet(g_P + "r" + id, sl > 0 ? MathAbs(ent - sl) : 0.0);
+      g_side[k].trk[j].be = dir == 1 ? ent + cst : ent - cst;
+      g_side[k].trk[j].sl = sl > 0 ? sl : NAD; g_side[k].trk[j].tgt = tp > 0 ? tp : NAD; g_side[k].trk[j].q = q;
+      g_side[k].trk[j].step = kf % 10; g_side[k].trk[j].mv = (kf / 10) % 10 == 1; g_side[k].trk[j].pp = kf / 100 == 1;
+      int b = bt < 0 ? NAI : BarOfTime((datetime)bt);
+      g_side[k].trk[j].bar = b == NAI ? EN.bi - 1 : b;
+      g_side[k].trk[j].seq = seq; g_side[k].trk[j].piece = piece;
+   }
+}
+// global variables of trades that are no longer open
+void CleanGv()
+{
+   if (g_tester) return;
+   for (int i = GlobalVariablesTotal() - 1; i >= 0; i--)
+   {
+      string nm = GlobalVariableName(i);
+      if (StringFind(nm, g_P) != 0) continue;
+      string rest = StringSubstr(nm, StringLen(g_P));
+      if (StringLen(rest) < 2) continue;
+      ushort c0 = StringGetCharacter(rest, 0);
+      if (c0 != 'r' && c0 != 'k' && c0 != 'b' && c0 != 'e') continue;
+      string num = StringSubstr(rest, 1);
+      if (!IsDigits(num)) continue;
+      if (!PosOpenNow(StringToInteger(num))) GlobalVariableDel(nm);
+   }
+}
+
+//---------------------------------------------------------------- start: build the structure on history, then trade
+bool TryInit()
+{
+   if (g_badInit) return false;
+   datetime t0 = iTime(g_sym, g_tf, 0);
+   if (t0 == 0) return false;
+   if (!g_tester && !SeriesInfoInteger(g_sym, g_tf, SERIES_SYNCHRONIZED)) return false;
+   if (g_htfUse && !g_tester && !SeriesInfoInteger(g_sym, g_htf, SERIES_SYNCHRONIZED)) { iTime(g_sym, g_htf, 0); return false; }
+   MqlRates rr[];
+   int n = CopyRates(g_sym, g_tf, 1, InWarm, rr);
+   if (n <= 10) return false;
+   S.uv = UnitValue();
+   CoreSetup();
+   for (int k = 0; k < 2; k++) g_note[k] = "";
+   ArrayResize(g_bt, 0);
+   g_btBase = 0;
+   ArrayResize(g_done, 0);
+   ArrayResize(g_doneT, 0);
+   g_dealFlag = true;
+   ArrayResize(g_gapPos, 0);
+   ArrayResize(g_clsTk, 0);
+   ArrayResize(g_clsWhy, 0);
+   ArrayResize(g_stpTk, 0);
+   ArrayResize(g_stpSl, 0);
+   ArrayResize(g_stpDir, 0);
+   for (int i = 0; i < 4; i++) { g_vb[i].on = false; g_vb[i].ticket = 0; g_vb[i].fails = 0; g_vb[i].seq = 0; g_vb[i].dir = 0; }
+   // "when the EA first started" for the loss recovery
+   long liveT = LNONE;
+   if (InSeqFrom == SF_LIVE)
+   {
+      if (g_tester) liveT = SrvToUtc(TimeCurrent());
+      else
+      {
+         string nm = g_P + "live";
+         if (!GlobalVariableCheck(nm)) GlobalVariableSet(nm, (double)TimeCurrent());
+         liveT = SrvToUtc((datetime)GlobalVariableGet(nm));
+      }
+   }
+   for (int k = 0; k < 2; k++) g_money[k].liveT = liveT;
+   // higher timeframe: the candles before the first chart bar
+   g_htfFed = 0;
+   if (g_htfUse)
+   {
+      datetime hc0 = HtfOpenOf(rr[0].time);
+      if (hc0 == 0) return false;
+      MqlRates hr[];
+      int m = CopyRates(g_sym, g_htf, hc0 - 1, 3000, hr);   // -1 = no candle before the first chart bar
+      for (int i = 0; i < m; i++) if (hr[i].time < hc0) { HT.Step(hr[i].open, hr[i].high, hr[i].low, hr[i].close); g_htfFed = hr[i].time; }
+      if (g_htfFed == 0) g_htfFed = hc0 - 1;
+   }
+   // a waiting setup saved before a restart a few bars ago?
+   int resume = -1;
+   if (!g_tester && GlobalVariableCheck(g_P + "T") && (int)GvGet(g_P + "mode", -1) == InDirMode * 10 + InExec && (int)GvGet(g_P + "cs", -1) == g_cs)
+   {
+      datetime st = (datetime)GvGet(g_P + "T", 0);
+      for (int i = n - 1; i >= 0 && i >= n - 1 - InResume; i--) if (rr[i].time == st) { resume = i; break; }
+   }
+   int lastDry = resume >= 0 ? resume : n - 1;
+   for (int i = 0; i <= lastDry; i++) ProcessBar(rr[i], true, i + 1 < n ? rr[i + 1].time : t0);
+   datetime tLimit = lastDry + 1 < n ? rr[lastDry + 1].time : t0;
+   ReplayMoney(tLimit);
+   if (resume >= 0)
+   {
+      RestoreSides();
+      for (int i = 0; i < 4; i++)   // a pending order the book no longer wants
+         if (InExec == EX_PEND && g_vb[i].ticket != 0 && !g_vb[i].on && OurOrder((ulong)g_vb[i].ticket)) g_trade.OrderDelete((ulong)g_vb[i].ticket);
+      Print("SMC EA: resumed after a restart (", n - 1 - resume, " bar(s) missed)");
+   }
+   else
+   {
+      int del = 0;
+      for (int i = OrdersTotal() - 1; i >= 0; i--) { ulong tk = OrderGetTicket(i); if (tk != 0 && OurOrder(tk)) { g_trade.OrderDelete(tk); del++; } }
+      if (del > 0) Print("SMC EA: ", del, " old pending order(s) of this EA deleted - the EA waits for the next signal");
+      if (!g_tester) for (int k = 0; k < g_nSides; k++) g_side[k].seq = (int)GvGet(GvSide(k, "seq"), 0);
+   }
+   RebuildTrk();
+   CleanGv();
+   for (int i = lastDry + 1; i < n; i++)
+   {
+      ProcessBar(rr[i], false, i + 1 < n ? rr[i + 1].time : t0);
+      ExecuteAll();
+   }
+   g_dry = false;
+   if (InDraw && (!g_tester || g_visual)) DrawLive(rr[n - 1].time);
+   g_lastBar = rr[n - 1].time;
+   g_curOpen = t0;
+   g_ready = true;
+   SaveState(g_lastBar);
+   Panel();
+   Print("SMC EA v11.1 ready: ", n, " bars of history, structure ", EN.trendDir == 1 ? "UP" : (EN.trendDir == -1 ? "DOWN" : "not set yet"),
+         ", higher timeframe ", g_htfUse ? TfName(g_htf) : "not used", ", mode ", EnumToString(InDirMode), ", entries ", InExec == EX_TOUCH ? "touch (like TradingView)" : "pending orders");
+   return true;
+}
+
+//---------------------------------------------------------------- chart drawing
+void DrawLine(string nm, datetime t1, double p, datetime t2, color c, int style, int width, bool ray)
+{
+   if (ObjectFind(0, nm) < 0)
+   {
+      ObjectCreate(0, nm, OBJ_TREND, 0, t1, p, t2, p);
+      ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, nm, OBJPROP_HIDDEN, true);
+      ObjectSetInteger(0, nm, OBJPROP_BACK, true);
+   }
+   else
+   {
+      ObjectMove(0, nm, 0, t1, p);
+      ObjectMove(0, nm, 1, t2, p);
+   }
+   ObjectSetInteger(0, nm, OBJPROP_COLOR, c);
+   ObjectSetInteger(0, nm, OBJPROP_STYLE, style);
+   ObjectSetInteger(0, nm, OBJPROP_WIDTH, width);
+   ObjectSetInteger(0, nm, OBJPROP_RAY_RIGHT, ray);
+}
+void DrawText(string nm, datetime t, double p, string txt, color c, int anchor)
+{
+   if (ObjectFind(0, nm) < 0)
+   {
+      ObjectCreate(0, nm, OBJ_TEXT, 0, t, p);
+      ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, nm, OBJPROP_HIDDEN, true);
+   }
+   else ObjectMove(0, nm, 0, t, p);
+   ObjectSetString(0, nm, OBJPROP_TEXT, txt);
+   ObjectSetInteger(0, nm, OBJPROP_COLOR, c);
+   ObjectSetInteger(0, nm, OBJPROP_FONTSIZE, 8);
+   ObjectSetInteger(0, nm, OBJPROP_ANCHOR, anchor);
+}
+void DrawBar(MqlRates &r)
+{
+   datetime tNow = r.time;
+   if (EN.brkX != NAI)
+   {
+      bool up = EN.evBU || EN.evCU;
+      bool cho = EN.evCU || EN.evCD;
+      string nm = g_P + "m" + IntegerToString(g_mark);
+      color c = up ? clrTeal : clrCrimson;
+      DrawLine(nm, TimeOfBar(EN.brkX), EN.brkP, tNow, c, cho ? STYLE_SOLID : STYLE_DASH, 1, false);
+      DrawText(nm + "t", tNow, EN.brkP, cho ? "CHOCH" : "BOS", c, up ? ANCHOR_RIGHT_LOWER : ANCHOR_RIGHT_UPPER);
+      if (g_mark >= InDrawMax) { string old = g_P + "m" + IntegerToString(g_mark - InDrawMax); ObjectDelete(0, old); ObjectDelete(0, old + "t"); }
+      g_mark++;
+   }
+   if (g_dry) return;
+   DrawLive(tNow);
+}
+void DrawLive(datetime tNow)
+{
+   string a = g_P + "cel", b = g_P + "flr";
+   if (EN.cel.ok)
+   {
+      DrawLine(a, TimeOfBar(EN.cel.x1), EN.cel.price, tNow, clrCrimson, STYLE_DOT, 1, true);
+      DrawText(a + "t", TimeOfBar(EN.cel.x1), EN.cel.price, EN.trendDir == 1 ? "BOS*" : (EN.trendDir == -1 ? "CHOCH*" : "high*"), clrCrimson, ANCHOR_LEFT_LOWER);
+   }
+   else { ObjectDelete(0, a); ObjectDelete(0, a + "t"); }
+   if (EN.flr.ok)
+   {
+      DrawLine(b, TimeOfBar(EN.flr.x1), EN.flr.price, tNow, clrTeal, STYLE_DOT, 1, true);
+      DrawText(b + "t", TimeOfBar(EN.flr.x1), EN.flr.price, EN.trendDir == -1 ? "BOS*" : (EN.trendDir == 1 ? "CHOCH*" : "low*"), clrTeal, ANCHOR_LEFT_UPPER);
+   }
+   else { ObjectDelete(0, b); ObjectDelete(0, b + "t"); }
+   if (!InShow) return;
+   for (int k = 0; k < 2; k++)
+   {
+      string e = g_P + "e" + IntegerToString(k), s = g_P + "s" + IntegerToString(k), t = g_P + "t" + IntegerToString(k);
+      if (k < g_nSides && g_side[k].dir != 0 && !IsNa(g_side[k].ent))
+      {
+         datetime t2 = tNow + 10 * g_cs;
+         DrawLine(e, tNow, g_side[k].ent, t2, clrOrange, STYLE_SOLID, 2, false);
+         DrawLine(s, tNow, g_side[k].sl, t2, clrRed, STYLE_SOLID, 2, false);
+         if (!IsNa(g_side[k].tgt)) DrawLine(t, tNow, g_side[k].tgt, t2, clrDodgerBlue, STYLE_SOLID, 2, false);
+      }
+      else { ObjectDelete(0, e); ObjectDelete(0, s); ObjectDelete(0, t); }
+   }
+}
+
+//---------------------------------------------------------------- the panel
+string Px(double p) { return IsNa(p) ? "-" : DoubleToString(p, g_digits); }
+string Mo(double v) { return DoubleToString(v, 2); }
+void Panel()
+{
+   if (!InStatOn || (g_tester && !g_visual)) return;
+   string s = "SMC Structure EA v11.1   " + g_sym + " " + TfName(g_tf) + "   magic " + IntegerToString(InMagic) + "   " + (InExec == EX_TOUCH ? "entries: touch (like TradingView)" : "entries: pending orders") + "\n";
+   s += (string)"Structure: " + (EN.trendDir == 1 ? "UP" : (EN.trendDir == -1 ? "DOWN" : "not set")) + "   ceiling " + (EN.cel.ok ? Px(EN.cel.price) : "-") + "   floor " + (EN.flr.ok ? Px(EN.flr.price) : "-") + "\n";
+   if (g_htfUse && S.u15)
+   {
+      s += "Higher timeframe " + TfName(g_htf) + ": " + (g_T15 == 1 ? "UP" : (g_T15 == -1 ? "DOWN" : "not set")) + "   leg " + Px(g_htO) + " -> " + Px(g_htX);
+      if (S.eqOn || S.autoM) s += "   equilibrium " + Px(g_eqLvl) + (g_eqOpen ? " (touched)" : " (not touched)");
+      if (S.autoM) s += (string)"   auto side: " + (g_autoDir == 1 ? "LONG" : (g_autoDir == -1 ? "SHORT" : "none"));
+      s += "\n";
+   }
+   else s += "Higher timeframe: not used\n";
+   for (int k = 0; k < g_nSides; k++)
+   {
+      string nm = S.dirMode == 3 ? (k == 0 ? "LONG side" : "SHORT side") : "Setup";
+      if (g_side[k].dir != 0) s += nm + ": waiting " + g_side[k].Id() + " R" + IntegerToString(g_side[k].rule) + "  entry " + Px(g_side[k].ent) + "  stop " + Px(g_side[k].sl) + "  target " + Px(g_side[k].tgt) + "\n";
+      else s += nm + ": no setup waiting   open trades " + IntegerToString(g_io[k].nPos) + "\n";
+      s += "   last: " + g_note[k] + "\n";
+      s += "   armed " + IntegerToString(g_side[k].cntArm) + "  filled " + IntegerToString(g_side[k].cntFill) + "  cancelled " + IntegerToString(g_side[k].cntCanc) + "  skipped (stop size) " + IntegerToString(g_side[k].cntSkip) + "\n";
+   }
+   int nm2 = (S.dirMode == 3 && S.hedgeMoney == 0) ? 2 : 1;
+   for (int m = 0; m < nm2; m++)
+   {
+      string who = nm2 == 2 ? (m == 0 ? "LONG side money: " : "SHORT side money: ") : (S.dirMode == 3 ? "Shared money: " : "Money: ");
+      s += who + "risk next " + Mo(g_money[m].riskNow) + "   losses carried " + (S.seqMode == 0 ? "off" : Mo(g_money[m].Car())) +
+           "   today " + Mo(g_money[m].dayPnl) + " (" + IntegerToString(g_money[m].dayTrades) + " trades)";
+      if (S.flMode != 0) s += "   floor " + Mo(g_money[m].flFloor) + "  cushion " + Mo(g_money[m].flCush);
+      if (S.ldOn) s += g_money[m].LdHalt(g_t) ? "   PAUSED until " + TimeToString(UtcToSrv(g_money[m].ldUntil), TIME_DATE | TIME_MINUTES) + " (server)" : "   losses in a row " + IntegerToString(g_money[m].ldRun) + "/" + IntegerToString(S.ldN);
+      string blk = g_side[m].Blocked();
+      s += "\n   blocked now: " + (blk == "" ? "no" : blk) + "\n";
+   }
+   if (S.ndOn) s += "News dates: " + NdText() + "\n";
+   if (g_lastErr != "") s += "Last message: " + g_lastErr + "\n";
+   Comment(s);
+}
+
+//---------------------------------------------------------------- events
+int OnInit()
+{
+   g_sym    = _Symbol;
+   g_tf     = (ENUM_TIMEFRAMES)_Period;
+   g_cs     = PeriodSeconds(g_tf);
+   g_tester = MQLInfoInteger(MQL_TESTER) != 0;
+   g_visual = MQLInfoInteger(MQL_VISUAL_MODE) != 0;
+   g_ready  = false;
+   g_badInit = false;
+   string bad = CheckInputs();
+   if (bad != "") { Alert("SMC EA: ", bad); return INIT_PARAMETERS_INCORRECT; }
+   g_contract = SymbolInfoDouble(g_sym, SYMBOL_TRADE_CONTRACT_SIZE);
+   g_volMin   = SymbolInfoDouble(g_sym, SYMBOL_VOLUME_MIN);
+   g_volMax   = SymbolInfoDouble(g_sym, SYMBOL_VOLUME_MAX);
+   g_volStep  = SymbolInfoDouble(g_sym, SYMBOL_VOLUME_STEP);
+   g_tickSize = SymbolInfoDouble(g_sym, SYMBOL_TRADE_TICK_SIZE);
+   g_point    = SymbolInfoDouble(g_sym, SYMBOL_POINT);
+   g_digits   = (int)SymbolInfoInteger(g_sym, SYMBOL_DIGITS);
+   if (g_contract <= 0 || g_volStep <= 0 || g_tickSize <= 0) { Alert("SMC EA: symbol information is not available yet - attach again"); return INIT_FAILED; }
+   g_srvBase = (long)MathRound(InSrvHours * 3600.0);
+   g_htf     = HtfOf();
+   g_htfSec  = PeriodSeconds(g_htf);
+   g_netting = AccountInfoInteger(ACCOUNT_MARGIN_MODE) != ACCOUNT_MARGIN_MODE_RETAIL_HEDGING;
+   bool bos  = InSig != SIG_CHOCH && InSig != SIG_CHOCH_FAV && InSig != SIG_CHOCH_AGN && InSig != SIG_CHOCH_AUTO;
+   if (g_netting && (InDirMode == DIR_HEDGE || InPpOn || bos))
+   {
+      Alert("SMC EA: this is a NETTING account. Hedge mode, partial profit (34 e) and BOS signals need a HEDGING account (one position per trade).");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   if (g_netting) Print("SMC EA: netting account - one position at a time. A hedging account is recommended.");
+   FillSettings();
+   S.Derive();
+   g_htfUse = S.htfOk;
+   g_P = "SMC" + IntegerToString(InMagic) + "_" + g_sym + "_";
+   g_trade.SetExpertMagicNumber((ulong)InMagic);
+   g_trade.SetDeviationInPoints((ulong)InSlip);
+   g_trade.SetTypeFillingBySymbol(g_sym);
+   g_trade.SetMarginMode();
+   g_trade.LogLevel(LOG_LEVEL_ERRORS);
+   long em = SymbolInfoInteger(g_sym, SYMBOL_EXPIRATION_MODE);
+   g_otime = (em & SYMBOL_EXPIRATION_GTC) != 0 ? ORDER_TIME_GTC : ORDER_TIME_DAY;
+   if (!g_tester)
+   {
+      long liveOff = (long)(TimeTradeServer() - TimeGMT());
+      long ruleOff = TzOff((long)TimeGMT(), g_srvBase, (int)InSrvDst);
+      if (MathAbs((double)(liveOff - ruleOff)) > 900)
+         Print("SMC EA WARNING: the broker clock is UTC", liveOff >= 0 ? "+" : "", DoubleToString(liveOff / 3600.0, 1), " now, but the settings say UTC",
+               ruleOff >= 0 ? "+" : "", DoubleToString(ruleOff / 3600.0, 1), ". Check 'Broker server time' in group 40 - session hours depend on it.");
+   }
+   if (!S.htfOk && S.on && (S.r2 || S.hfEff || S.eqOn || S.agn || S.autoM))
+      Print("SMC EA: the higher timeframe ", TfName(g_htf), " is not above the chart - RULE 2 / filters work as in TradingView (no higher timeframe).");
+   EventSetTimer(1);
+   TryInit();
+   return INIT_SUCCEEDED;
+}
+void OnDeinit(const int reason)
+{
+   EventKillTimer();
+   if (reason == REASON_REMOVE || reason == REASON_ACCOUNT)
+   {
+      if (InExec == EX_PEND && g_ready) DeleteOurPending();
+      if (!g_tester) GlobalVariableDel(g_P + "T");
+   }
+   ObjectsDeleteAll(0, g_P);
+   Comment("");
+}
+void OnTradeTransaction(const MqlTradeTransaction &trans, const MqlTradeRequest &request, const MqlTradeResult &result)
+{
+   if (trans.type == TRADE_TRANSACTION_DEAL_ADD) g_dealFlag = true;
+}
+void OnTimer()
+{
+   if (!g_ready) TryInit();
+}
+void OnTick()
+{
+   if (!g_ready) { if (!TryInit()) return; }
+   datetime t0 = iTime(g_sym, g_tf, 0);
+   if (t0 > g_curOpen)
+   {
+      MqlRates rr[];
+      int n = CopyRates(g_sym, g_tf, g_lastBar + 1, t0 - 1, rr);
+      if (n < 0) return;   // history not ready yet - try on the next tick
+      for (int i = 0; i < n; i++)
+      {
+         if (rr[i].time <= g_lastBar || rr[i].time >= t0) continue;
+         ProcessBar(rr[i], false, i + 1 < n ? rr[i + 1].time : t0);
+         g_lastBar = rr[i].time;
+         ExecuteAll();
+         SaveState(g_lastBar);
+      }
+      g_curOpen = t0;
+      Panel();
+      return;
+   }
+   if (ArraySize(g_clsTk) > 0) DoCloses();
+   if (ArraySize(g_stpTk) > 0) DoStops();
+   if (InExec == EX_TOUCH) CheckTouch();
+   else SyncPending();
+}

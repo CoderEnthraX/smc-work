@@ -1,0 +1,300 @@
+SMC STRUCTURE EA v11.1 (+ HEDGE) - NOTES
+=========================================
+File: SMC_Structure_EA_v11.1.mq5 (MetaTrader 5 Expert Advisor, MQL5)
+Owner: Punit. Times in these notes are IST unless they say otherwise.
+
+
+1. WHAT IT IS
+-------------
+- The TradingView strategy "SMC Structure Strategy" v11.1, the same
+  rules, running inside MetaTrader 5. No TradingView, no webhook, no
+  TheConnector.
+- The same market structure engine (swings, BOS* / CHOCH* lines,
+  CHOCH / BOS), the same higher-timeframe engine, RULE 1 / RULE 2,
+  every safety setting, loss recovery (A / B / C, A+ / B+ / C+), split,
+  hard cap, account floor, pause after losses, equilibrium gate,
+  favourable / against / auto modes, news windows, US calendar and
+  holidays, the v9.0 ideas a-g, stop management.
+- PLUS a HEDGE mode: longs and shorts open at the same time, with the
+  loss memory either per side or shared (section 7).
+- All settings have the same names, order and defaults as TradingView.
+  Defaults = TradingView defaults, so set YOUR values (section 9).
+
+
+2. HOW IT WAS CHECKED - please read
+-----------------------------------
+I cannot run MetaTrader 5 here: MetaEditor (the MQL5 compiler) only
+runs on Windows. So I checked it in three other ways.
+
+a) The decision part (structure, higher timeframe, entries, risk,
+   recovery, pauses, news, hedge) is plain code. I compiled that same
+   text as C++ and ran it on your 5.75 years of FxPro 1-minute gold
+   (2,037,534 bars). I compared every trade with my simulator, the one
+   that matched TradingView exactly (112 trades, +793.31):
+     105 runs (1-minute and 15-minute, every option): 104 identical;
+     in 1 run one trade differed only because a target was exactly
+     equal to a candle's low and the two programs rounded the tie
+     differently (MT5 rounds prices to 0.01, which removes such ties)
+     example: your 1-minute settings, 2,839 trades, -18,514.19 in both
+     hedge = a Longs-only run + a Shorts-only run, trade for trade
+     shared hedge money: checked with a separate calculation,
+     0 differences in 6 runs
+
+b) The WHOLE EA file (also the MT5 part: orders, stops, deal history,
+   restarts) ran inside a small fake MetaTrader 5 that I wrote: prices
+   move tick by tick (one tick per 0.01), limit orders, stops and
+   targets fill like a broker, deals carry commission.
+     5.75 years, your 1-minute settings: 2,817 trades, the same as the
+     check in a), to the cent, in both entry modes (section 6)
+     the 15-minute best setting: 185 trades, the same, to the cent
+     484 forced restarts in the middle of candles (waiting orders,
+     open trades, moved stops, Rule C, pauses, hedge): identical to
+     the run without restarts, in 10 of 10 tests
+
+c) Line-by-line reading for MQL5 rules.
+
+NOT checked here: the real MQL5 compiler, your broker's real rules
+(minimum stop distance, trading hours, margin), real spread, real
+slippage. Compile it (F7) and send me any error lines (section 3).
+A test can only show that the EA follows the rules; it does not make
+the strategy profitable (section 12).
+
+
+3. INSTALL (about 5 minutes)
+----------------------------
+1. MT5 menu: File > Open Data Folder > MQL5 > Experts.
+   Copy SMC_Structure_EA_v11.1.mq5 into that folder.
+2. Press F4 (MetaEditor). Open the file. Press F7 (Compile).
+   The bottom box must say "0 errors". Warnings are fine.
+   If there is an error: send me a screenshot or copy the red lines.
+3. Back in MT5: Navigator > Expert Advisors > right-click > Refresh.
+4. Open an XAUUSD (FxPro: GOLD) chart, 1 minute (or 15 minutes).
+5. Drag "SMC_Structure_EA_v11.1" onto the chart.
+   Common tab: tick "Allow Algo Trading".
+   Inputs tab: your settings (section 9). OK.
+6. The "Algo Trading" button in the toolbar must be green.
+7. Experts tab (bottom, Toolbox) should say:
+   "SMC EA v11.1 ready: 20000 bars of history, structure UP ..."
+   The panel (top left of the chart) shows the structure, the waiting
+   setup, the risk of the next trade and what is blocked now.
+
+Account: use a HEDGING account (FxPro offers it). Hedge mode, stacked
+BOS trades and partial profit need it. On a NETTING account the EA only
+runs "CHOCH only" without partial profit, one trade at a time.
+
+One chart per symbol. If you run the EA on two charts, give each a
+different Magic number (group 40). Do not change the magic number while
+the EA has trades open - it would not see them any more.
+
+
+4. HOW IT TRADES (timing - the same as TradingView)
+---------------------------------------------------
+- Everything is decided at the CLOSE of each candle (in MT5: on the
+  first price of the next candle), like TradingView's bar-close
+  strategy.
+- An order decided at a candle close works from the next candle.
+  Example (1 minute): the 10:05 candle closes with a CHOCH up. At
+  10:06:00 the EA arms the buy at the RULE 1 level, e.g. 2345.20.
+- Stops and targets are real orders on every trade at the broker, so
+  a trade is protected even if the EA or the VPS stops.
+- Closes (02:00 force close, weekend, news window, opposite signal)
+  go at the first price of the next candle - where TradingView fills
+  them too.
+- Moved stops (group 32 step / break-even, trailing stop) are changed
+  at the candle close.
+
+
+5. NEW SETTINGS (not in TradingView)
+------------------------------------
+Group 33  Trade direction - a 4th choice "Hedge - longs and shorts at
+          the same time (two sides)".
+          "hedge: loss recovery, floor, pause and daily limits":
+          "Each side its own" (default) or "Shared by both sides".
+Group 40  EA - broker, clocks, chart:
+  Magic number                 111001. A different one per chart.
+  Order comment                "SMC". Trades show "SMC L12", "SMC S13".
+  How entries are executed     touch (default) or pending (section 6)
+  Max slippage                 30 points = 0.30 USD on gold
+  Broker server time           2 hours, European summer time = FxPro.
+                               The EA checks this at the start and
+                               warns in the Experts tab if it is wrong.
+  Bars of history              20,000 - used to build the structure
+                               before the first trade
+  After a restart, keep a ...  5 bars (section 10)
+  Draw the main structure      BOS* / CHOCH* lines, CHOCH / BOS marks
+Group 20  "Session timezone" is two settings in the EA: hours from UTC
+          (India 5.5) and summer time (India: none). London: 0 and
+          European; New York: -5 and US.
+Groups 22 and 30 (webhook, TheConnector) are not in the EA - it trades
+          directly.
+
+
+6. ENTRY MODES (group 40 "How entries are executed")
+----------------------------------------------------
+TOUCH (default) - "Like TradingView": the EA watches the price. When
+  the chart price (bid) reaches the entry level, it sends a market
+  order with the stop and target. This is TradingView's fill rule and
+  what TheConnector does today. A buy is filled at the ask, so you pay
+  the spread on the entry. Needs the EA running (VPS).
+PENDING - a buy limit / sell limit waits at the broker. A buy limit
+  fills only when the ASK reaches it (with a spread of 0.20 the price
+  must go 0.20 lower than on TradingView). Orders stay at the broker
+  when the EA is off - but then nobody closes trades at 02:00 or on
+  Friday.
+In both modes: if the price is already through the entry when the
+order is sent (a gap), the EA buys / sells at once at market, as
+TradingView fills at the open.
+Every price is rounded to the broker's 0.01 step the safe way: a buy
+entry and a buy stop down, a buy target up (the opposite for a sell),
+so an order fills only when TradingView's would. Tested: this changes
+no trade.
+
+
+7. HEDGE MODE (group 33)
+------------------------
+The EA runs two sides on the same market structure:
+  LONG side  - takes only buy signals (like a TradingView copy set to
+               "Longs only")
+  SHORT side - takes only sell signals ("Shorts only")
+Each side follows every rule by itself: its own waiting setup, its
+own trades, close-and-reverse closes only its own trades.
+
+Example (close and reverse OFF):
+  10:05 CHOCH up    -> LONG side buys at 2345.20, stop 2338.70
+  10:40 CHOCH down  -> the long trade stays open; SHORT side sells at
+                       2352.80, stop 2359.30. Both trades are open.
+  Net exposure can be zero - that is normal in a hedge.
+
+Loss recovery, account floor, pause after losses, daily limits:
+  "Each side its own"  - each side has its own memory (exactly two
+                         TradingView copies). Checked: identical to
+                         a Longs-only + a Shorts-only run.
+  "Shared by both"     - one memory for the account. Example with
+                         Rule C, split 1, base 50: the long side loses
+                         120 -> the next trade on EITHER side risks
+                         120 (Rule C risks the loss carried).
+                         The pause counts losses from both sides in the
+                         order they closed. Max trades per day counts
+                         both sides.
+What the tests said (2021-2026, 1 minute, your entries): hedge doubled
+the losses (-30,771 vs -18,514); shared Rule C emptied a 10,000
+account in every version. I do not recommend hedge with loss recovery.
+
+
+8. DIFFERENCES FROM TRADINGVIEW (honest list)
+---------------------------------------------
+1. Prices: FxPro is not OANDA (about +0.25 USD). Different candles can
+   give different swings. Earlier test: 85 of ~114 trades identical in
+   3 months; all differences came from the price feed.
+2. Costs: real spread, commission and swap. TradingView has no spread.
+   A sell's stop and target are triggered by the ASK (a little early
+   for the stop, a little late for the target).
+3. Loss recovery adds up the REAL money of each trade (profit +
+   commission + swap). TradingView uses its own commission estimate.
+4. "loss recovery counts from": "the whole history" = every trade of
+   this EA (same magic, same symbol) on this account; "when the EA
+   first started" = saved on the first start (in the Strategy Tester:
+   the test start); "a date I choose" = UTC.
+5. Group 23 (commission) is used only to SIZE trades and to push the
+   target out, as in TradingView. Copy your TradingView values.
+6. The structure is built from the last 20,000 bars, not the whole
+   chart. After the first few swings both agree.
+7. When you attach the EA it waits for the next signal. A setup that
+   was armed earlier in history is not taken.
+8. Higher timeframe = MT5's own 15m / 1h / 4h / 1D candles of the last
+   CLOSED candle. FxPro's 4h candles start at 17:00 New York, like
+   TradingView's OANDA candles.
+9. Minimum / maximum lot: the broker's. A size below 0.01 lot is
+   skipped (counted as "skipped (stop size)"); a size above the
+   maximum is cut to the maximum.
+10. TradingView-only items are not in the EA: the webhook, the "refused
+   by TradingView" and "missed stop" safety nets, the counter table
+   (the EA shows a panel) and the audit labels (the EA writes them in
+   the Experts tab when "Signal audit" is ON).
+
+
+9. YOUR SETTINGS
+----------------
+Your 1-minute settings (as told in chat):
+  Take trades on                       CHOCH only
+  RULE 1 / RULE 2                      ON / ON
+  RULE 1 pullback %                    25
+  Target R                             3
+  Stop buffer                          1.0
+  Close and reverse                    OFF
+  Session timezone                     5.5, no summer time
+  Entries from / stop at / force close 6 / 23 / 2
+  Weekend cutoff                       Friday, 23
+  BASE risk                            50
+  Max leverage                         100
+  Loss recovery                        Off (advised)
+  Cancel a waiting order on new BOS    ON
+Strategy Tester deposit: 10,000 USD, leverage 1:100 or your account's.
+
+The 15-minute "best" setting (group 34 / 36 / 37 as in my earlier
+page): CHOCH only - auto, RULE 1 + 2, pullback 50, target 2,
+buffer 1, reverse OFF, cancel on new BOS OFF, Rule C split 1, cap 300
+"Clamp", pause 4 losses / 3 days. READ THE CORRECTION IN SECTION 12.
+
+
+10. RESTARTS (VPS reboot, terminal update, settings change)
+-----------------------------------------------------------
+- Every candle the EA saves its waiting setup in MT5 (Tools > Global
+  Variables, names start with SMC<magic>_<symbol>_).
+- After a restart of up to 5 missed candles it carries on exactly as if
+  nothing happened (tested: 484 restarts, identical results).
+- More than 5 missed candles: the waiting setup is dropped and old
+  pending orders of this EA are deleted; it waits for the next signal.
+  Open trades keep their stops and targets and are still managed
+  (02:00 close, weekend, stop moves).
+- The loss memory (Rule A / B / C), floor, pause and daily counts are
+  rebuilt from the account's trade history at every start.
+- Removing the EA from the chart deletes its pending orders.
+
+
+11. STRATEGY TESTER (Ctrl+R)
+----------------------------
+  Expert:   SMC_Structure_EA_v11.1
+  Symbol:   GOLD / XAUUSD       Timeframe: M1 (or M15)
+  Model:    "Every tick based on real ticks" (most accurate) or
+            "1 minute OHLC" (much faster)
+  Deposit:  10000 USD           Leverage: 1:100
+  Inputs:   your settings
+  Visual mode shows the structure lines and the entry / stop / target.
+The tester includes the broker's spread and commission, so results are
+a little worse than TradingView. To compare with TradingView, compare
+the trade lists of the same weeks.
+
+
+12. CORRECTION - the 15-minute "best" setting
+---------------------------------------------
+While checking the EA I found a mistake in my earlier 15-minute test.
+It used 4-hour candles that start at 00:00 UTC. TradingView (OANDA)
+and FxPro MT5 start 4-hour candles at 17:00 New York time. With the
+real candles the same setting gives (one 10,000 account, 2021-2026):
+
+  4h candles start at          trades   total    losing years
+  00:00 UTC (earlier test)        197   +2,747   none
+  17:00 New York (real)           186   +1,069   2022, 2023, 2024
+  same, loss recovery off         179      +61   2022, 2023, 2024
+
+So it is NOT profitable in every year, and without Rule C it is about
+break-even. 3 losing years in 6 is not an edge. Check it in
+TradingView (15m OANDA) yourself before anything else.
+The 1-minute results do not change (the 15-minute candles of the
+higher timeframe start on the quarter hour everywhere).
+
+Past prices only. Nothing here predicts the future or promises profit.
+Use a demo account first.
+
+
+13. MESSAGES IN THE EXPERTS TAB
+-------------------------------
+"ready: ..."                 the start went well
+"WARNING: the broker clock"  group 40 server time is wrong
+"skipped: ... below the broker minimum"  the size is under 0.01 lot
+"REFUSED by the broker"      not enough margin, market closed, etc.
+"Entry ... skipped: the price is already past its stop or target"
+                             TradingView would open and close it at once
+"resumed after a restart"    a waiting setup continued
+"old pending order(s) ... deleted"  after a long stop of the EA

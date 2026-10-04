@@ -1,0 +1,10 @@
+*.pkl
+*.bin
+*.csv
+*.txt
+core_x.inc
+ea_x.cpp
+harness
+harness2
+simmain
+__pycache__/
