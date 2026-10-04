@@ -220,6 +220,13 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   years lose); 0.02% -22,350; 0.05% -19,840; 0.1% -17,216; 0.2% -12,519 (-0.12R); 0.5% -6,768 (-0.08R); 50 pips -10,583
   (-0.10R); all but 1.0 / 0.02% lose every year. Wider loses less per trade, none profitable. 3 months (OANDA, port112):
   1.0 +793, 0.02% +794, 0.05% +284, 0.1% -277, 0.2% -698, 50 pips -592 (opposite order). tools/ea/bueffect.py.
+- **User's 10 TradingView screenshots (Oct 2026), 1m FxPro, 1 Jan 2023 - 2 Oct 2026**: CHOCH only, R1+R2, pb 25, 3R,
+  buffer 1.0, reverse OFF, PULLBACK RULE 3 (pbSwp2) ON, hours 06-23 / 02:00 / weekend, 50 risk, lev 100, Rule C split 3
+  cap 100,000 Day, pause 4/3, auto US news ON, commission 30/lot/side. Python (porthp + pbSwp2, scratchpad u23/portu.py)
+  = core harness to the cent: 564 trades, -9,974.93 (one 10k account empty: <500 on 30 Sep 2024, last trade 5 Nov 2024;
+  Aug 2024 -8,800, risk up to 4,082). Fresh 10k yearly: 2023 +37, 2024 empty, 2025 +4,203, 2026 +1,608. Recovery off:
+  1,266 trades -3,843 (2023 -0.21R, 2024 -0.12R, 2025 +0.08R, 2026 -0.02R). User's TV screen showed PF 1.15 - asked for
+  the TV Performance Summary + List of Trades. Page: https://claude.ai/artifact/FDhyjgQDQ4kCyWSZmwauDE
 
 ## Open items / next steps
 00. **Group 41**: ask the user to attach the EA once with "save the calendar to a file" ON and send
