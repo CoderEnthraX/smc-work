@@ -19,6 +19,18 @@
   (group 20: on/off, 8 positions, Small/Normal/Large, Full ~50 rows / Short ~15; MT5 rows on top: structure,
   HTF now, waiting setup, last signal, open P&L) and the higher timeframe drawn in purple (group 40: HTF
   BOS* / CHOCH* levels, EQ line, last 50 HTF CHOCH / BOS marks; 0 = none). Table counts start at EA start.
+  **Group 41 (EA only, both OFF by default)**: news windows from MT5's built-in economic calendar (currencies
+  "USD", High / High+Medium, 10 min before / 20 after, closes per group 25 "When a window starts", calendar
+  holidays added when group 29 "Trade on US holidays" is OFF; master group 25 ON; intraday only) and
+  "No NEW trades N hours before news" (default 1 h; calendar + group 29 releases; cancels the waiting order,
+  skips signals, open trades run on). Live: reads now-3d..+35d every hour; calendar times -> UTC by the clock
+  rule or today's offset, picked by US 08:30 NY releases. Tester has no calendar: user saves
+  Common\Files\SMC_calendar.csv once live ("save the calendar to a file" ON; 2020-01-01 .. +60 days, UTC;
+  columns utc,text,cur,imp,type,name); without the file a tester run with the calendar ON fails at init.
+  Checked (tools/ea: calgen.py, calflags.py, calexport.py, caltests.py): OFF = byte-identical outputs; export
+  exact; whole EA (file / live both clocks / hedge / restarts / EUR / calendar not answering) = core; Python
+  separate calc (calflags.py + porthp.py `pre` flags) = core, 1m and 15m.
+  Forex Factory not used (WebRequest + this week only). Real MT5 calendar NOT tested yet.
 - Work branch: `claude/tradingview-alerts-market-structure-53wugf` (push there; no PRs unless asked).
 - Build / test tools: `tools/` (see `tools/README.md`).
 
@@ -194,6 +206,10 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   every year. Not worth an MT5 EA. Page: https://claude.ai/artifact/6CZ9PWMAfb516YtBKwAcfs
 
 ## Open items / next steps
+00. **Group 41**: ask the user to attach the EA once with "save the calendar to a file" ON and send
+   SMC_calendar.csv -> test the REAL news list (CPI, FOMC ...) on 2021-2026. With group 29 releases only
+   (1m, user settings): none -18,514 / windows -18,844 / +pre 1 h -18,708 / 2 h -18,302 / 4 h -18,070,
+   all -0.13R per trade (tools/ea/preeffect.py) -> news blocking does not change the edge.
 0. **MT5 EA**: user compiles `SMC_Structure_EA_v11.1.mq5` in MetaEditor (F7) and sends any error lines; then
    Strategy Tester (Every tick based on real ticks) and a demo account. Fix compile errors with a patch, re-run
    `tools/ea` checks before delivering.

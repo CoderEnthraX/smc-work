@@ -305,6 +305,7 @@ def run(bars, P=None, htf=None, log=False):
     kmax = max(0, int(math.ceil(rr - 1e-9)) - 1)
     sess2 = p["sess2"]
     NEWS = p.get("news")   # v11.1 group 29: True for every bar inside an automatic US news window
+    PRE = p.get("pre")     # EA group 41: True for every bar where 'no new trades before news' applies (blocks new entries only)
 
     def fill_close(tr, px, bi, why):
         nonlocal eq_closed
@@ -514,7 +515,8 @@ def run(bars, P=None, htf=None, log=False):
         eqBlock = p["eqOn"] and not autoMode and not eqOpen
         autoDir = (stT15 if eqOpen else -stT15) if autoMode else 0
         nwNow = NEWS is not None and NEWS[bi]
-        stGo = not stDayHalt and not wkB and not seqHalt and not ldHalt and not eqBlock and not nwNow
+        preNow = PRE is not None and PRE[bi]
+        stGo = not stDayHalt and not wkB and not seqHalt and not ldHalt and not eqBlock and not nwNow and not preNow
         clsWhy = ""
 
         def cancel():

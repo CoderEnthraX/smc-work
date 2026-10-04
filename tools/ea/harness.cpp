@@ -175,6 +175,30 @@ int main(int argc, char **argv)
    S.lqOn = cb("lqOn", false); S.lqMin = cd("lqMin", 1.5); S.ppOn = cb("ppOn", false); S.ppPct = cd("ppPct", 50); S.ppR = cd("ppR", 1); S.ppBe = cb("ppBe", true);
    S.pdOn = cb("pdOn", false); S.pdPct = cd("pdPct", 50); S.lsOn = cb("lsOn", false); S.lsN = (int)cl("lsN", 3);
    S.flMode = (int)cl("flMode", 0); S.flAmt = cd("flAmt", 2000); S.flLock = cd("flLock", 50); S.flPct = cd("flPct", 2.5);
+   S.holTrade = cb("holTrade", true); S.auPre = (int)cl("auPre", 10); S.auPost = (int)cl("auPost", 20);
+   S.calOn = cb("calOn", false); S.calHol = cb("calHol", true); S.calPre = (int)cl("calPre", 10); S.calPost = (int)cl("calPost", 20);
+   S.preOn = cb("preOn", false); S.preSec = (long)std::llround(cd("preHrs", 1.0) * 3600.0);
+   if (cfg.count("simCal"))
+   {   // group 41: the news list straight into the core (the EA's MT5 part does the same from the MT5 calendar / the saved file)
+      std::ifstream cf(cfg["simCal"]); string ln; std::vector<std::pair<long, int>> rec;   // (time, 0 news / 1 holiday)
+      int imp2 = (int)cl("calImp", 0) == 1 ? 2 : 3;
+      string cur = cfg.count("calCur") ? cfg["calCur"] : string("USD");
+      while (std::getline(cf, ln))
+      {
+         if (ln.empty() || ln[0] == '#') continue;
+         std::vector<string> f; std::stringstream ss(ln); string x; while (std::getline(ss, x, ',')) f.push_back(x);
+         if (f.size() < 6 || f[2] != cur) continue;
+         long t = atol(f[0].c_str()); int imp = atoi(f[3].c_str()), typ = atoi(f[4].c_str()); bool exact = f.size() < 7 || f[6] != "0";
+         if (typ == 2) rec.push_back({t, 1});
+         else if (imp >= imp2 && exact) rec.push_back({t, 0});
+      }
+      std::sort(rec.begin(), rec.end());
+      for (auto &r : rec)
+      {
+         if (r.second == 1) { long dn = r.first / 86400; if (g_calHol.Size() == 0 || g_calHol.At(g_calHol.Size() - 1) != dn) g_calHol.Add((int)dn); }
+         else if (g_calT.Size() == 0 || (long)g_calT.At(g_calT.Size() - 1) != r.first) g_calT.Add((double)r.first);
+      }
+   }
    S.ldOn = cb("ldOn", false); S.ldN = (int)cl("ldN", 3); S.ldD = (int)cl("ldD", 2); S.eqOn = cb("eqOn", false); S.eqPct = cd("eqPct", 50);
    S.cs = (int)cl("cs", 60); S.cmLots = 100; S.uv = 1.0; S.minLot = cd("minLot", 0.01); S.tick = 0.01;
    long htfSec = cl("htfSec", 900);

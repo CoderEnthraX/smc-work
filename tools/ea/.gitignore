@@ -8,3 +8,4 @@ harness
 harness2
 simmain
 __pycache__/
+*.log

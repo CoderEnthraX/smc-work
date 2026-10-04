@@ -17,6 +17,8 @@ Owner: Punit. Times in these notes are IST unless they say otherwise.
   holidays, the v9.0 ideas a-g, stop management.
 - PLUS a HEDGE mode: longs and shorts open at the same time, with the
   loss memory either per side or shared (section 7).
+- NEW (group 41): news windows from MT5's own economic calendar, and
+  "No NEW trades in the hours before news" - both OFF (section 15).
 - All settings have the same names, order and defaults as TradingView.
   Defaults = TradingView defaults, so set YOUR values (section 9).
 
@@ -50,6 +52,7 @@ b) The WHOLE EA file (also the MT5 part: orders, stops, deal history,
      484 forced restarts in the middle of candles (waiting orders,
      open trades, moved stops, Rule C, pauses, hedge): identical to
      the run without restarts, in 10 of 10 tests
+     group 41 (calendar news): see section 15
 
 c) Line-by-line reading for MQL5 rules.
 
@@ -133,6 +136,8 @@ Group 20  "Session timezone" is two settings in the EA: hours from UTC
           European; New York: -5 and US.
 Groups 22 and 30 (webhook, TheConnector) are not in the EA - it trades
           directly.
+Group 41  News from MT5's economic calendar, and "No NEW trades in the
+          hours before news" - both OFF by default (section 15).
 
 
 6. ENTRY MODES (group 40 "How entries are executed")
@@ -272,6 +277,8 @@ buffer 1, reverse OFF, cancel on new BOS OFF, Rule C split 1, cap 300
 The tester includes the broker's spread and commission, so results are
 a little worse than TradingView. To compare with TradingView, compare
 the trade lists of the same weeks.
+Calendar news (group 41) in the tester: save the calendar file on a
+live chart first (section 15).
 
 
 12. CORRECTION - the 15-minute "best" setting
@@ -306,6 +313,12 @@ Use a demo account first.
                              TradingView would open and close it at once
 "resumed after a restart"    a waiting setup continued
 "old pending order(s) ... deleted"  after a long stop of the EA
+"calendar times -> UTC by ..."      group 41: how it reads the times
+"calendar saved - ..."              group 41: the file for the tester
+"the MT5 economic calendar did not answer"  live: the last list is
+                                    kept, it tries again in an hour
+"the calendar file ... was not found"       tester: save it first
+"this test runs outside the dates of the calendar file"  save again
 
 
 14. THE TABLE AND THE HIGHER TIMEFRAME ON THE CHART
@@ -369,3 +382,139 @@ can differ a little from this simpler higher-timeframe trend (the same
 is true in TradingView). To look at one anyway: open GOLD M15, attach
 the EA with "Enable trading" OFF and a DIFFERENT magic number - it then
 only draws.
+
+
+15. NEWS FROM THE MT5 ECONOMIC CALENDAR (group 41) - NEW
+--------------------------------------------------------
+Both new switches are OFF by default: with them OFF the EA trades
+exactly as before (tested, section 2).
+
+WHERE THE NEWS COMES FROM
+MT5 has its own economic calendar (MetaQuotes; Toolbox > Calendar).
+The EA reads it directly: no internet setting, no key, no website.
+Past news AND the next weeks, with exact times and impact (high /
+medium / low): NFP, CPI, FOMC, GDP, retail sales, PPI, ISM, jobless
+claims and more.
+Why not Forex Factory: an EA can read it only through MT5's WebRequest
+(you must allow the web address in the MT5 options), and its free feed
+has THIS week only - no past news, so it cannot work in the Strategy
+Tester. MT5's calendar has the same high-impact US news.
+
+THE SETTINGS (group 41, at the end of the list)
+  Economic calendar news windows   OFF (default) / ON
+  - currencies                     USD (gold moves on US news).
+                                   More: USD,EUR
+  - which news                     High impact only (default) /
+                                   High and medium impact
+  - block from ... minutes BEFORE  10
+  - until ... minutes AFTER        20
+  - calendar holidays too          ON - used only when group 29
+                                   "Trade on US market holidays" is
+                                   OFF
+  - save the calendar to a file    OFF - for the Strategy Tester
+                                   (see below)
+  No NEW trades in the hours       OFF (default) / ON
+  before news
+  - hours before the release       1 (2 = two hours, 0.5 = 30 min)
+Group 25 "News windows ON" (the master switch) must stay ON (it is ON
+by default). Like group 29, these work on charts below 1 day.
+
+A NEWS WINDOW (calendar) works like the group 25 / 29 windows:
+  - "When a window starts" (group 25): "Close any open trade"
+    (default) closes it at the next candle's first price;
+    "Leave open trades alone" keeps it running
+  - a waiting order is cancelled, no new setup inside the window
+Example: US CPI at 18:00 IST, 10 before / 20 after:
+  17:50 - 18:20 IST  no trading, an open trade is closed at 17:50
+
+NO NEW TRADES BEFORE NEWS (your idea)
+From X hours before a release until the release: no NEW trade.
+  - a waiting order is cancelled
+    ("CANCELLED - blocked (news soon - no new trades)")
+  - a new CHOCH / BOS is skipped ("SKIP - news soon - no new trades")
+  - a trade that is ALREADY open keeps its stop and target and runs
+    on; the news window itself (above) then closes it, if set so
+Example: CPI at 18:00 IST, hours 1, window 10 / 20:
+  17:00 - 17:50  no new trade, open trades run
+  17:50 - 18:20  news window: open trades closed, no trading
+  18:20          normal again
+It uses the calendar news (group 41) AND the group 29 automatic US
+releases - whichever is ON. With neither ON it does nothing.
+
+STRATEGY TESTER - one extra step
+MT5 has NO calendar inside the Strategy Tester. So:
+  1. Put the EA on a LIVE or DEMO chart (any symbol, any timeframe)
+     with "save the calendar to a file" ON. Your other settings do
+     not matter ("Enable trading" can be OFF).
+  2. The Experts tab says "calendar saved - ... news and ...
+     holidays ... -> Common\Files\SMC_calendar.csv".
+  3. Remove it (or switch the save OFF). Now the Strategy Tester can
+     test with "Economic calendar news windows" ON - the EA reads the
+     file.
+  - The file holds 1 Jan 2020 to 2 months after the day you saved it,
+    for the currencies in the setting at that time. Save again later
+    to add new months or other currencies.
+  - Without the file, a test with the calendar ON stops at the start
+    and says why (Journal tab).
+  - Use the tester's local agents (the MQL5 Cloud agents cannot read
+    the Common folder).
+  - Please send me this file: then I can test the REAL news list
+    (CPI, FOMC, ...) on your 5.75 years.
+
+CLOCK: MT5 gives calendar times on the broker clock. The EA turns them
+into real time and checks itself which way is right with the US
+releases at 08:30 New York; the Experts tab says which it used.
+LIVE: the EA reads the next 5 weeks at the start and again every hour.
+If the calendar does not answer, an alert says so and the EA trades
+WITHOUT calendar blocks until it answers (table: NOT AVAILABLE).
+
+HOLIDAYS: the calendar's holidays for your currencies (US: e.g. Good
+Friday, Columbus Day, Veterans Day) are added to group 29's US market
+holidays, on the New York date - only when group 29 "Trade on US
+market holidays" is OFF and "calendar holidays too" is ON.
+
+THE TABLE (section 14) shows
+  Calendar news (group 41) - next   CPI m/m (USD, high)  Wed 15 Oct
+                                    18:00  (in 2h 05m)
+                                    "WINDOW NOW - ..." inside a window
+  - list from                       MT5 calendar (live) / the file
+  - calendar holidays               next holiday, or "not used"
+  No new trades before news         1 h before calendar news
+                                    "NOW - no new trades" when active
+  BLOCKED NOW                       "news soon - no new trades"
+The Short table shows the first and the last of these when ON.
+
+HOW IT WAS CHECKED
+I cannot reach MT5's calendar here, so I gave the fake MT5 (section
+2 b) a made-up calendar for 2020-2026: the group 29 US releases as
+high impact, plus medium news, low news, news with no exact time,
+EUR news, US and EUR holidays. Then:
+  - the EA saved it to the file: every line right (both clock kinds,
+    USD / EUR / both)
+  - the whole EA (fake MT5) = the EA's core, trade for trade, to the
+    cent, 2021 - Oct 2026: Strategy Tester mode (reads the file),
+    live mode (both kinds of broker clock), hedge, EUR, 484 restarts,
+    a calendar that does not answer at first: 13 of 13 identical
+  - my Python simulator with these rules worked out SEPARATELY (not
+    from the EA code) = the EA's core: 6 of 6 identical (1 and 15
+    minutes; windows, high + medium, holidays, group 29, no new
+    trades 0.5 / 1 / 2 hours before)
+  - calendar news = the 4 group 29 releases gives exactly the group
+    29 result (2,884 trades, -18,407.64 both)
+  - with group 41 OFF every earlier test file is byte-identical
+The field names of MT5's calendar come from the MQL5 documentation -
+the real calendar has not been tested yet: compile (F7), attach it
+once with "save the calendar" ON and send me the Experts tab lines.
+
+WILL IT HELP? (honest)
+With the 4 US releases of group 29 (the only news list with history
+here), your 1-minute settings, 2021 - Oct 2026, risk 50:
+                                  trades    total   per trade
+  no news blocks (now)             2,839  -18,514     -0.13R
+  group 29 windows -10 / +20 min   2,906  -18,844     -0.13R
+    + no new trades 1 h before     2,857  -18,708     -0.13R
+    + no new trades 2 h before     2,809  -18,302     -0.13R
+    + no new trades 4 h before     2,739  -18,070     -0.13R
+Every row loses about 0.13R per trade: blocking news does not change
+the edge. The bigger calendar list (CPI, FOMC, ...) is not tested yet
+- send me the saved file and I will run it on the 5.75 years.

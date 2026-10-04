@@ -168,7 +168,16 @@ inline long MQLInfoInteger(ENUM_MQL_INFO_INTEGER p) { return p == MQL_TESTER ? s
 inline int  PeriodSeconds(ENUM_TIMEFRAMES tf) { return TfSec(tf); }
 inline datetime TimeCurrent() { return sim::now; }
 inline datetime TimeTradeServer() { return sim::now; }
-inline datetime TimeGMT() { return sim::now - sim::srvBase; }
+// FxPro clock: UTC+2, UTC+3 in European summer time (last Sunday of March 01:00 UTC .. last Sunday of October 01:00 UTC)
+namespace sim {
+   inline long Days(int y, int m, int d) { int yy = m <= 2 ? y - 1 : y; long era = (yy >= 0 ? yy : yy - 399) / 400; long yoe = yy - era * 400; int mp = m > 2 ? m - 3 : m + 9;
+      long doy = (153 * mp + 2) / 5 + d - 1; long doe = yoe * 365 + yoe / 4 - yoe / 100 + doy; return era * 146097 + doe - 719468; }
+   inline long LastSun(int y, int m) { long dl = Days(m == 12 ? y + 1 : y, m == 12 ? 1 : m + 1, 1) - 1; long w = ((dl + 4) % 7 + 7) % 7; return dl - w; }
+   inline int  YearOf(long utc) { long z = (utc >= 0 ? utc : utc - 86399) / 86400; int y = 1970; while (Days(y + 1, 1, 1) <= z) y++; while (Days(y, 1, 1) > z) y--; return y; }
+   inline long EuOff(long utc) { int y = YearOf(utc); long s = LastSun(y, 3) * 86400 + 3600, e = LastSun(y, 10) * 86400 + 3600; return (utc >= s && utc < e) ? 10800 : 7200; }
+   inline long SrvToUtc(long srv) { long u = srv - 7200; return srv - EuOff(u); }
+}
+inline datetime TimeGMT() { return sim::SrvToUtc(sim::now); }
 inline string TimeToString(datetime t, int = 0) { return std::to_string(t); }
 inline double SymbolInfoDouble(const string &, ENUM_SYMBOL_INFO_DOUBLE p)
 {
@@ -409,3 +418,77 @@ public:
       rc = TRADE_RETCODE_POSITION_CLOSED; return false;
    }
 };
+
+// ---------------- economic calendar and files (group 41) ----------------
+enum ENUM_CALENDAR_EVENT_TYPE { CALENDAR_TYPE_EVENT, CALENDAR_TYPE_INDICATOR, CALENDAR_TYPE_HOLIDAY };
+enum ENUM_CALENDAR_EVENT_IMPORTANCE { CALENDAR_IMPORTANCE_NONE, CALENDAR_IMPORTANCE_LOW, CALENDAR_IMPORTANCE_MODERATE, CALENDAR_IMPORTANCE_HIGH };
+enum ENUM_CALENDAR_EVENT_TIMEMODE { CALENDAR_TIMEMODE_DATETIME, CALENDAR_TIMEMODE_DATE, CALENDAR_TIMEMODE_NOTIME, CALENDAR_TIMEMODE_TENTATIVE };
+struct MqlCalendarValue { ulong id, event_id; datetime time, period; int revision; long actual_value, prev_value, revised_prev_value, forecast_value; int impact_type; };
+struct MqlCalendarEvent { ulong id; ENUM_CALENDAR_EVENT_TYPE type; int sector, frequency; ENUM_CALENDAR_EVENT_TIMEMODE time_mode; ulong country_id; int unit;
+                          ENUM_CALENDAR_EVENT_IMPORTANCE importance; int multiplier; uint digits; string source_url, event_code, name; };
+struct MqlDateTime { int year, mon, day, hour, min, sec, day_of_week, day_of_year; };
+namespace sim {
+   struct CalEv { long utc; string cur; int imp, typ; bool exact; string name; ulong eid; };
+   std::vector<CalEv> cal;        // the fake MT5 calendar (UTC; a holiday at 00:00 UTC of its date)
+   int  calMode = 0;              // times shown: 0 = on the broker clock with its summer time rule, 1 = with the broker offset at the moment of the request
+   bool calFail = false;          // the calendar does not answer
+   long calFailN = 0;             // the first N requests do not answer
+   long calCalls = 0;
+   string fileDir = "simfiles/";
+   std::map<int, FILE *> files;
+   int nextFile = 1;
+}
+inline bool CalendarValueHistory(MqlArr<MqlCalendarValue> &v, datetime from, datetime to, const char *country, const string &cur)
+{
+   v.v.clear();
+   sim::calCalls++;
+   if (sim::calFail || sim::calCalls <= sim::calFailN) return false;
+   long offNow = sim::EuOff(sim::SrvToUtc(sim::now));
+   for (auto &e : sim::cal)
+   {
+      if (!cur.empty() && e.cur != cur) continue;
+      long srv = e.utc + (sim::calMode == 0 || e.typ == 2 ? sim::EuOff(e.utc) : offNow);
+      if (srv < from || (to != 0 && srv > to)) continue;
+      MqlCalendarValue x{};
+      x.id = v.v.size() + 1; x.event_id = e.eid; x.time = srv;
+      v.v.push_back(x);
+   }
+   return true;
+}
+inline bool CalendarEventById(ulong id, MqlCalendarEvent &ev)
+{
+   for (auto &e : sim::cal) if (e.eid == id)
+   {
+      ev = MqlCalendarEvent{};
+      ev.id = id;
+      ev.type = e.typ == 2 ? CALENDAR_TYPE_HOLIDAY : (e.typ == 1 ? CALENDAR_TYPE_INDICATOR : CALENDAR_TYPE_EVENT);
+      ev.importance = e.imp == 3 ? CALENDAR_IMPORTANCE_HIGH : (e.imp == 2 ? CALENDAR_IMPORTANCE_MODERATE : (e.imp == 1 ? CALENDAR_IMPORTANCE_LOW : CALENDAR_IMPORTANCE_NONE));
+      ev.time_mode = e.typ == 2 ? CALENDAR_TIMEMODE_DATE : (e.exact ? CALENDAR_TIMEMODE_DATETIME : CALENDAR_TIMEMODE_TENTATIVE);
+      ev.name = e.name;
+      return true;
+   }
+   return false;
+}
+const int FILE_READ = 1, FILE_WRITE = 2, FILE_BIN = 4, FILE_CSV = 8, FILE_TXT = 16, FILE_ANSI = 32, FILE_UNICODE = 64, FILE_SHARE_READ = 128, FILE_SHARE_WRITE = 256, FILE_COMMON = 4096;
+const int INVALID_HANDLE = -1;
+inline int FileOpen(const string &name, int flags)
+{
+   if (!(flags & FILE_COMMON)) { fprintf(stderr, "FileOpen without FILE_COMMON\n"); exit(4); }
+   string p = sim::fileDir + name;
+   FILE *f = fopen(p.c_str(), (flags & FILE_WRITE) ? "wb" : "rb");
+   if (!f) return INVALID_HANDLE;
+   int h = sim::nextFile++;
+   sim::files[h] = f;
+   return h;
+}
+inline uint   FileWriteString(int h, const string &s, int = -1) { fputs(s.c_str(), sim::files.at(h)); return (uint)s.size(); }
+inline string FileReadString(int h, int = -1) { FILE *f = sim::files.at(h); string s; int c; while ((c = fgetc(f)) != EOF) { if (c == '\n') break; s += (char)c; } if (!s.empty() && s.back() == '\r') s.pop_back(); return s; }
+inline bool   FileIsEnding(int h) { FILE *f = sim::files.at(h); int c = fgetc(f); if (c == EOF) return true; ungetc(c, f); return false; }
+inline void   FileClose(int h) { fclose(sim::files.at(h)); sim::files.erase(h); }
+inline int  StringTrimLeft(string &s)  { size_t i = 0; while (i < s.size() && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r' || s[i] == '\n')) i++; s.erase(0, i); return (int)i; }
+inline int  StringTrimRight(string &s) { int n = 0; while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r' || s.back() == '\n')) { s.pop_back(); n++; } return n; }
+inline bool StringToUpper(string &s)   { for (auto &c : s) c = (char)toupper((unsigned char)c); return true; }
+inline bool ArraySort(MqlArr<long> &a) { std::sort(a.v.begin(), a.v.end()); return true; }
+inline void ResetLastError() { }
+inline int  GetLastError() { return 0; }
+inline bool TimeToStruct(datetime t, MqlDateTime &m) { long s = ((t % 86400) + 86400) % 86400; m = MqlDateTime{}; m.hour = (int)(s / 3600); m.min = (int)(s % 3600 / 60); m.sec = (int)(s % 60); return true; }

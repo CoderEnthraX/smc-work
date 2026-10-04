@@ -21,6 +21,12 @@ MetaEditor (the MQL5 compiler) only runs on Windows, so the EA is checked here i
 | whole EA, restarts | `python3 restarts.py` | 10 settings x 484 restarts: identical to no restarts |
 | table + drawings on vs off | `python3 onoff.py` | 4 settings, display ON with 249 restarts = OFF, identical trades |
 | whole EA, 5.75 years | `python3 fulllong.py` | 1m: 2,817 trades, 15m best: 185 trades - same as the core, to the cent |
+| group 41 OFF | all the rows above again | every output file byte-identical to the build before group 41 |
+| group 41 calendars | `python3 calgen.py` | made-up MT5 calendars 2020-2026 (group 29 releases as high impact + medium / low / no-exact-time / EUR news, holidays) |
+| group 41 file | `python3 calexport.py` | the EA saves the calendar (live, both clock kinds, USD / EUR / both): every line as expected |
+| group 41 rules | `python3 caltests.py py` | Python simulator with the news rules worked out separately (`calflags.py`) = core |
+| group 41 whole EA | `python3 caltests.py ea` | whole EA = core: tester (file), live (both clocks), hedge, restarts, EUR |
+| group 41 effect | `python3 preeffect.py` | your 1m settings, group 29 releases, no new trades 1 / 2 / 4 h before: all about -0.13R per trade |
 
 Notes
 - `porthp.py` = the simulator with TradingView's exact session test for bars longer than 1 minute (f_ovl);
@@ -28,5 +34,8 @@ Notes
 - The harness option `grid 1` rounds order prices to 0.01 like MT5 (buy entry / stop down, target up);
   `fixTies 1` closes every trade whose stop is at the same price (the simulator closed only the first - a
   simulator bug found by the EA, it only matters for idea e / stacked trades with equal stops).
+- Group 41: `mt5sim.h` has a fake MT5 calendar (`CalendarValueHistory` / `CalendarEventById`; `calMode 0` = times on the
+  broker clock rule, `1` = with the broker offset of the moment) and files (`fileDir`); the harness option `simCal` puts
+  the same list straight into the core. `porthp.py` takes `pre` flags (block new entries only).
 - `htfSrv 1` makes the harness build 4h candles on the broker clock (17:00 New York), like TradingView and MT5.
   The earlier 15-minute search used 00:00 UTC 4h candles: +2,747 there, +1,069 with the real candles.

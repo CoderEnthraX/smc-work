@@ -31,6 +31,26 @@ int main(int argc, char **argv)
    InPdOn = cb("pdOn", false); InPdPct = cd("pdPct", 50); InLsOn = cb("lsOn", false); InLsN = cl("lsN", 3);
    InFlMode = (EFl)cl("flMode", 0); InFlAmt = cd("flAmt", 2000); InFlLock = cd("flLock", 50); InFlPct = cd("flPct", 2.5);
    InLdOn = cb("ldOn", false); InLdN = cl("ldN", 3); InLdD = cl("ldD", 2); InEqOn = cb("eqOn", false); InEqPct = cd("eqPct", 50);
+   InHolTrade = cb("holTrade", true); InAuPre = (int)cl("auPre", 10); InAuPost = (int)cl("auPost", 20);
+   InCalOn = cb("calOn", false); InCalCur = cfg.count("calCur") ? cfg["calCur"] : string("USD"); InCalImp = (ECalImp)cl("calImp", 0); InCalPre = (int)cl("calPre", 10);
+   InCalPost = (int)cl("calPost", 20); InCalHol = cb("calHol", true); InCalSave = cb("calSave", false); InPreOn = cb("preOn", false); InPreHrs = cd("preHrs", 1.0);
+   sim::calMode = (int)cl("calMode", 0); sim::calFail = cb("calFail", false); sim::calFailN = cl("calFailN", 0);
+   if (cfg.count("fileDir")) sim::fileDir = cfg["fileDir"];
+   if (cfg.count("simCal"))
+   {   // the fake MT5 calendar: utc,text,currency,importance,type,name[,exact]
+      std::ifstream cf(cfg["simCal"]); string ln; std::map<string, ulong> ids;
+      while (std::getline(cf, ln))
+      {
+         if (ln.empty() || ln[0] == '#') continue;
+         std::vector<string> f; std::stringstream ss(ln); string x; while (std::getline(ss, x, ',')) f.push_back(x);
+         if (f.size() < 6) continue;
+         sim::CalEv e; e.utc = atol(f[0].c_str()); e.cur = f[2]; e.imp = atoi(f[3].c_str()); e.typ = atoi(f[4].c_str()); e.name = f[5]; e.exact = f.size() < 7 || f[6] != "0";
+         string key = e.cur + "|" + e.name + "|" + f[3] + "|" + f[4] + "|" + (e.exact ? "1" : "0");
+         if (!ids.count(key)) { ulong id = ids.size() + 1; ids[key] = id; }
+         e.eid = ids[key];
+         sim::cal.push_back(e);
+      }
+   }
    InExec = (EExec)cl("exec", 0); InWarm = cl("warm", 100000000); InSrvHours = 2.0; InSrvDst = DST_EU;
    InDraw = cb("draw", false); InStatOn = cb("table", false); InHtfDraw = cb("draw", false); InShow = cb("draw", false);
    InStatRows = (ETblRows)cl("tableRows", 0); InStatPos = (ETblPos)cl("tablePos", 7); InStatSize = (ETblSize)cl("tableSize", 1); InHtfMarks = cl("htfMarks", 50);
@@ -60,6 +80,7 @@ int main(int argc, char **argv)
    sim::now = sim::m1[from].t;
    sim::bid = sim::m1[from].o; sim::ask = sim::bid + sim::spread;
    if (OnInit() != INIT_SUCCEEDED) { fprintf(stderr, "OnInit failed\n"); return 1; }
+   if (cb("initOnly", false)) { fprintf(stderr, "init only\n"); return 0; }
    long nTicks = 0, restarts = 0;
    long nextRestart = restartEvery > 0 ? from + 1 + (long)(rng() % restartEvery) : -1;
    for (long i = from; i < (long)sim::m1.size(); i++)
@@ -119,6 +140,6 @@ int main(int argc, char **argv)
       net += pnl; n++;
    }
    fclose(of);
-   fprintf(stderr, "ticks %ld restarts %ld trades %d net %.2f open %d\n", nTicks, restarts, n, net, (int)sim::pos.size());
+   fprintf(stderr, "ticks %ld restarts %ld trades %d net %.2f open %d calcalls %ld\n", nTicks, restarts, n, net, (int)sim::pos.size(), sim::calCalls);
    return 0;
 }
