@@ -149,6 +149,15 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   = no pause (+13,200 / +12,206), C+ 1.0 = 4/2, C+ 0.25 = 4/2, C+ 0 = 4/1, Off = 2/5 (+1,010). BUT the
   shuffle test: Rule C 68-82% emptied, C+ 32-42%, average a loss for all -> luck, not an edge. Page:
   https://claude.ai/artifact/5TZMG1P6MunBcx9swjDyGy
+- **1h and 4h charts** (scratchpad h14/: porth.py = portn + sessOff ('Time-of-day filters: Never apply' =
+  no session, no force close, no weekend cutoff); 1h bars on the hour, 4h from 17:00 NY; HTF auto 1h->1D,
+  4h->1W). Too few trades to prove anything: 1h ~11/yr, 4h ~21/yr. 1h your entries (time AUTO): +0.09R
+  (95% -0.04..+0.22, 64 trades), 62 of 64 closed by the 02:00 force close / weekend; $50 = +148 in 6 yrs.
+  4h time AUTO: almost no trades. 4h best (CHOCH+BOS, R1, 25%, 2R, reverse ON, time NEVER): +0.14R
+  (95% -0.08..+0.37, 120 trades), +BE 1R +0.18R; mostly 2023; with $50 + 1-oz steps 38% of stops
+  unsizable and NO trades 2025-26; $200 risk +2,172 (BE +2,955) with a -1,267 year. 4h against / auto =
+  fit on 2021-23, failed 2024-26 (-0.6R); 4h longs only = gold's bull market, not an edge.
+  Verdict: 15m still the best-supported; no new version for 1h / 4h.
 
 ## Open items / next steps
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,
