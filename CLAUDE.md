@@ -162,6 +162,11 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   +1,232 -> keep OFF. Hedge (two copies Longs only + Shorts only, v8.4 method) +2,773 / +1,230 = no
   change: long and short trades never overlapped (0 of 92; auto mode allows one side at a time). Plain
   CHOCH 15m (no auto): hedge +825 vs one copy +1,037 (8 of 154 overlapped) -> no benefit.
+- **1m hedge (two files Longs only + Shorts only, reverse OFF, $50, recovery off, 2021-Oct 2026)**: your
+  hours -30,771 (vs one file -18,514; 4,762 trades, -0.13R; 1,801 of 2,264 buys overlapped a sell; 10k
+  empty 28 Sep 2022). Stop/target only (Time-of-day filters Never apply): hedge -9,825; ONE file -1,554
+  (-0.02R, about break-even - the time rules hurt the 1m); longs file +3,630 = gold's rise. Page:
+  https://claude.ai/artifact/GtJJSsyexuxQt44RiPsi5F (scratchpad hg1/).
 
 ## Open items / next steps
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,
