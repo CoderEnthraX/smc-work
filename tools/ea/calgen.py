@@ -41,11 +41,22 @@ def rich(seed=7):
             out.append((int(dt.datetime(day.year, day.month, day.day, tzinfo=dt.timezone.utc).timestamp()), 'USD', 0, 2, nm, 1))
         out.append((int(dt.datetime(y, 5, 1, tzinfo=dt.timezone.utc).timestamp()), 'EUR', 0, 2, 'Labour Day', 1))
     return out
+# forecast / actual numbers (x 1,000,000), result, percent, multiplier, digits - from their own random numbers
+UNITS = {'NFP': (0, 1, 0, 150.0, 60.0), 'Jobless claims': (0, 1, 0, 220.0, 15.0), 'ISM Manufacturing': (0, 0, 1, 49.0, 2.0),
+         'ISM Services': (0, 0, 1, 52.0, 2.0), 'US medium 10': (1, 0, 1, 0.3, 0.2), 'US medium 14': (1, 0, 1, 0.2, 0.2)}
+GOOD_LOW = ('Jobless claims',)   # fewer claims = good for the dollar
+def numbers(u, nm):
+    if nm not in UNITS: return ''
+    pct, mult, dig, mid, sd = UNITS[nm]
+    r = random.Random(u)
+    f = round(mid + r.gauss(0, sd / 2), dig); a = round(f + r.gauss(0, sd), dig)
+    res = 0 if a == f else ((1 if a > f else 2) if nm not in GOOD_LOW else (1 if a < f else 2))
+    return ',%d,%d,%d,%d,%d,%d' % (int(round(f * 1e6)), int(round(a * 1e6)), res, pct, mult, dig)
 def write(fn, rows):
     rows = sorted(rows)
     with open(fn, 'w') as f:
         f.write('# fake MT5 calendar for the tests\n')
-        for u, cur, imp, typ, nm, ex in rows: f.write('%d,%s,%s,%d,%d,%s,%d\n' % (u, txt(u), cur, imp, typ, nm, ex))
+        for u, cur, imp, typ, nm, ex in rows: f.write('%d,%s,%s,%d,%d,%s,%d%s\n' % (u, txt(u), cur, imp, typ, nm, ex, numbers(u, nm)))
     return rows
 if __name__ == '__main__':
     a = write('simcal_basic.csv', basic()); b = write('simcal_rich.csv', rich())

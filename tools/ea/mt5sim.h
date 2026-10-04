@@ -423,12 +423,15 @@ public:
 enum ENUM_CALENDAR_EVENT_TYPE { CALENDAR_TYPE_EVENT, CALENDAR_TYPE_INDICATOR, CALENDAR_TYPE_HOLIDAY };
 enum ENUM_CALENDAR_EVENT_IMPORTANCE { CALENDAR_IMPORTANCE_NONE, CALENDAR_IMPORTANCE_LOW, CALENDAR_IMPORTANCE_MODERATE, CALENDAR_IMPORTANCE_HIGH };
 enum ENUM_CALENDAR_EVENT_TIMEMODE { CALENDAR_TIMEMODE_DATETIME, CALENDAR_TIMEMODE_DATE, CALENDAR_TIMEMODE_NOTIME, CALENDAR_TIMEMODE_TENTATIVE };
-struct MqlCalendarValue { ulong id, event_id; datetime time, period; int revision; long actual_value, prev_value, revised_prev_value, forecast_value; int impact_type; };
-struct MqlCalendarEvent { ulong id; ENUM_CALENDAR_EVENT_TYPE type; int sector, frequency; ENUM_CALENDAR_EVENT_TIMEMODE time_mode; ulong country_id; int unit;
-                          ENUM_CALENDAR_EVENT_IMPORTANCE importance; int multiplier; uint digits; string source_url, event_code, name; };
+enum ENUM_CALENDAR_EVENT_UNIT { CALENDAR_UNIT_NONE, CALENDAR_UNIT_PERCENT, CALENDAR_UNIT_CURRENCY, CALENDAR_UNIT_HOUR, CALENDAR_UNIT_JOB };
+enum ENUM_CALENDAR_EVENT_MULTIPLIER { CALENDAR_MULTIPLIER_NONE, CALENDAR_MULTIPLIER_THOUSANDS, CALENDAR_MULTIPLIER_MILLIONS, CALENDAR_MULTIPLIER_BILLIONS, CALENDAR_MULTIPLIER_TRILLIONS };
+enum ENUM_CALENDAR_EVENT_IMPACT { CALENDAR_IMPACT_NA, CALENDAR_IMPACT_POSITIVE, CALENDAR_IMPACT_NEGATIVE };
+struct MqlCalendarValue { ulong id, event_id; datetime time, period; int revision; long actual_value, prev_value, revised_prev_value, forecast_value; ENUM_CALENDAR_EVENT_IMPACT impact_type; };
+struct MqlCalendarEvent { ulong id; ENUM_CALENDAR_EVENT_TYPE type; int sector, frequency; ENUM_CALENDAR_EVENT_TIMEMODE time_mode; ulong country_id; ENUM_CALENDAR_EVENT_UNIT unit;
+                          ENUM_CALENDAR_EVENT_IMPORTANCE importance; ENUM_CALENDAR_EVENT_MULTIPLIER multiplier; uint digits; string source_url, event_code, name; };
 struct MqlDateTime { int year, mon, day, hour, min, sec, day_of_week, day_of_year; };
 namespace sim {
-   struct CalEv { long utc; string cur; int imp, typ; bool exact; string name; ulong eid; };
+   struct CalEv { long utc; string cur; int imp, typ; bool exact; string name; ulong eid; long fc = LONG_MIN, ac = LONG_MIN; int impact = 0, pct = 0, mult = 0, dig = 0; };
    std::vector<CalEv> cal;        // the fake MT5 calendar (UTC; a holiday at 00:00 UTC of its date)
    int  calMode = 0;              // times shown: 0 = on the broker clock with its summer time rule, 1 = with the broker offset at the moment of the request
    bool calFail = false;          // the calendar does not answer
@@ -451,6 +454,9 @@ inline bool CalendarValueHistory(MqlArr<MqlCalendarValue> &v, datetime from, dat
       if (srv < from || (to != 0 && srv > to)) continue;
       MqlCalendarValue x{};
       x.id = v.v.size() + 1; x.event_id = e.eid; x.time = srv;
+      bool out = e.utc <= sim::SrvToUtc(sim::now);   // like MT5: the actual number only after the release
+      x.forecast_value = e.fc; x.prev_value = LONG_MIN; x.revised_prev_value = LONG_MIN;
+      x.actual_value = out ? e.ac : LONG_MIN; x.impact_type = out ? (ENUM_CALENDAR_EVENT_IMPACT)e.impact : CALENDAR_IMPACT_NA;
       v.v.push_back(x);
    }
    return true;
@@ -465,6 +471,9 @@ inline bool CalendarEventById(ulong id, MqlCalendarEvent &ev)
       ev.importance = e.imp == 3 ? CALENDAR_IMPORTANCE_HIGH : (e.imp == 2 ? CALENDAR_IMPORTANCE_MODERATE : (e.imp == 1 ? CALENDAR_IMPORTANCE_LOW : CALENDAR_IMPORTANCE_NONE));
       ev.time_mode = e.typ == 2 ? CALENDAR_TIMEMODE_DATE : (e.exact ? CALENDAR_TIMEMODE_DATETIME : CALENDAR_TIMEMODE_TENTATIVE);
       ev.name = e.name;
+      ev.unit = e.pct ? CALENDAR_UNIT_PERCENT : CALENDAR_UNIT_NONE;
+      ev.multiplier = (ENUM_CALENDAR_EVENT_MULTIPLIER)e.mult;
+      ev.digits = (uint)e.dig;
       return true;
    }
    return false;

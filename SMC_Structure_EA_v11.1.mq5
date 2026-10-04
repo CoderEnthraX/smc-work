@@ -173,6 +173,12 @@ enum ECalImp
    CI_HIGH = 0,       // High impact only
    CI_HIGHMED = 1     // High and medium impact
 };
+enum ECalToday
+{
+   CT_OFF = 0,        // Off
+   CT_HIGH = 1,       // High impact
+   CT_HIGHMED = 2     // High and medium impact
+};
 
 //---------------------------------------------------------------- settings (same names, order and defaults as TradingView v11.1)
 input group "Market structure - engine rules (change the signals themselves)"
@@ -346,6 +352,7 @@ input bool     InCalHol    = true;    //   - calendar holidays too (only when 'T
 input bool     InCalSave   = false;   //   - save the calendar to a file for the Strategy Tester (live chart only)
 input bool     InPreOn     = false;   // No NEW trades in the hours before news (calendar news and group 29 US releases)
 input double   InPreHrs    = 1.0;     //   - hours before the release (e.g. 1, 2 or 0.5)
+input ECalToday InCalToday = CT_HIGHMED; // Show today's news in the table (time, impact, forecast / actual) - display only
 
 //---------------------------------------------------------------- arrays used by the core (MQL5 version)
 class CArrD
@@ -1868,6 +1875,13 @@ int      g_crI[];                   //   importance: 3 high, 2 medium, 1 low, 0 
 int      g_crY[];                   //   type: 0 event, 1 indicator, 2 holiday
 string   g_crN[];                   //   name
 int      g_crO[];                   //   the records in time order (indexes)
+int      g_crR[];                   //   result after the release: 1 good / 2 bad for the currency, 0 not known
+string   g_crF[];                   //   forecast, as text ("" = none)
+string   g_crA[];                   //   actual, as text ("" = not out yet)
+long     g_tdT[];                   // the news for the table's "today" rows (all chosen currencies, high / medium): UTC time
+string   g_tdN[], g_tdC[], g_tdF[], g_tdA[];
+int      g_tdI[], g_tdR[];
+int      g_tdP = 0;                 //   first one not before today
 long     g_cvT[];                   // the chosen news, oldest first (for the table): UTC time
 string   g_cvN[];                   //   and name
 int      g_cvI = 0;                 //   first one not over yet (the table)
@@ -2881,17 +2895,29 @@ void CalParseCur()
 }
 bool CalCurOk(string c) { for (int i = 0; i < ArraySize(g_calCur); i++) if (g_calCur[i] == c) return true; return false; }
 bool CalImpOk(int imp)  { return imp == 3 || (InCalImp == CI_HIGHMED && imp == 2); }
-bool CalWanted()        { return InCalOn || (InCalSave && !g_tester); }
-void CalClear()
+bool CalShow()          { return InCalToday != CT_OFF && InStatOn && (!g_tester || g_visual); }   // today's news in the table (display only)
+bool CalWanted()        { return InCalOn || (InCalSave && !g_tester) || CalShow(); }
+void CalCut(int k)
 {
-   ArrayResize(g_crT, 0); ArrayResize(g_crS, 0); ArrayResize(g_crC, 0); ArrayResize(g_crI, 0); ArrayResize(g_crY, 0); ArrayResize(g_crN, 0);
+   ArrayResize(g_crT, k); ArrayResize(g_crS, k); ArrayResize(g_crC, k); ArrayResize(g_crI, k); ArrayResize(g_crY, k); ArrayResize(g_crN, k);
+   ArrayResize(g_crR, k); ArrayResize(g_crF, k); ArrayResize(g_crA, k);
 }
-void CalAdd(long t, long srv, string cur, int imp, int typ, string name)
+void CalClear() { CalCut(0); }
+void CalAdd(long t, long srv, string cur, int imp, int typ, string name, int res, string fc, string ac)
 {
    int k = ArraySize(g_crT);
    ArrayResize(g_crT, k + 1, 4096); ArrayResize(g_crS, k + 1, 4096); ArrayResize(g_crC, k + 1, 4096);
    ArrayResize(g_crI, k + 1, 4096); ArrayResize(g_crY, k + 1, 4096); ArrayResize(g_crN, k + 1, 4096);
+   ArrayResize(g_crR, k + 1, 4096); ArrayResize(g_crF, k + 1, 4096); ArrayResize(g_crA, k + 1, 4096);
    g_crT[k] = t; g_crS[k] = srv; g_crC[k] = cur; g_crI[k] = imp; g_crY[k] = typ; g_crN[k] = name;
+   g_crR[k] = res; g_crF[k] = fc; g_crA[k] = ac;
+}
+// a calendar number as text, e.g. "0.3%", "254K" ("" = no value)
+string CalNum(long raw, int pct, int mult, int dig)
+{
+   if (raw == LONG_MIN) return "";
+   string sf = mult == 1 ? "K" : (mult == 2 ? "M" : (mult == 3 ? "B" : (mult == 4 ? "T" : "")));
+   return DoubleToString(raw / 1000000.0, dig) + sf + (pct == 1 ? "%" : "");
 }
 // one currency from the MT5 calendar, broker times [from, to]: holidays, and news with an exact time of medium / high impact
 bool CalReadCur(string cur, datetime from, datetime to)
@@ -2900,7 +2926,7 @@ bool CalReadCur(string cur, datetime from, datetime to)
    ResetLastError();
    if (!CalendarValueHistory(v, from, to, NULL, cur)) return false;
    ulong  eId[];
-   int    eTyp[], eImp[], eExact[];
+   int    eTyp[], eImp[], eExact[], ePct[], eMult[], eDig[];
    string eName[];
    int n = ArraySize(v);
    for (int i = 0; i < n; i++)
@@ -2913,16 +2939,23 @@ bool CalReadCur(string cur, datetime from, datetime to)
          if (!CalendarEventById(v[i].event_id, ev)) continue;
          e = ArraySize(eId);
          ArrayResize(eId, e + 1, 256); ArrayResize(eTyp, e + 1, 256); ArrayResize(eImp, e + 1, 256); ArrayResize(eExact, e + 1, 256); ArrayResize(eName, e + 1, 256);
+         ArrayResize(ePct, e + 1, 256); ArrayResize(eMult, e + 1, 256); ArrayResize(eDig, e + 1, 256);
          eId[e]    = v[i].event_id;
          eTyp[e]   = ev.type == CALENDAR_TYPE_HOLIDAY ? 2 : (ev.type == CALENDAR_TYPE_INDICATOR ? 1 : 0);
          eImp[e]   = ev.importance == CALENDAR_IMPORTANCE_HIGH ? 3 : (ev.importance == CALENDAR_IMPORTANCE_MODERATE ? 2 : (ev.importance == CALENDAR_IMPORTANCE_LOW ? 1 : 0));
          eExact[e] = ev.time_mode == CALENDAR_TIMEMODE_DATETIME ? 1 : 0;
+         ePct[e]   = ev.unit == CALENDAR_UNIT_PERCENT ? 1 : 0;
+         eMult[e]  = ev.multiplier == CALENDAR_MULTIPLIER_THOUSANDS ? 1 : (ev.multiplier == CALENDAR_MULTIPLIER_MILLIONS ? 2 :
+                     (ev.multiplier == CALENDAR_MULTIPLIER_BILLIONS ? 3 : (ev.multiplier == CALENDAR_MULTIPLIER_TRILLIONS ? 4 : 0)));
+         eDig[e]   = (int)ev.digits;
+         if (eDig[e] > 6) eDig[e] = 6;
          string nm = ev.name;
          StringReplace(nm, ",", ";");
          eName[e]  = nm;
       }
       if (eTyp[e] != 2 && (eImp[e] < 2 || eExact[e] == 0)) continue;
-      CalAdd(0, (long)v[i].time, cur, eImp[e], eTyp[e], eName[e]);
+      int res = v[i].impact_type == CALENDAR_IMPACT_POSITIVE ? 1 : (v[i].impact_type == CALENDAR_IMPACT_NEGATIVE ? 2 : 0);
+      CalAdd(0, (long)v[i].time, cur, eImp[e], eTyp[e], eName[e], res, CalNum(v[i].forecast_value, ePct[e], eMult[e], eDig[e]), CalNum(v[i].actual_value, ePct[e], eMult[e], eDig[e]));
    }
    return true;
 }
@@ -2968,7 +3001,7 @@ bool CalReadAll(datetime from, datetime to, bool pick)
          int k0 = ArraySize(g_crT);
          if (CalReadCur("USD", from, to)) CalPickClock();
          else { g_calRule = true; g_calHow = "broker clock rule (group 40)"; }
-         ArrayResize(g_crT, k0); ArrayResize(g_crS, k0); ArrayResize(g_crC, k0); ArrayResize(g_crI, k0); ArrayResize(g_crY, k0); ArrayResize(g_crN, k0);
+         CalCut(k0);
       }
       else CalPickClock();
    }
@@ -2994,11 +3027,21 @@ void CalApply()
    g_calT.Clear();
    g_calHol.Clear();
    ArrayResize(g_cvT, 0); ArrayResize(g_cvN, 0); ArrayResize(g_chD, 0); ArrayResize(g_chN, 0);
+   ArrayResize(g_tdT, 0); ArrayResize(g_tdN, 0); ArrayResize(g_tdC, 0); ArrayResize(g_tdF, 0); ArrayResize(g_tdA, 0); ArrayResize(g_tdI, 0); ArrayResize(g_tdR, 0);
    g_cvI = 0;
+   g_tdP = 0;
+   int tdMin = InCalToday == CT_HIGH ? 3 : 2;
    for (int j = 0; j < n; j++)
    {
       int i = g_crO[j];
       if (!CalCurOk(g_crC[i])) continue;
+      if (InCalToday != CT_OFF && g_crY[i] != 2 && g_crI[i] >= tdMin)
+      {
+         int q = ArraySize(g_tdT);
+         ArrayResize(g_tdT, q + 1, 4096); ArrayResize(g_tdN, q + 1, 4096); ArrayResize(g_tdC, q + 1, 4096); ArrayResize(g_tdF, q + 1, 4096);
+         ArrayResize(g_tdA, q + 1, 4096); ArrayResize(g_tdI, q + 1, 4096); ArrayResize(g_tdR, q + 1, 4096);
+         g_tdT[q] = g_crT[i]; g_tdN[q] = g_crN[i]; g_tdC[q] = g_crC[i]; g_tdF[q] = g_crF[i]; g_tdA[q] = g_crA[i]; g_tdI[q] = g_crI[i]; g_tdR[q] = g_crR[i];
+      }
       if (g_crY[i] == 2)
       {
          long dn = FloorDivL(g_crT[i], 86400);
@@ -3019,7 +3062,7 @@ void CalApply()
    CalChanged();
    g_calOk = true;
 }
-// live: the next five weeks (and the last three days), read again every hour
+// live: the next five weeks (and the last three days), read again every 10 minutes
 void CalLoadLive()
 {
    datetime now = TimeTradeServer();
@@ -3054,13 +3097,13 @@ void CalSave()
    FileWriteString(h, "# SMC EA - MT5 economic calendar, times in UTC, saved " + CalDate(nowU) + " " + CalHm(nowU) + " UTC. Times converted by the " + g_calHow + "\r\n");
    FileWriteString(h, "#cur" + cs + "\r\n");
    FileWriteString(h, "#saved," + IntegerToString(nowU) + "\r\n");
-   FileWriteString(h, "# utc_seconds,utc_time,currency,importance (3 high / 2 medium),type (0 event / 1 indicator / 2 holiday),name\r\n");
+   FileWriteString(h, "# utc_seconds,utc_time,currency,importance (3 high / 2 medium),type (0 event / 1 indicator / 2 holiday),name,result (1 good / 2 bad for the currency),forecast,actual\r\n");
    int nn = 0, nh = 0;
    for (int j = 0; j < n; j++)
    {
       int i = g_crO[j];
       FileWriteString(h, IntegerToString(g_crT[i]) + "," + CalDate(g_crT[i]) + " " + CalHm(g_crT[i]) + "," + g_crC[i] + "," + IntegerToString(g_crI[i]) + "," +
-                         IntegerToString(g_crY[i]) + "," + g_crN[i] + "\r\n");
+                         IntegerToString(g_crY[i]) + "," + g_crN[i] + "," + IntegerToString(g_crR[i]) + "," + g_crF[i] + "," + g_crA[i] + "\r\n");
       if (g_crY[i] == 2) nh++; else nn++;
    }
    FileClose(h);
@@ -3085,8 +3128,10 @@ bool CalLoadFile(string &why)
       if (StringSubstr(ln, 0, 7) == "#saved,") { saved = StringToInteger(StringSubstr(ln, 7)); continue; }
       if (StringGetCharacter(ln, 0) == '#') continue;
       string f[];
-      if (StringSplit(ln, ',', f) < 6) continue;
-      CalAdd(StringToInteger(f[0]), 0, f[2], (int)StringToInteger(f[3]), (int)StringToInteger(f[4]), f[5]);
+      int nf = StringSplit(ln, ',', f);
+      if (nf < 6) continue;
+      CalAdd(StringToInteger(f[0]), 0, f[2], (int)StringToInteger(f[3]), (int)StringToInteger(f[4]), f[5],
+             nf >= 9 ? (int)StringToInteger(f[6]) : 0, nf >= 9 ? f[7] : "", nf >= 9 ? f[8] : "");
    }
    FileClose(h);
    for (int i = 0; i < ArraySize(g_calCur); i++)
@@ -3118,28 +3163,41 @@ bool CalInit(string &why)
    if (g_tester)
    {
       if (InCalSave) Print("SMC EA: 'save the calendar' works on a live chart only (the Strategy Tester has no MT5 calendar)");
-      if (!InCalOn) return true;
+      if (!InCalOn)
+      {   // only for the table's "today" rows: no file = no rows, the test still runs
+         string w2 = "";
+         if (CalShow() && !CalLoadFile(w2)) g_calSrc = w2;
+         return true;
+      }
       if (!CalLoadFile(why)) return false;
       Print("SMC EA: calendar news from the ", g_calSrc);
       return true;
    }
    if (InCalSave) CalSave();
-   if (!InCalOn) return true;
+   if (!InCalOn && !CalShow()) return true;
    // live: which clock MT5 uses for calendar times (from the last year of US releases), then the next five weeks
    g_calRule = true;
    g_calHow = "broker clock rule (group 40)";
    CalLoadLive();
-   if (!g_calOk) Alert("SMC EA: 'Economic calendar news' is ON but the MT5 calendar is not available - trading WITHOUT calendar news blocks until it answers");
+   if (!g_calOk && InCalOn) Alert("SMC EA: 'Economic calendar news' is ON but the MT5 calendar is not available - trading WITHOUT calendar news blocks until it answers");
    return true;
 }
-// live: read again every hour (every minute while it does not answer). Tester: warn once if the test runs past the file
+// a news of the table's list came out in the last 30 minutes and its actual number is not in yet
+bool CalAwait()
+{
+   long now = SrvToUtc(TimeCurrent());
+   for (int i = ArraySize(g_tdT) - 1; i >= 0 && g_tdT[i] > now - 1800; i--) if (g_tdT[i] <= now && g_tdA[i] == "") return true;
+   return false;
+}
+// live: read again every 10 minutes (every minute while it does not answer, or while a result is awaited).
+// Tester: warn once if the test runs past the file
 void CalTick()
 {
    if (!g_tester)
    {
       datetime now = TimeTradeServer();
       if (InCalSave && !g_calSaved && now - g_calSaveTry >= 60) CalSave();
-      if (InCalOn && now - g_calLoad >= (g_calOk ? 3600 : 60)) CalLoadLive();
+      if ((InCalOn || CalShow()) && now - g_calLoad >= (!g_calOk || (CalShow() && CalAwait()) ? 60 : 600)) CalLoadLive();
       return;
    }
    if (!InCalOn) return;
@@ -3569,6 +3627,46 @@ string CalHolCalc()
       }
    return "none ahead in the list";
 }
+// group 41: today's news (session clock day), with impact, forecast / actual and the result
+void TodayRows(bool full)
+{
+   long now = SrvToUtc(TimeCurrent());
+   long loc = SessLoc(now);
+   long d0  = now - ((loc % 86400) + 86400) % 86400;   // today 00:00 on the session clock
+   long d1  = d0 + 86400;
+   long dn  = FloorDivL(loc, 86400);
+   int y = 0, m = 0, d = 0;
+   CivilFromDays(dn, y, m, d);
+   bool blocks = S.calOn && S.newsOn && S.intra;
+   string hv = !g_calOk ? (g_calSrc == "" ? "no list" : g_calSrc) :
+               (blocks ? (InCalImp == CI_HIGH ? "HIGH news block trading" : "HIGH + MEDIUM news block trading") : "for information - calendar windows OFF");
+   Row("TODAY'S NEWS  " + DayName(DowDays(dn)) + " " + Two(d) + " " + MonName(m), hv, g_calOk ? clrWhite : clrGray);
+   if (!g_calOk) return;
+   long nd = FloorDivL(NyLoc(now), 86400);
+   for (int i = 0; i < ArraySize(g_chD); i++)
+      if (g_chD[i] == nd) { Row("  all day  HOLIDAY", g_chN[i] + (blocks && S.calHol && !S.holTrade ? "  - NO trading" : ""), clrRed); break; }
+   int n = ArraySize(g_tdT);
+   while (g_tdP < n && g_tdT[g_tdP] < d0) g_tdP++;
+   int shown = 0, more = 0, maxN = full ? 14 : 6;
+   for (int i = g_tdP; i < n && g_tdT[i] < d1; i++)
+   {
+      long t = g_tdT[i];
+      if (!full && t + 3600 < now) continue;   // Short table: the last hour and what is still to come
+      if (shown >= maxN) { more++; continue; }
+      int  mm = MinOfDay(SessLoc(t));
+      bool inWin = blocks && CalImpOk(g_tdI[i]) && now >= t - (long)S.calPre * 60 && now < t + (long)S.calPost * 60;
+      string st;
+      if (now < t) st = "in " + Dur(t - now) + (g_tdF[i] != "" ? "  F " + g_tdF[i] : "");
+      else st = (g_tdA[i] != "" ? "A " + g_tdA[i] + (g_tdF[i] != "" ? " / F " + g_tdF[i] : "") : "out") +
+                (g_tdR[i] == 1 ? "  good for " + g_tdC[i] : (g_tdR[i] == 2 ? "  bad for " + g_tdC[i] : ""));
+      if (inWin) st = "WINDOW NOW  " + st;
+      Row("  " + Two(mm / 60) + ":" + Two(mm % 60) + "  " + (g_tdI[i] == 3 ? "HIGH" : "MEDIUM"), g_tdN[i] + " (" + g_tdC[i] + ")  " + st,
+          inWin ? clrRed : (now >= t ? clrGray : (g_tdI[i] == 3 ? clrRed : clrOrange)));
+      shown++;
+   }
+   if (shown == 0 && more == 0) Row("  -", (string)"no " + (InCalToday == CT_HIGH ? "high" : "high / medium") + " news " + (full ? "today" : "left today"), clrGray);
+   if (more > 0) Row("  ...", "+" + I2(more) + " more today", clrGray);
+}
 // group 41: no new trades before news
 string PreTxt()
 {
@@ -3694,6 +3792,7 @@ void TblRows()
       if (S.eqOn || S.autoM) Row("HTF EQUILIBRIUM FIRST (group 37)", EqTxt(), g_eqOpen ? clrLime : clrOrange);
       if (S.calOn) Row("Calendar news - next", CalNextTxt(), StringFind(CalNextTxt(), "WINDOW NOW") == 0 ? clrRed : clrAqua);
       if (S.preOn) Row("No new trades before news", PreTxt(), g_preNow ? clrRed : clrAqua);
+      if (InCalToday != CT_OFF) TodayRows(false);
       Row("Spread now", Px(SymbolInfoDouble(g_sym, SYMBOL_ASK) - SymbolInfoDouble(g_sym, SYMBOL_BID)), clrSilver);
       Row("BLOCKED NOW", BlockTxt(), AnyBlocked() ? clrRed : clrLime);
       int wt = ArraySize(g_clsTk) + ArraySize(g_stpTk);
@@ -3755,6 +3854,7 @@ void TblRows()
    Row("  - list from", !S.calOn ? "off" : (g_calSrc == "" ? "-" : g_calSrc), !S.calOn ? clrGray : (g_calOk ? clrAqua : clrRed));
    Row("  - calendar holidays", CalHolTxt(), StringFind(CalHolTxt(), "TODAY") == 0 ? clrRed : (S.calOn && S.calHol && !S.holTrade ? clrAqua : clrGray));
    Row("No new trades before news", PreTxt(), g_preNow ? clrRed : (S.preOn ? clrAqua : clrGray));
+   if (InCalToday != CT_OFF) TodayRows(true);
    Row("Symbol  |  1 lot  |  lot step", g_sym + "  |  " + DoubleToString(g_contract, 0) + " units  |  " + DoubleToString(g_volStep, 2), clrAqua);
    Row("BLOCKED NOW", BlockTxt(), AnyBlocked() ? clrRed : clrLime);
    string dm = S.dirMode == 0 ? "both" : (S.dirMode == 1 ? "longs only - " + I2(CntSum(6)) + " signals the other way not traded" :

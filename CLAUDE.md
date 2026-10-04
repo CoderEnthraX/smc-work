@@ -30,6 +30,10 @@
   Checked (tools/ea: calgen.py, calflags.py, calexport.py, caltests.py): OFF = byte-identical outputs; export
   exact; whole EA (file / live both clocks / hedge / restarts / EUR / calendar not answering) = core; Python
   separate calc (calflags.py + porthp.py `pre` flags) = core, 1m and 15m.
+  Table "TODAY'S NEWS" rows (input "Show today's news in the table", default High+Medium, display only, works
+  with the windows OFF): IST time, HIGH/MEDIUM, name, countdown, F forecast, after release A actual + MT5's
+  "good / bad for USD" (impact_type); live re-read every 10 min (1 min after a release until the actual is in);
+  the file has 3 more columns (result, forecast, actual).
   Forex Factory not used (WebRequest + this week only). Real MT5 calendar NOT tested yet.
 - Work branch: `claude/tradingview-alerts-market-structure-53wugf` (push there; no PRs unless asked).
 - Build / test tools: `tools/` (see `tools/README.md`).

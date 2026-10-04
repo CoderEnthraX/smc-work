@@ -416,6 +416,9 @@ THE SETTINGS (group 41, at the end of the list)
   No NEW trades in the hours       OFF (default) / ON
   before news
   - hours before the release       1 (2 = two hours, 0.5 = 30 min)
+  Show today's news in the table   High and medium (default) /
+                                   High / Off - display only, it
+                                   never changes a trade
 Group 25 "News windows ON" (the master switch) must stay ON (it is ON
 by default). Like group 29, these work on charts below 1 day.
 
@@ -464,7 +467,8 @@ MT5 has NO calendar inside the Strategy Tester. So:
 CLOCK: MT5 gives calendar times on the broker clock. The EA turns them
 into real time and checks itself which way is right with the US
 releases at 08:30 New York; the Experts tab says which it used.
-LIVE: the EA reads the next 5 weeks at the start and again every hour.
+LIVE: the EA reads the next 5 weeks at the start and again every 10
+minutes (every minute just after a release, until its number is in).
 If the calendar does not answer, an alert says so and the EA trades
 WITHOUT calendar blocks until it answers (table: NOT AVAILABLE).
 
@@ -484,6 +488,25 @@ THE TABLE (section 14) shows
   BLOCKED NOW                       "news soon - no new trades"
 The Short table shows the first and the last of these when ON.
 
+TODAY'S NEWS in the table (your session clock day, IST):
+  TODAY'S NEWS  Fri 05 Jun   HIGH news block trading
+    18:00  HIGH              NFP (USD)  in 1h 50m  F 115K
+  after the release:
+    18:00  HIGH              NFP (USD)  A 149K / F 115K  good for USD
+  inside its window:         "WINDOW NOW" at the start (red)
+  - A = actual, F = forecast: MT5's own numbers
+  - "good for USD" / "bad for USD": MT5's own judgement of the
+    actual against the forecast FOR THE DOLLAR. Gold often moves
+    the other way - it is not a trade signal.
+  - HIGH red, MEDIUM orange, past ones grey; a holiday shows as
+    "all day  HOLIDAY"
+  - Full table: all of today (up to 14 rows). Short table: the last
+    hour and what is still to come (up to 6)
+  - medium news show even when only HIGH news block trading; with
+    the calendar windows OFF the header says "for information"
+  - Strategy Tester (visual mode): from the saved file (no file =
+    no rows, the test still runs)
+
 HOW IT WAS CHECKED
 I cannot reach MT5's calendar here, so I gave the fake MT5 (section
 2 b) a made-up calendar for 2020-2026: the group 29 US releases as
@@ -502,6 +525,9 @@ EUR news, US and EUR holidays. Then:
   - calendar news = the 4 group 29 releases gives exactly the group
     29 result (2,884 trades, -18,407.64 both)
   - with group 41 OFF every earlier test file is byte-identical
+  - today's news rows: printed at an NFP day before / after the
+    release and inside a window, full and short table; the same
+    trades with the table on or off
 The field names of MT5's calendar come from the MQL5 documentation -
 the real calendar has not been tested yet: compile (F7), attach it
 once with "save the calendar" ON and send me the Experts tab lines.

@@ -34,6 +34,7 @@ int main(int argc, char **argv)
    InHolTrade = cb("holTrade", true); InAuPre = (int)cl("auPre", 10); InAuPost = (int)cl("auPost", 20);
    InCalOn = cb("calOn", false); InCalCur = cfg.count("calCur") ? cfg["calCur"] : string("USD"); InCalImp = (ECalImp)cl("calImp", 0); InCalPre = (int)cl("calPre", 10);
    InCalPost = (int)cl("calPost", 20); InCalHol = cb("calHol", true); InCalSave = cb("calSave", false); InPreOn = cb("preOn", false); InPreHrs = cd("preHrs", 1.0);
+   InCalToday = (ECalToday)cl("calToday", 2);
    sim::calMode = (int)cl("calMode", 0); sim::calFail = cb("calFail", false); sim::calFailN = cl("calFailN", 0);
    if (cfg.count("fileDir")) sim::fileDir = cfg["fileDir"];
    if (cfg.count("simCal"))
@@ -45,6 +46,12 @@ int main(int argc, char **argv)
          std::vector<string> f; std::stringstream ss(ln); string x; while (std::getline(ss, x, ',')) f.push_back(x);
          if (f.size() < 6) continue;
          sim::CalEv e; e.utc = atol(f[0].c_str()); e.cur = f[2]; e.imp = atoi(f[3].c_str()); e.typ = atoi(f[4].c_str()); e.name = f[5]; e.exact = f.size() < 7 || f[6] != "0";
+         if (f.size() >= 13)   // forecast, actual (x 1,000,000; "" = none), result 1 good / 2 bad, percent 0/1, multiplier 0-4, digits
+         {
+            if (!f[7].empty()) e.fc = atol(f[7].c_str());
+            if (!f[8].empty()) e.ac = atol(f[8].c_str());
+            e.impact = atoi(f[9].c_str()); e.pct = atoi(f[10].c_str()); e.mult = atoi(f[11].c_str()); e.dig = atoi(f[12].c_str());
+         }
          string key = e.cur + "|" + e.name + "|" + f[3] + "|" + f[4] + "|" + (e.exact ? "1" : "0");
          if (!ids.count(key)) { ulong id = ids.size() + 1; ids[key] = id; }
          e.eid = ids[key];
@@ -121,6 +128,11 @@ int main(int argc, char **argv)
          sim::prevPx = sim::bid;
          nTicks++;
       }
+   }
+   if (cb("dump", false))
+   {   // the table as it is at the end of the run
+      TblRows();
+      for (int i = 0; i < g_rN; i++) fprintf(stderr, "%-44s | %s\n", g_rL[i].c_str(), g_rV[i].c_str());
    }
    // trades from the deals: entry and exit by position
    FILE *of = fopen(argv[3], "w");

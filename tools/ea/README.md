@@ -22,7 +22,7 @@ MetaEditor (the MQL5 compiler) only runs on Windows, so the EA is checked here i
 | table + drawings on vs off | `python3 onoff.py` | 4 settings, display ON with 249 restarts = OFF, identical trades |
 | whole EA, 5.75 years | `python3 fulllong.py` | 1m: 2,817 trades, 15m best: 185 trades - same as the core, to the cent |
 | group 41 OFF | all the rows above again | every output file byte-identical to the build before group 41 |
-| group 41 calendars | `python3 calgen.py` | made-up MT5 calendars 2020-2026 (group 29 releases as high impact + medium / low / no-exact-time / EUR news, holidays) |
+| group 41 calendars | `python3 calgen.py` | made-up MT5 calendars 2020-2026 (group 29 releases as high impact + medium / low / no-exact-time / EUR news, holidays; forecast / actual numbers) |
 | group 41 file | `python3 calexport.py` | the EA saves the calendar (live, both clock kinds, USD / EUR / both): every line as expected |
 | group 41 rules | `python3 caltests.py py` | Python simulator with the news rules worked out separately (`calflags.py`) = core |
 | group 41 whole EA | `python3 caltests.py ea` | whole EA = core: tester (file), live (both clocks), hedge, restarts, EUR |
@@ -37,5 +37,6 @@ Notes
 - Group 41: `mt5sim.h` has a fake MT5 calendar (`CalendarValueHistory` / `CalendarEventById`; `calMode 0` = times on the
   broker clock rule, `1` = with the broker offset of the moment) and files (`fileDir`); the harness option `simCal` puts
   the same list straight into the core. `porthp.py` takes `pre` flags (block new entries only).
+- `simmain` option `dump 1` prints the counter table as it is at the end of the run (e.g. `to` = a bar just after a release).
 - `htfSrv 1` makes the harness build 4h candles on the broker clock (17:00 New York), like TradingView and MT5.
   The earlier 15-minute search used 00:00 UTC 4h candles: +2,747 there, +1,069 with the real candles.
