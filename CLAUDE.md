@@ -172,6 +172,11 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   2021, pause 4/3 30 Dec 2021; no time rules no pause 15 Nov 2022, pause 4/3 1 Mar 2024. One file empty
   2022 in every version. A combined Rule C across two files is impossible in TradingView (a strategy cannot
   see another's trades). Page: https://claude.ai/artifact/1y7MdMJPDGu8D2UmTiDviQ (hg1/runC.py, repC.py).
+- **1m SHARED Rule C (buys + sells at once on one account, one Rule C split 3 from the shared loss - what an
+  MT5 EA could do; replay hg1/shared.py, checked vs simulator 24/24 empty-or-not)**: one account from Jan 2021
+  empty in every version (your hours 14 Jul 2021; no time rules 5 Dec 2022). Fresh yearly best (no time
+  rules, no pause): +4,732 / -1,834 / +3,668 / EMPTY Feb 2024 / +4,533 / +1,265. Flat $50 both sides lost
+  every year. Not worth an MT5 EA. Page: https://claude.ai/artifact/6CZ9PWMAfb516YtBKwAcfs
 
 ## Open items / next steps
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,
