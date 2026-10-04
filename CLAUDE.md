@@ -167,6 +167,11 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   empty 28 Sep 2022). Stop/target only (Time-of-day filters Never apply): hedge -9,825; ONE file -1,554
   (-0.02R, about break-even - the time rules hurt the 1m); longs file +3,630 = gold's rise. Page:
   https://claude.ai/artifact/GtJJSsyexuxQt44RiPsi5F (scratchpad hg1/).
+- **1m hedge with Rule C split 3, 3R** (each file its own Rule C memory, then both merged BY CLOSE TIME into
+  one shared 10,000 account, stop when empty): ALL versions empty - two files: your hours no pause 5 Nov
+  2021, pause 4/3 30 Dec 2021; no time rules no pause 15 Nov 2022, pause 4/3 1 Mar 2024. One file empty
+  2022 in every version. A combined Rule C across two files is impossible in TradingView (a strategy cannot
+  see another's trades). Page: https://claude.ai/artifact/1y7MdMJPDGu8D2UmTiDviQ (hg1/runC.py, repC.py).
 
 ## Open items / next steps
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,
