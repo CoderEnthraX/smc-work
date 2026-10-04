@@ -227,6 +227,13 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   Aug 2024 -8,800, risk up to 4,082). Fresh 10k yearly: 2023 +37, 2024 empty, 2025 +4,203, 2026 +1,608. Recovery off:
   1,266 trades -3,843 (2023 -0.21R, 2024 -0.12R, 2025 +0.08R, 2026 -0.02R). User's TV screen showed PF 1.15 - asked for
   the TV Performance Summary + List of Trades. Page: https://claude.ai/artifact/FDhyjgQDQ4kCyWSZmwauDE
+  **TV screen for these settings (Deep, OANDA): +10,408, 1,253 trades, 35.83% win, PF 1.15, largest win 4,812 / loss
+  -1,180, top 5 +15,712, other 1,248 -5,304, max DD 29.81%.** Entries match ours (recovery off 1,266 trades, 35.78%).
+  52 "noisy feeds" (every bar moved by N(0, 2-10 cents), 75-80% same trades like OANDA vs FxPro; scratchpad
+  u23/feeds.py): Rule C 47 empty / 5 profit (best +9,579; set 42 = +9,510, PF 1.16, -1,277, top5 +15,269 = TV's
+  shape) -> TV = a lucky path. Recovery off 0/52 profitable (-5,472..-1,345). Cap 10,000 = identical (max risk 4,082;
+  4,474 in any set); caps 2,000 / 1,000 / 500 Day: 38 / 32 / 23 of 53 empty. The 30 Sep TV Rule C+ export (248f2)
+  emptied by 27 Mar 2023 while FxPro same settings survived to Oct 2024 (75% same entries; one extra TV loss 5 Jan).
 
 ## Open items / next steps
 00. **Group 41**: ask the user to attach the EA once with "save the calendar to a file" ON and send
