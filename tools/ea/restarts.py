@@ -10,8 +10,8 @@ def ea(name, P, extra):
     rows = sorted([tuple(d.values()) for d in csv.DictReader(open('rea_%s.csv' % name))])
     return rows, r.stderr.strip().split('\n')[-1]
 def test(name, P, extra):
-    a, sa = ea(name + '_plain', P, dict(extra, tester=0))
-    b, sb = ea(name + '_restart', P, dict(extra, tester=0, restartEvery=1500))
+    a, sa = ea(name + '_plain', P, dict(extra, tester=0, draw=1, table=1, tableRows=0))
+    b, sb = ea(name + '_restart', P, dict(extra, tester=0, restartEvery=1500, draw=1, table=1, tableRows=1, tablePos=0, htfMarks=0))
     same = a == b
     print('%-22s no restarts: %s | with restarts: %s | %s' % (name, sa, sb, 'IDENTICAL' if same else 'DIFFER'))
     if not same:

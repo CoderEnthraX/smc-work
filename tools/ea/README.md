@@ -19,6 +19,7 @@ MetaEditor (the MQL5 compiler) only runs on Windows, so the EA is checked here i
 | shared hedge money | `python3 shared_chk2.py` | separate replay: 0 risk mismatches, 0 orders while halted or paused |
 | whole EA, 1 year | `python3 fulltests.py` | 11 settings: same trades, same money to the cent (pending); prices within 0.01 (touch) |
 | whole EA, restarts | `python3 restarts.py` | 10 settings x 484 restarts: identical to no restarts |
+| table + drawings on vs off | `python3 onoff.py` | 4 settings, display ON with 249 restarts = OFF, identical trades |
 | whole EA, 5.75 years | `python3 fulllong.py` | 1m: 2,817 trades, 15m best: 185 trades - same as the core, to the cent |
 
 Notes

@@ -11,6 +11,7 @@ for line in src.split('\n'):
         d = datetime.datetime.strptime(m.group(1), '%Y.%m.%d %H:%M').replace(tzinfo=datetime.timezone.utc)
         return str(int(d.timestamp()))
     line = re.sub(r"D'([0-9.]+ [0-9:]+)'", dt, line)
+    line = re.sub(r"C'(\d+),(\d+),(\d+)'", lambda m: '((color)(%s | (%s << 8) | (%s << 16)))' % (m.group(1), m.group(2), m.group(3)), line)
     m = re.match(r'^(\s*)(\w+)(\s+)((?:\w+\[\]\s*,\s*)*\w+\[\])\s*;(.*)$', line)
     if m and m.group(2) not in ('return', 'else'):
         names = [n.strip()[:-2] for n in m.group(4).split(',')]

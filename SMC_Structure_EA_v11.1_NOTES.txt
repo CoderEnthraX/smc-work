@@ -75,8 +75,10 @@ the strategy profitable (section 12).
 6. The "Algo Trading" button in the toolbar must be green.
 7. Experts tab (bottom, Toolbox) should say:
    "SMC EA v11.1 ready: 20000 bars of history, structure UP ..."
-   The panel (top left of the chart) shows the structure, the waiting
-   setup, the risk of the next trade and what is blocked now.
+   The table (bottom right, like TradingView) shows the structure,
+   the higher timeframe, the waiting setup, the counts, the risk of
+   the next trade and what is blocked now. Purple lines = the higher
+   timeframe (section 14).
 
 Account: use a HEDGING account (FxPro offers it). Hedge mode, stacked
 BOS trades and partial profit need it. On a NETTING account the EA only
@@ -122,6 +124,10 @@ Group 40  EA - broker, clocks, chart:
                                before the first trade
   After a restart, keep a ...  5 bars (section 10)
   Draw the main structure      BOS* / CHOCH* lines, CHOCH / BOS marks
+  Draw the higher timeframe    its BOS* / CHOCH* levels, equilibrium and
+                               the last 50 CHOCH / BOS marks (section 14)
+Group 20  The counter table: on / off, position (8 corners), text size,
+          full or short rows (section 14).
 Group 20  "Session timezone" is two settings in the EA: hours from UTC
           (India 5.5) and summer time (India: none). London: 0 and
           European; New York: -5 and US.
@@ -208,9 +214,9 @@ account in every version. I do not recommend hedge with loss recovery.
    skipped (counted as "skipped (stop size)"); a size above the
    maximum is cut to the maximum.
 10. TradingView-only items are not in the EA: the webhook, the "refused
-   by TradingView" and "missed stop" safety nets, the counter table
-   (the EA shows a panel) and the audit labels (the EA writes them in
-   the Experts tab when "Signal audit" is ON).
+   by TradingView" and "missed stop" safety nets and the audit labels
+   (the EA writes them in the Experts tab when "Signal audit" is ON).
+   The counter table is there, with MT5 rows (section 14).
 
 
 9. YOUR SETTINGS
@@ -260,7 +266,9 @@ buffer 1, reverse OFF, cancel on new BOS OFF, Rule C split 1, cap 300
             "1 minute OHLC" (much faster)
   Deposit:  10000 USD           Leverage: 1:100
   Inputs:   your settings
-  Visual mode shows the structure lines and the entry / stop / target.
+  Visual mode shows the structure lines, the entry / stop / target,
+  the higher timeframe lines and the table. Without visual mode the
+  test is faster and draws nothing.
 The tester includes the broker's spread and commission, so results are
 a little worse than TradingView. To compare with TradingView, compare
 the trade lists of the same weeks.
@@ -298,3 +306,66 @@ Use a demo account first.
                              TradingView would open and close it at once
 "resumed after a restart"    a waiting setup continued
 "old pending order(s) ... deleted"  after a long stop of the EA
+
+
+14. THE TABLE AND THE HIGHER TIMEFRAME ON THE CHART
+---------------------------------------------------
+Both only draw. They never change a trade (tested: the same trades with
+them on or off, and with 484 restarts).
+
+Where you see them: MT5 on a PC, and the Strategy Tester in visual
+mode. NOT on the MQL5 VPS (no screen) and NOT in the phone app.
+
+THE COUNTER TABLE (group 20)
+  Show the counter table   ON / OFF
+  - table position         Top / Middle / Bottom, left / center / right
+                           (default Bottom right, like TradingView)
+  - table text size        Small / Normal / Large
+  - table rows             Full (about 50 rows, like TradingView) or
+                           Short (about 15: the main rows only)
+It refreshes at every candle and every second (spread, open P&L).
+
+The first rows are new (MT5):
+  Structure (this chart)         UP | BOS* 2368.40 | CHOCH* 2341.10
+  Higher timeframe M15 now       UP since 04 Oct 10:15 | leg 2341.10
+                                 -> 2368.40
+  Waiting setup                  L12 R1 entry 2349.20 stop 2340.10
+                                 target 2376.75
+  Last signal                    CHOCH up: L12 R1 ARMED
+  Open trades | floating P&L     1 open | +23.40
+Then TradingView's rows in the same order, with these MT5 changes:
+  "REFUSED by TradingView"       -> "REFUSED by the broker"
+  "Stops / closes missed"        -> "closes / stop moves waiting for
+                                    the broker" (red if not 0)
+  "Margin calls (Properties)"    -> "Exit - other (manual, stop-out)"
+  "Costs paid total"             -> the REAL commission + swap
+  "Paste into Properties"        -> "Spread now"
+  "Ticker / 1 lot / symbol sent" -> "Symbol | 1 lot | lot step"
+  last rows: entry mode, magic number, "Counting since".
+Hedge mode: counts show "12 (L 7 / S 5)"; with "each side its own"
+money the money rows show "L 50.00 | S 75.00".
+Times in the table are on your session clock (IST).
+The counts start when the EA starts (TradingView counts the whole
+chart). The loss memory itself is always rebuilt from the account
+history (section 10).
+
+THE HIGHER TIMEFRAME ON THE CHART (group 40)
+  Draw the higher timeframe   ON / OFF
+  - how many past higher-timeframe CHOCH / BOS marks to keep   50
+                                                  (0 = none)
+In purple, on your 1-minute chart, for the 15-minute (or the one set
+in group 20):
+  M15 BOS* / M15 CHOCH*   thick line: the levels whose break makes the
+                          next 15m BOS / CHOCH
+  M15 EQ 50.0%            dotted line: the equilibrium of the 15m leg
+                          (the % of group 37)
+  M15 CHOCH / M15 BOS     past breaks: from where the level started to
+                          the 15m candle that broke it
+These are exactly the levels RULE 2, the favourable / against / auto
+modes and the equilibrium gate use - the state after the last CLOSED
+15-minute candle (the same as TradingView).
+Note: a separate 15-minute chart shows the FULL 15m structure, which
+can differ a little from this simpler higher-timeframe trend (the same
+is true in TradingView). To look at one anyway: open GOLD M15, attach
+the EA with "Enable trading" OFF and a DIFFERENT magic number - it then
+only draws.

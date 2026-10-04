@@ -35,7 +35,7 @@ enum ENUM_DEAL_TYPE { DEAL_TYPE_BUY, DEAL_TYPE_SELL, DEAL_TYPE_BALANCE };
 enum ENUM_DEAL_ENTRY { DEAL_ENTRY_IN, DEAL_ENTRY_OUT, DEAL_ENTRY_INOUT, DEAL_ENTRY_OUT_BY };
 enum ENUM_DEAL_REASON { DEAL_REASON_CLIENT, DEAL_REASON_EXPERT, DEAL_REASON_SL, DEAL_REASON_TP };
 enum ENUM_POSITION_PROPERTY_INTEGER { POSITION_IDENTIFIER, POSITION_MAGIC, POSITION_TIME, POSITION_TYPE };
-enum ENUM_POSITION_PROPERTY_DOUBLE { POSITION_SL, POSITION_TP, POSITION_VOLUME, POSITION_PRICE_OPEN };
+enum ENUM_POSITION_PROPERTY_DOUBLE { POSITION_SL, POSITION_TP, POSITION_VOLUME, POSITION_PRICE_OPEN, POSITION_PROFIT, POSITION_SWAP };
 enum ENUM_POSITION_PROPERTY_STRING { POSITION_SYMBOL, POSITION_COMMENT };
 enum ENUM_POSITION_TYPE { POSITION_TYPE_BUY, POSITION_TYPE_SELL };
 enum ENUM_ORDER_PROPERTY_INTEGER { ORDER_MAGIC, ORDER_STATE };
@@ -48,9 +48,14 @@ enum ENUM_ACCOUNT_INFO_INTEGER { ACCOUNT_MARGIN_MODE };
 const long ACCOUNT_MARGIN_MODE_RETAIL_HEDGING = 2;
 enum ENUM_SERIES_INFO_INTEGER { SERIES_SYNCHRONIZED };
 enum ENUM_MQL_INFO_INTEGER { MQL_TESTER, MQL_VISUAL_MODE };
-enum ENUM_OBJECT { OBJ_TREND, OBJ_TEXT };
-enum ENUM_OBJECT_PROPERTY_INTEGER { OBJPROP_SELECTABLE, OBJPROP_HIDDEN, OBJPROP_BACK, OBJPROP_COLOR, OBJPROP_STYLE, OBJPROP_WIDTH, OBJPROP_RAY_RIGHT, OBJPROP_FONTSIZE, OBJPROP_ANCHOR };
-enum ENUM_OBJECT_PROPERTY_STRING { OBJPROP_TEXT };
+enum ENUM_OBJECT { OBJ_TREND, OBJ_TEXT, OBJ_LABEL, OBJ_RECTANGLE_LABEL };
+enum ENUM_OBJECT_PROPERTY_INTEGER { OBJPROP_SELECTABLE, OBJPROP_HIDDEN, OBJPROP_BACK, OBJPROP_COLOR, OBJPROP_STYLE, OBJPROP_WIDTH, OBJPROP_RAY_RIGHT, OBJPROP_FONTSIZE, OBJPROP_ANCHOR,
+   OBJPROP_CORNER, OBJPROP_XDISTANCE, OBJPROP_YDISTANCE, OBJPROP_XSIZE, OBJPROP_YSIZE, OBJPROP_BGCOLOR, OBJPROP_BORDER_TYPE };
+enum ENUM_BASE_CORNER { CORNER_LEFT_UPPER };
+enum ENUM_BORDER_TYPE { BORDER_FLAT };
+enum ENUM_CHART_PROPERTY_INTEGER { CHART_WIDTH_IN_PIXELS, CHART_HEIGHT_IN_PIXELS };
+const int CHARTEVENT_CHART_CHANGE = 9;
+enum ENUM_OBJECT_PROPERTY_STRING { OBJPROP_TEXT, OBJPROP_FONT };
 enum ENUM_LINE_STYLE { STYLE_SOLID, STYLE_DASH, STYLE_DOT };
 enum ENUM_ANCHOR_POINT { ANCHOR_LEFT_UPPER, ANCHOR_LEFT_LOWER, ANCHOR_RIGHT_UPPER, ANCHOR_RIGHT_LOWER };
 enum ENUM_LOG_LEVELS { LOG_LEVEL_NO, LOG_LEVEL_ERRORS, LOG_LEVEL_ALL };
@@ -58,7 +63,7 @@ enum ENUM_TRADE_TRANSACTION_TYPE { TRADE_TRANSACTION_ORDER_ADD, TRADE_TRANSACTIO
 enum ENUM_INIT_RETCODE { INIT_SUCCEEDED = 0, INIT_FAILED = 1, INIT_PARAMETERS_INCORRECT = 2 };
 const int REASON_REMOVE = 1, REASON_RECOMPILE = 2, REASON_CHARTCHANGE = 3, REASON_CLOSE = 9, REASON_PARAMETERS = 5, REASON_ACCOUNT = 6;
 const int TIME_DATE = 1, TIME_MINUTES = 2;
-const color clrTeal = 1, clrCrimson = 2, clrOrange = 3, clrRed = 4, clrDodgerBlue = 5;
+const color clrTeal = 1, clrCrimson = 2, clrOrange = 3, clrRed = 4, clrDodgerBlue = 5, clrWhite = 6, clrSilver = 7, clrYellow = 8, clrLime = 9, clrAqua = 10, clrMagenta = 11, clrGray = 12, clrMediumPurple = 13;
 const uint TRADE_RETCODE_REQUOTE = 10004, TRADE_RETCODE_REJECT = 10006, TRADE_RETCODE_PLACED = 10008, TRADE_RETCODE_DONE = 10009, TRADE_RETCODE_DONE_PARTIAL = 10010,
            TRADE_RETCODE_ERROR = 10011, TRADE_RETCODE_TIMEOUT = 10012, TRADE_RETCODE_INVALID = 10013, TRADE_RETCODE_INVALID_VOLUME = 10014, TRADE_RETCODE_INVALID_PRICE = 10015,
            TRADE_RETCODE_INVALID_STOPS = 10016, TRADE_RETCODE_TRADE_DISABLED = 10017, TRADE_RETCODE_MARKET_CLOSED = 10018, TRADE_RETCODE_NO_MONEY = 10019,
@@ -98,6 +103,7 @@ namespace sim {
    long srvBase = 7200;
    int chartSec = 60;
    long nFills = 0;
+   long tblChars = 0, tblRows = 0;
 }
 inline int TfSec(ENUM_TIMEFRAMES tf)
 {
@@ -230,9 +236,13 @@ inline int  ObjectFind(long, const string &) { return -1; }
 inline bool ObjectCreate(long, const string &, ENUM_OBJECT, int, datetime, double, datetime = 0, double = 0) { return true; }
 inline bool ObjectMove(long, const string &, int, datetime, double) { return true; }
 inline bool ObjectSetInteger(long, const string &, ENUM_OBJECT_PROPERTY_INTEGER, long) { return true; }
-inline bool ObjectSetString(long, const string &, ENUM_OBJECT_PROPERTY_STRING, const string &) { return true; }
+inline bool ObjectSetString(long, const string &, ENUM_OBJECT_PROPERTY_STRING p, const string &v) { if (p == OBJPROP_TEXT) { sim::tblChars += (long)v.size(); if (v.empty()) { fprintf(stderr, "EMPTY LABEL TEXT\n"); exit(3); } } return true; }
 inline bool ObjectDelete(long, const string &) { return true; }
 inline int  ObjectsDeleteAll(long, const string &) { return 0; }
+inline long ChartGetInteger(long, ENUM_CHART_PROPERTY_INTEGER p, int = 0) { return p == CHART_WIDTH_IN_PIXELS ? 1400 : 700; }
+inline void ChartRedraw(long = 0) { }
+inline bool TextSetFont(const string &, int, uint = 0, int = 0) { return true; }
+inline bool TextGetSize(const string &t, uint &w, uint &h) { w = (uint)t.size() * 7; h = 14; return true; }
 // positions
 inline int   PositionsTotal() { return (int)sim::pos.size(); }
 inline ulong PositionGetTicket(int i) { if (i < 0 || i >= (int)sim::pos.size()) return 0; sim::selPos = i; return sim::pos[i].ticket; }
@@ -243,7 +253,8 @@ inline long  PositionGetInteger(ENUM_POSITION_PROPERTY_INTEGER p)
    switch (p) { case POSITION_IDENTIFIER: return (long)x.ticket; case POSITION_MAGIC: return x.magic; case POSITION_TIME: return x.time; case POSITION_TYPE: return x.dir == 1 ? POSITION_TYPE_BUY : POSITION_TYPE_SELL; }
    return 0;
 }
-inline double PositionGetDouble(ENUM_POSITION_PROPERTY_DOUBLE p) { SimPos &x = sim::pos.at(sim::selPos); switch (p) { case POSITION_SL: return x.sl; case POSITION_TP: return x.tp; case POSITION_VOLUME: return x.vol; case POSITION_PRICE_OPEN: return x.price; } return 0; }
+inline double PositionGetDouble(ENUM_POSITION_PROPERTY_DOUBLE p) { SimPos &x = sim::pos.at(sim::selPos); switch (p) { case POSITION_SL: return x.sl; case POSITION_TP: return x.tp; case POSITION_VOLUME: return x.vol; case POSITION_PRICE_OPEN: return x.price;
+   case POSITION_PROFIT: return ((x.dir == 1 ? sim::bid : sim::ask) - x.price) * x.dir * x.vol * sim::contract; case POSITION_SWAP: return 0; } return 0; }
 inline string PositionGetString(ENUM_POSITION_PROPERTY_STRING p) { SimPos &x = sim::pos.at(sim::selPos); return p == POSITION_SYMBOL ? sim::sym : x.cmt; }
 // orders
 inline int   OrdersTotal() { return (int)sim::ords.size(); }

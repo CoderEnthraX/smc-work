@@ -31,7 +31,9 @@ int main(int argc, char **argv)
    InPdOn = cb("pdOn", false); InPdPct = cd("pdPct", 50); InLsOn = cb("lsOn", false); InLsN = cl("lsN", 3);
    InFlMode = (EFl)cl("flMode", 0); InFlAmt = cd("flAmt", 2000); InFlLock = cd("flLock", 50); InFlPct = cd("flPct", 2.5);
    InLdOn = cb("ldOn", false); InLdN = cl("ldN", 3); InLdD = cl("ldD", 2); InEqOn = cb("eqOn", false); InEqPct = cd("eqPct", 50);
-   InExec = (EExec)cl("exec", 0); InWarm = cl("warm", 100000000); InSrvHours = 2.0; InSrvDst = DST_EU; InDraw = false; InStatOn = false;
+   InExec = (EExec)cl("exec", 0); InWarm = cl("warm", 100000000); InSrvHours = 2.0; InSrvDst = DST_EU;
+   InDraw = cb("draw", false); InStatOn = cb("table", false); InHtfDraw = cb("draw", false); InShow = cb("draw", false);
+   InStatRows = (ETblRows)cl("tableRows", 0); InStatPos = (ETblPos)cl("tablePos", 7); InStatSize = (ETblSize)cl("tableSize", 1); InHtfMarks = cl("htfMarks", 50);
    sim::tester = (int)cl("tester", 1);
    sim::chartSec = (int)cl("chartSec", 60);
    _Period = sim::chartSec == 900 ? PERIOD_M15 : (sim::chartSec == 300 ? PERIOD_M5 : (sim::chartSec == 3600 ? PERIOD_H1 : PERIOD_M1));
@@ -93,6 +95,8 @@ int main(int argc, char **argv)
             nextRestart = i + 1 + (long)(rng() % restartEvery);
          }
          OnTick();
+         if (nTicks % 997 == 0) OnTimer();
+         if (nTicks % 100003 == 0) OnChartEvent(CHARTEVENT_CHART_CHANGE, 0, 0.0, "");
          sim::prevPx = sim::bid;
          nTicks++;
       }

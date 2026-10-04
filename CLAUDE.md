@@ -15,6 +15,10 @@
   plain code; checked in `tools/ea` (see its README): core vs simulator 105 runs identical (1 float tie),
   whole EA in a fake MT5 (tick per 0.01) = core to the cent over 5.75 years, 484 restarts identical. NOT
   compiled by MetaEditor yet (Windows only) - the user compiles (F7) and reports errors.
+  Display (only draws, never changes a trade - checked on vs off + restarts): TradingView-style counter table
+  (group 20: on/off, 8 positions, Small/Normal/Large, Full ~50 rows / Short ~15; MT5 rows on top: structure,
+  HTF now, waiting setup, last signal, open P&L) and the higher timeframe drawn in purple (group 40: HTF
+  BOS* / CHOCH* levels, EQ line, last 50 HTF CHOCH / BOS marks; 0 = none). Table counts start at EA start.
 - Work branch: `claude/tradingview-alerts-market-structure-53wugf` (push there; no PRs unless asked).
 - Build / test tools: `tools/` (see `tools/README.md`).
 
