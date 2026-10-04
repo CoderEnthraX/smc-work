@@ -26,7 +26,9 @@ template <class T> int ArraySize(T (&a)[1]) { return 1; }
 // ---------------- enums / constants ----------------
 enum ENUM_TIMEFRAMES { PERIOD_CURRENT = 0, PERIOD_M1 = 1, PERIOD_M5 = 5, PERIOD_M15 = 15, PERIOD_H1 = 16385, PERIOD_H4 = 16388, PERIOD_D1 = 16408, PERIOD_W1 = 32769, PERIOD_MN1 = 49153 };
 enum ENUM_SYMBOL_INFO_DOUBLE { SYMBOL_TRADE_TICK_VALUE, SYMBOL_TRADE_TICK_SIZE, SYMBOL_TRADE_CONTRACT_SIZE, SYMBOL_VOLUME_MIN, SYMBOL_VOLUME_MAX, SYMBOL_VOLUME_STEP, SYMBOL_POINT, SYMBOL_BID, SYMBOL_ASK };
-enum ENUM_SYMBOL_INFO_INTEGER { SYMBOL_TRADE_STOPS_LEVEL, SYMBOL_DIGITS, SYMBOL_EXPIRATION_MODE };
+enum ENUM_SYMBOL_INFO_INTEGER { SYMBOL_TRADE_STOPS_LEVEL, SYMBOL_DIGITS, SYMBOL_EXPIRATION_MODE, SYMBOL_TRADE_CALC_MODE };
+enum ENUM_SYMBOL_INFO_STRING { SYMBOL_CURRENCY_BASE, SYMBOL_CURRENCY_PROFIT };
+enum ENUM_SYMBOL_CALC_MODE { SYMBOL_CALC_MODE_FOREX, SYMBOL_CALC_MODE_FOREX_NO_LEVERAGE, SYMBOL_CALC_MODE_FUTURES, SYMBOL_CALC_MODE_CFD, SYMBOL_CALC_MODE_CFDINDEX, SYMBOL_CALC_MODE_CFDLEVERAGE };
 const int SYMBOL_EXPIRATION_GTC = 1;
 enum ENUM_DEAL_PROPERTY_INTEGER { DEAL_MAGIC, DEAL_TYPE, DEAL_ENTRY, DEAL_TIME, DEAL_POSITION_ID, DEAL_REASON };
 enum ENUM_DEAL_PROPERTY_DOUBLE { DEAL_PROFIT, DEAL_COMMISSION, DEAL_SWAP, DEAL_FEE, DEAL_VOLUME, DEAL_PRICE };
@@ -186,7 +188,9 @@ inline double SymbolInfoDouble(const string &, ENUM_SYMBOL_INFO_DOUBLE p)
                 case SYMBOL_BID: return sim::bid; case SYMBOL_ASK: return sim::ask; }
    return 0;
 }
-inline long SymbolInfoInteger(const string &, ENUM_SYMBOL_INFO_INTEGER p) { return p == SYMBOL_DIGITS ? 2 : (p == SYMBOL_EXPIRATION_MODE ? 3 : 0); }
+namespace sim { int calcMode = SYMBOL_CALC_MODE_CFDLEVERAGE; string curBase = "XAU", curProfit = "USD"; }
+inline long SymbolInfoInteger(const string &, ENUM_SYMBOL_INFO_INTEGER p) { return p == SYMBOL_DIGITS ? 2 : (p == SYMBOL_EXPIRATION_MODE ? 3 : (p == SYMBOL_TRADE_CALC_MODE ? sim::calcMode : 0)); }
+inline string SymbolInfoString(const string &, ENUM_SYMBOL_INFO_STRING p) { return p == SYMBOL_CURRENCY_BASE ? sim::curBase : sim::curProfit; }
 inline long SeriesInfoInteger(const string &, ENUM_TIMEFRAMES, ENUM_SERIES_INFO_INTEGER) { return 1; }
 inline double Floating() { double f = 0; for (auto &p : sim::pos) f += (p.dir == 1 ? sim::bid - p.price : p.price - sim::ask) * p.dir * p.dir * p.vol * sim::contract; return f; }
 inline double AccountInfoDouble(ENUM_ACCOUNT_INFO_DOUBLE p) { return p == ACCOUNT_BALANCE ? sim::balance : sim::balance + Floating(); }

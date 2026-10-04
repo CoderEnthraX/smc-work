@@ -35,6 +35,7 @@ int main(int argc, char **argv)
    InCalOn = cb("calOn", false); InCalCur = cfg.count("calCur") ? cfg["calCur"] : string("USD"); InCalImp = (ECalImp)cl("calImp", 0); InCalPre = (int)cl("calPre", 10);
    InCalPost = (int)cl("calPost", 20); InCalHol = cb("calHol", true); InCalSave = cb("calSave", false); InPreOn = cb("preOn", false); InPreHrs = cd("preHrs", 1.0);
    InCalToday = (ECalToday)cl("calToday", 2);
+   InBuMode = (EBuMode)cl("buMode", 0); InBuPips = cd("buPips", 10.0); InBuPct = cd("buPct", 0.02); InBuPip = cd("buPip", 0.0);
    sim::calMode = (int)cl("calMode", 0); sim::calFail = cb("calFail", false); sim::calFailN = cl("calFailN", 0);
    if (cfg.count("fileDir")) sim::fileDir = cfg["fileDir"];
    if (cfg.count("simCal"))

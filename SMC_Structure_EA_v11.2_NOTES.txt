@@ -1,0 +1,608 @@
+SMC STRUCTURE EA v11.2 (+ HEDGE) - NOTES
+=========================================
+File: SMC_Structure_EA_v11.2.mq5 (MetaTrader 5 Expert Advisor, MQL5)
+Owner: Punit. Times in these notes are IST unless they say otherwise.
+The EA follows the TradingView strategy v11.2. Install it like v11.1
+(section 3); you can delete SMC_Structure_EA_v11.1 from MT5.
+
+
+NEW IN v11.2 - THE STOP BUFFER IN PRICE, PIPS OR % OF PRICE
+-----------------------------------------------------------
+The same rule as the TradingView strategy v11.2 (its notes, item 119).
+A new group at the END of the EA settings (after group 41), so your
+saved settings keep their places:
+  38. Stop buffer unit - price, pips or % (v11.2)
+    Stop buffer unit             Price (as now) / Pips (auto per
+                                 market) / % of price
+    - stop buffer in pips        10
+    - stop buffer in % of price  0.02
+    - pip size (0 = automatic)   0
+Default "Price (as now)": the EA trades exactly like v11.1 (tested).
+
+THE PIP - the EA reads it from the MT5 symbol (its name, its base and
+profit currency, and whether MT5 calls it forex):
+  gold (XAUUSD, GOLD, XAUUSD.r)      0.10     10 pips = 1.00
+  silver (XAGUSD, SILVER)            0.01     10 pips = 0.10
+  Bitcoin (BTCUSD, BITCOIN)          1        10 pips = 10
+  Ethereum (ETHUSD, ETHEREUM)        0.10     10 pips = 1.00
+  forex (EURUSD, GBPUSD, AUDCAD)     0.0001   10 pips = 0.0010
+  JPY pairs (USDJPY, EURJPY)         0.01     10 pips = 0.10
+  anything else (indices, ...)       10 x the price step
+"pip size" (not 0) replaces the automatic pip.
+
+% OF PRICE: this % of the CHOCH* level, worked out for every setup -
+0.02% of gold at 4,140 = 0.83. The buffer is rounded to the price step.
+
+ALSO IN THE SAME UNIT: group 24 "Skip the setup if the stop is CLOSER /
+FURTHER than" (pips, or % of the entry price) and the structure trailing
+stop (group 34 c). Set the group 24 numbers again when you switch.
+
+THE TABLE: a new row "STOP BUFFER (group 38)" (Full table), e.g.
+"10 pips x 0.1 = 1.00" or "0.02% of the level = 0.83 now". The Short
+table shows it when the unit is not Price.
+
+HOW IT WAS CHECKED
+  - unit Price: every earlier test file byte-identical (11 settings for
+    one year, 5.75 years on 1m and 15m to the cent, the table and
+    drawings on / off with restarts)
+  - pips and %: the whole EA in the fake MT5 = the EA's core, trade for
+    trade, to the cent, over 5.75 years, in 5 of 5 settings (touch and
+    pending entries, hedge, the group 24 limits + trailing stop)
+  - the EA's core = the Python simulator (a separate program): 10 of 10
+    settings over 5.75 years; 10 pips = 1.0 and 50 pips = 5.0
+  - restarts with pips / %: identical to no restarts
+  - the automatic pip: 21 MT5 symbol names, all as in the table above
+  NOT checked here: the real MQL5 compiler. Compile it (F7) and send me
+  any error lines.
+
+WILL IT CHANGE RESULTS? Only the SIZE of the buffer does. Your 1-minute
+settings, 2021 - Oct 2026: 1.0 (= 10 pips) -18,514; 0.02% -22,350;
+0.1% -17,216; 0.5% -6,768; 50 pips -10,583 - all lose (TradingView
+notes item 120). Silver, crypto and forex are not tested at all.
+
+
+==========================================================================
+EVERYTHING BELOW IS FROM THE EA v11.1 NOTES - still true for v11.2.
+(Where it says v11.1, read v11.2.)
+==========================================================================
+
+1. WHAT IT IS
+-------------
+- The TradingView strategy "SMC Structure Strategy" v11.1, the same
+  rules, running inside MetaTrader 5. No TradingView, no webhook, no
+  TheConnector.
+- The same market structure engine (swings, BOS* / CHOCH* lines,
+  CHOCH / BOS), the same higher-timeframe engine, RULE 1 / RULE 2,
+  every safety setting, loss recovery (A / B / C, A+ / B+ / C+), split,
+  hard cap, account floor, pause after losses, equilibrium gate,
+  favourable / against / auto modes, news windows, US calendar and
+  holidays, the v9.0 ideas a-g, stop management.
+- PLUS a HEDGE mode: longs and shorts open at the same time, with the
+  loss memory either per side or shared (section 7).
+- NEW (group 41): news windows from MT5's own economic calendar, and
+  "No NEW trades in the hours before news" - both OFF (section 15).
+- All settings have the same names, order and defaults as TradingView.
+  Defaults = TradingView defaults, so set YOUR values (section 9).
+
+
+2. HOW IT WAS CHECKED - please read
+-----------------------------------
+I cannot run MetaTrader 5 here: MetaEditor (the MQL5 compiler) only
+runs on Windows. So I checked it in three other ways.
+
+a) The decision part (structure, higher timeframe, entries, risk,
+   recovery, pauses, news, hedge) is plain code. I compiled that same
+   text as C++ and ran it on your 5.75 years of FxPro 1-minute gold
+   (2,037,534 bars). I compared every trade with my simulator, the one
+   that matched TradingView exactly (112 trades, +793.31):
+     105 runs (1-minute and 15-minute, every option): 104 identical;
+     in 1 run one trade differed only because a target was exactly
+     equal to a candle's low and the two programs rounded the tie
+     differently (MT5 rounds prices to 0.01, which removes such ties)
+     example: your 1-minute settings, 2,839 trades, -18,514.19 in both
+     hedge = a Longs-only run + a Shorts-only run, trade for trade
+     shared hedge money: checked with a separate calculation,
+     0 differences in 6 runs
+
+b) The WHOLE EA file (also the MT5 part: orders, stops, deal history,
+   restarts) ran inside a small fake MetaTrader 5 that I wrote: prices
+   move tick by tick (one tick per 0.01), limit orders, stops and
+   targets fill like a broker, deals carry commission.
+     5.75 years, your 1-minute settings: 2,817 trades, the same as the
+     check in a), to the cent, in both entry modes (section 6)
+     the 15-minute best setting: 185 trades, the same, to the cent
+     484 forced restarts in the middle of candles (waiting orders,
+     open trades, moved stops, Rule C, pauses, hedge): identical to
+     the run without restarts, in 10 of 10 tests
+     group 41 (calendar news): see section 15
+
+c) Line-by-line reading for MQL5 rules.
+
+NOT checked here: the real MQL5 compiler, your broker's real rules
+(minimum stop distance, trading hours, margin), real spread, real
+slippage. Compile it (F7) and send me any error lines (section 3).
+A test can only show that the EA follows the rules; it does not make
+the strategy profitable (section 12).
+
+
+3. INSTALL (about 5 minutes)
+----------------------------
+1. MT5 menu: File > Open Data Folder > MQL5 > Experts.
+   Copy SMC_Structure_EA_v11.1.mq5 into that folder.
+2. Press F4 (MetaEditor). Open the file. Press F7 (Compile).
+   The bottom box must say "0 errors". Warnings are fine.
+   If there is an error: send me a screenshot or copy the red lines.
+3. Back in MT5: Navigator > Expert Advisors > right-click > Refresh.
+4. Open an XAUUSD (FxPro: GOLD) chart, 1 minute (or 15 minutes).
+5. Drag "SMC_Structure_EA_v11.1" onto the chart.
+   Common tab: tick "Allow Algo Trading".
+   Inputs tab: your settings (section 9). OK.
+6. The "Algo Trading" button in the toolbar must be green.
+7. Experts tab (bottom, Toolbox) should say:
+   "SMC EA v11.1 ready: 20000 bars of history, structure UP ..."
+   The table (bottom right, like TradingView) shows the structure,
+   the higher timeframe, the waiting setup, the counts, the risk of
+   the next trade and what is blocked now. Purple lines = the higher
+   timeframe (section 14).
+
+Account: use a HEDGING account (FxPro offers it). Hedge mode, stacked
+BOS trades and partial profit need it. On a NETTING account the EA only
+runs "CHOCH only" without partial profit, one trade at a time.
+
+One chart per symbol. If you run the EA on two charts, give each a
+different Magic number (group 40). Do not change the magic number while
+the EA has trades open - it would not see them any more.
+
+
+4. HOW IT TRADES (timing - the same as TradingView)
+---------------------------------------------------
+- Everything is decided at the CLOSE of each candle (in MT5: on the
+  first price of the next candle), like TradingView's bar-close
+  strategy.
+- An order decided at a candle close works from the next candle.
+  Example (1 minute): the 10:05 candle closes with a CHOCH up. At
+  10:06:00 the EA arms the buy at the RULE 1 level, e.g. 2345.20.
+- Stops and targets are real orders on every trade at the broker, so
+  a trade is protected even if the EA or the VPS stops.
+- Closes (02:00 force close, weekend, news window, opposite signal)
+  go at the first price of the next candle - where TradingView fills
+  them too.
+- Moved stops (group 32 step / break-even, trailing stop) are changed
+  at the candle close.
+
+
+5. NEW SETTINGS (not in TradingView)
+------------------------------------
+Group 33  Trade direction - a 4th choice "Hedge - longs and shorts at
+          the same time (two sides)".
+          "hedge: loss recovery, floor, pause and daily limits":
+          "Each side its own" (default) or "Shared by both sides".
+Group 40  EA - broker, clocks, chart:
+  Magic number                 111001. A different one per chart.
+  Order comment                "SMC". Trades show "SMC L12", "SMC S13".
+  How entries are executed     touch (default) or pending (section 6)
+  Max slippage                 30 points = 0.30 USD on gold
+  Broker server time           2 hours, European summer time = FxPro.
+                               The EA checks this at the start and
+                               warns in the Experts tab if it is wrong.
+  Bars of history              20,000 - used to build the structure
+                               before the first trade
+  After a restart, keep a ...  5 bars (section 10)
+  Draw the main structure      BOS* / CHOCH* lines, CHOCH / BOS marks
+  Draw the higher timeframe    its BOS* / CHOCH* levels, equilibrium and
+                               the last 50 CHOCH / BOS marks (section 14)
+Group 20  The counter table: on / off, position (8 corners), text size,
+          full or short rows (section 14).
+Group 20  "Session timezone" is two settings in the EA: hours from UTC
+          (India 5.5) and summer time (India: none). London: 0 and
+          European; New York: -5 and US.
+Groups 22 and 30 (webhook, TheConnector) are not in the EA - it trades
+          directly.
+Group 41  News from MT5's economic calendar, and "No NEW trades in the
+          hours before news" - both OFF by default (section 15).
+
+
+6. ENTRY MODES (group 40 "How entries are executed")
+----------------------------------------------------
+TOUCH (default) - "Like TradingView": the EA watches the price. When
+  the chart price (bid) reaches the entry level, it sends a market
+  order with the stop and target. This is TradingView's fill rule and
+  what TheConnector does today. A buy is filled at the ask, so you pay
+  the spread on the entry. Needs the EA running (VPS).
+PENDING - a buy limit / sell limit waits at the broker. A buy limit
+  fills only when the ASK reaches it (with a spread of 0.20 the price
+  must go 0.20 lower than on TradingView). Orders stay at the broker
+  when the EA is off - but then nobody closes trades at 02:00 or on
+  Friday.
+In both modes: if the price is already through the entry when the
+order is sent (a gap), the EA buys / sells at once at market, as
+TradingView fills at the open.
+Every price is rounded to the broker's 0.01 step the safe way: a buy
+entry and a buy stop down, a buy target up (the opposite for a sell),
+so an order fills only when TradingView's would. Tested: this changes
+no trade.
+
+
+7. HEDGE MODE (group 33)
+------------------------
+The EA runs two sides on the same market structure:
+  LONG side  - takes only buy signals (like a TradingView copy set to
+               "Longs only")
+  SHORT side - takes only sell signals ("Shorts only")
+Each side follows every rule by itself: its own waiting setup, its
+own trades, close-and-reverse closes only its own trades.
+
+Example (close and reverse OFF):
+  10:05 CHOCH up    -> LONG side buys at 2345.20, stop 2338.70
+  10:40 CHOCH down  -> the long trade stays open; SHORT side sells at
+                       2352.80, stop 2359.30. Both trades are open.
+  Net exposure can be zero - that is normal in a hedge.
+
+Loss recovery, account floor, pause after losses, daily limits:
+  "Each side its own"  - each side has its own memory (exactly two
+                         TradingView copies). Checked: identical to
+                         a Longs-only + a Shorts-only run.
+  "Shared by both"     - one memory for the account. Example with
+                         Rule C, split 1, base 50: the long side loses
+                         120 -> the next trade on EITHER side risks
+                         120 (Rule C risks the loss carried).
+                         The pause counts losses from both sides in the
+                         order they closed. Max trades per day counts
+                         both sides.
+What the tests said (2021-2026, 1 minute, your entries): hedge doubled
+the losses (-30,771 vs -18,514); shared Rule C emptied a 10,000
+account in every version. I do not recommend hedge with loss recovery.
+
+
+8. DIFFERENCES FROM TRADINGVIEW (honest list)
+---------------------------------------------
+1. Prices: FxPro is not OANDA (about +0.25 USD). Different candles can
+   give different swings. Earlier test: 85 of ~114 trades identical in
+   3 months; all differences came from the price feed.
+2. Costs: real spread, commission and swap. TradingView has no spread.
+   A sell's stop and target are triggered by the ASK (a little early
+   for the stop, a little late for the target).
+3. Loss recovery adds up the REAL money of each trade (profit +
+   commission + swap). TradingView uses its own commission estimate.
+4. "loss recovery counts from": "the whole history" = every trade of
+   this EA (same magic, same symbol) on this account; "when the EA
+   first started" = saved on the first start (in the Strategy Tester:
+   the test start); "a date I choose" = UTC.
+5. Group 23 (commission) is used only to SIZE trades and to push the
+   target out, as in TradingView. Copy your TradingView values.
+6. The structure is built from the last 20,000 bars, not the whole
+   chart. After the first few swings both agree.
+7. When you attach the EA it waits for the next signal. A setup that
+   was armed earlier in history is not taken.
+8. Higher timeframe = MT5's own 15m / 1h / 4h / 1D candles of the last
+   CLOSED candle. FxPro's 4h candles start at 17:00 New York, like
+   TradingView's OANDA candles.
+9. Minimum / maximum lot: the broker's. A size below 0.01 lot is
+   skipped (counted as "skipped (stop size)"); a size above the
+   maximum is cut to the maximum.
+10. TradingView-only items are not in the EA: the webhook, the "refused
+   by TradingView" and "missed stop" safety nets and the audit labels
+   (the EA writes them in the Experts tab when "Signal audit" is ON).
+   The counter table is there, with MT5 rows (section 14).
+
+
+9. YOUR SETTINGS
+----------------
+Your 1-minute settings (as told in chat):
+  Take trades on                       CHOCH only
+  RULE 1 / RULE 2                      ON / ON
+  RULE 1 pullback %                    25
+  Target R                             3
+  Stop buffer                          1.0
+  Close and reverse                    OFF
+  Session timezone                     5.5, no summer time
+  Entries from / stop at / force close 6 / 23 / 2
+  Weekend cutoff                       Friday, 23
+  BASE risk                            50
+  Max leverage                         100
+  Loss recovery                        Off (advised)
+  Cancel a waiting order on new BOS    ON
+Strategy Tester deposit: 10,000 USD, leverage 1:100 or your account's.
+
+The 15-minute "best" setting (group 34 / 36 / 37 as in my earlier
+page): CHOCH only - auto, RULE 1 + 2, pullback 50, target 2,
+buffer 1, reverse OFF, cancel on new BOS OFF, Rule C split 1, cap 300
+"Clamp", pause 4 losses / 3 days. READ THE CORRECTION IN SECTION 12.
+
+
+10. RESTARTS (VPS reboot, terminal update, settings change)
+-----------------------------------------------------------
+- Every candle the EA saves its waiting setup in MT5 (Tools > Global
+  Variables, names start with SMC<magic>_<symbol>_).
+- After a restart of up to 5 missed candles it carries on exactly as if
+  nothing happened (tested: 484 restarts, identical results).
+- More than 5 missed candles: the waiting setup is dropped and old
+  pending orders of this EA are deleted; it waits for the next signal.
+  Open trades keep their stops and targets and are still managed
+  (02:00 close, weekend, stop moves).
+- The loss memory (Rule A / B / C), floor, pause and daily counts are
+  rebuilt from the account's trade history at every start.
+- Removing the EA from the chart deletes its pending orders.
+
+
+11. STRATEGY TESTER (Ctrl+R)
+----------------------------
+  Expert:   SMC_Structure_EA_v11.1
+  Symbol:   GOLD / XAUUSD       Timeframe: M1 (or M15)
+  Model:    "Every tick based on real ticks" (most accurate) or
+            "1 minute OHLC" (much faster)
+  Deposit:  10000 USD           Leverage: 1:100
+  Inputs:   your settings
+  Visual mode shows the structure lines, the entry / stop / target,
+  the higher timeframe lines and the table. Without visual mode the
+  test is faster and draws nothing.
+The tester includes the broker's spread and commission, so results are
+a little worse than TradingView. To compare with TradingView, compare
+the trade lists of the same weeks.
+Calendar news (group 41) in the tester: save the calendar file on a
+live chart first (section 15).
+
+
+12. CORRECTION - the 15-minute "best" setting
+---------------------------------------------
+While checking the EA I found a mistake in my earlier 15-minute test.
+It used 4-hour candles that start at 00:00 UTC. TradingView (OANDA)
+and FxPro MT5 start 4-hour candles at 17:00 New York time. With the
+real candles the same setting gives (one 10,000 account, 2021-2026):
+
+  4h candles start at          trades   total    losing years
+  00:00 UTC (earlier test)        197   +2,747   none
+  17:00 New York (real)           186   +1,069   2022, 2023, 2024
+  same, loss recovery off         179      +61   2022, 2023, 2024
+
+So it is NOT profitable in every year, and without Rule C it is about
+break-even. 3 losing years in 6 is not an edge. Check it in
+TradingView (15m OANDA) yourself before anything else.
+The 1-minute results do not change (the 15-minute candles of the
+higher timeframe start on the quarter hour everywhere).
+
+Past prices only. Nothing here predicts the future or promises profit.
+Use a demo account first.
+
+
+13. MESSAGES IN THE EXPERTS TAB
+-------------------------------
+"ready: ..."                 the start went well
+"WARNING: the broker clock"  group 40 server time is wrong
+"skipped: ... below the broker minimum"  the size is under 0.01 lot
+"REFUSED by the broker"      not enough margin, market closed, etc.
+"Entry ... skipped: the price is already past its stop or target"
+                             TradingView would open and close it at once
+"resumed after a restart"    a waiting setup continued
+"old pending order(s) ... deleted"  after a long stop of the EA
+"calendar times -> UTC by ..."      group 41: how it reads the times
+"calendar saved - ..."              group 41: the file for the tester
+"the MT5 economic calendar did not answer"  live: the last list is
+                                    kept, it tries again in an hour
+"the calendar file ... was not found"       tester: save it first
+"this test runs outside the dates of the calendar file"  save again
+
+
+14. THE TABLE AND THE HIGHER TIMEFRAME ON THE CHART
+---------------------------------------------------
+Both only draw. They never change a trade (tested: the same trades with
+them on or off, and with 484 restarts).
+
+Where you see them: MT5 on a PC, and the Strategy Tester in visual
+mode. NOT on the MQL5 VPS (no screen) and NOT in the phone app.
+
+THE COUNTER TABLE (group 20)
+  Show the counter table   ON / OFF
+  - table position         Top / Middle / Bottom, left / center / right
+                           (default Bottom right, like TradingView)
+  - table text size        Small / Normal / Large
+  - table rows             Full (about 50 rows, like TradingView) or
+                           Short (about 15: the main rows only)
+It refreshes at every candle and every second (spread, open P&L).
+
+The first rows are new (MT5):
+  Structure (this chart)         UP | BOS* 2368.40 | CHOCH* 2341.10
+  Higher timeframe M15 now       UP since 04 Oct 10:15 | leg 2341.10
+                                 -> 2368.40
+  Waiting setup                  L12 R1 entry 2349.20 stop 2340.10
+                                 target 2376.75
+  Last signal                    CHOCH up: L12 R1 ARMED
+  Open trades | floating P&L     1 open | +23.40
+Then TradingView's rows in the same order, with these MT5 changes:
+  "REFUSED by TradingView"       -> "REFUSED by the broker"
+  "Stops / closes missed"        -> "closes / stop moves waiting for
+                                    the broker" (red if not 0)
+  "Margin calls (Properties)"    -> "Exit - other (manual, stop-out)"
+  "Costs paid total"             -> the REAL commission + swap
+  "Paste into Properties"        -> "Spread now"
+  "Ticker / 1 lot / symbol sent" -> "Symbol | 1 lot | lot step"
+  last rows: entry mode, magic number, "Counting since".
+Hedge mode: counts show "12 (L 7 / S 5)"; with "each side its own"
+money the money rows show "L 50.00 | S 75.00".
+Times in the table are on your session clock (IST).
+The counts start when the EA starts (TradingView counts the whole
+chart). The loss memory itself is always rebuilt from the account
+history (section 10).
+
+THE HIGHER TIMEFRAME ON THE CHART (group 40)
+  Draw the higher timeframe   ON / OFF
+  - how many past higher-timeframe CHOCH / BOS marks to keep   50
+                                                  (0 = none)
+In purple, on your 1-minute chart, for the 15-minute (or the one set
+in group 20):
+  M15 BOS* / M15 CHOCH*   thick line: the levels whose break makes the
+                          next 15m BOS / CHOCH
+  M15 EQ 50.0%            dotted line: the equilibrium of the 15m leg
+                          (the % of group 37)
+  M15 CHOCH / M15 BOS     past breaks: from where the level started to
+                          the 15m candle that broke it
+These are exactly the levels RULE 2, the favourable / against / auto
+modes and the equilibrium gate use - the state after the last CLOSED
+15-minute candle (the same as TradingView).
+Note: a separate 15-minute chart shows the FULL 15m structure, which
+can differ a little from this simpler higher-timeframe trend (the same
+is true in TradingView). To look at one anyway: open GOLD M15, attach
+the EA with "Enable trading" OFF and a DIFFERENT magic number - it then
+only draws.
+
+
+15. NEWS FROM THE MT5 ECONOMIC CALENDAR (group 41) - NEW
+--------------------------------------------------------
+Both new switches are OFF by default: with them OFF the EA trades
+exactly as before (tested, section 2).
+
+WHERE THE NEWS COMES FROM
+MT5 has its own economic calendar (MetaQuotes; Toolbox > Calendar).
+The EA reads it directly: no internet setting, no key, no website.
+Past news AND the next weeks, with exact times and impact (high /
+medium / low): NFP, CPI, FOMC, GDP, retail sales, PPI, ISM, jobless
+claims and more.
+Why not Forex Factory: an EA can read it only through MT5's WebRequest
+(you must allow the web address in the MT5 options), and its free feed
+has THIS week only - no past news, so it cannot work in the Strategy
+Tester. MT5's calendar has the same high-impact US news.
+
+THE SETTINGS (group 41, at the end of the list)
+  Economic calendar news windows   OFF (default) / ON
+  - currencies                     USD (gold moves on US news).
+                                   More: USD,EUR
+  - which news                     High impact only (default) /
+                                   High and medium impact
+  - block from ... minutes BEFORE  10
+  - until ... minutes AFTER        20
+  - calendar holidays too          ON - used only when group 29
+                                   "Trade on US market holidays" is
+                                   OFF
+  - save the calendar to a file    OFF - for the Strategy Tester
+                                   (see below)
+  No NEW trades in the hours       OFF (default) / ON
+  before news
+  - hours before the release       1 (2 = two hours, 0.5 = 30 min)
+  Show today's news in the table   High and medium (default) /
+                                   High / Off - display only, it
+                                   never changes a trade
+Group 25 "News windows ON" (the master switch) must stay ON (it is ON
+by default). Like group 29, these work on charts below 1 day.
+
+A NEWS WINDOW (calendar) works like the group 25 / 29 windows:
+  - "When a window starts" (group 25): "Close any open trade"
+    (default) closes it at the next candle's first price;
+    "Leave open trades alone" keeps it running
+  - a waiting order is cancelled, no new setup inside the window
+Example: US CPI at 18:00 IST, 10 before / 20 after:
+  17:50 - 18:20 IST  no trading, an open trade is closed at 17:50
+
+NO NEW TRADES BEFORE NEWS (your idea)
+From X hours before a release until the release: no NEW trade.
+  - a waiting order is cancelled
+    ("CANCELLED - blocked (news soon - no new trades)")
+  - a new CHOCH / BOS is skipped ("SKIP - news soon - no new trades")
+  - a trade that is ALREADY open keeps its stop and target and runs
+    on; the news window itself (above) then closes it, if set so
+Example: CPI at 18:00 IST, hours 1, window 10 / 20:
+  17:00 - 17:50  no new trade, open trades run
+  17:50 - 18:20  news window: open trades closed, no trading
+  18:20          normal again
+It uses the calendar news (group 41) AND the group 29 automatic US
+releases - whichever is ON. With neither ON it does nothing.
+
+STRATEGY TESTER - one extra step
+MT5 has NO calendar inside the Strategy Tester. So:
+  1. Put the EA on a LIVE or DEMO chart (any symbol, any timeframe)
+     with "save the calendar to a file" ON. Your other settings do
+     not matter ("Enable trading" can be OFF).
+  2. The Experts tab says "calendar saved - ... news and ...
+     holidays ... -> Common\Files\SMC_calendar.csv".
+  3. Remove it (or switch the save OFF). Now the Strategy Tester can
+     test with "Economic calendar news windows" ON - the EA reads the
+     file.
+  - The file holds 1 Jan 2020 to 2 months after the day you saved it,
+    for the currencies in the setting at that time. Save again later
+    to add new months or other currencies.
+  - Without the file, a test with the calendar ON stops at the start
+    and says why (Journal tab).
+  - Use the tester's local agents (the MQL5 Cloud agents cannot read
+    the Common folder).
+  - Please send me this file: then I can test the REAL news list
+    (CPI, FOMC, ...) on your 5.75 years.
+
+CLOCK: MT5 gives calendar times on the broker clock. The EA turns them
+into real time and checks itself which way is right with the US
+releases at 08:30 New York; the Experts tab says which it used.
+LIVE: the EA reads the next 5 weeks at the start and again every 10
+minutes (every minute just after a release, until its number is in).
+If the calendar does not answer, an alert says so and the EA trades
+WITHOUT calendar blocks until it answers (table: NOT AVAILABLE).
+
+HOLIDAYS: the calendar's holidays for your currencies (US: e.g. Good
+Friday, Columbus Day, Veterans Day) are added to group 29's US market
+holidays, on the New York date - only when group 29 "Trade on US
+market holidays" is OFF and "calendar holidays too" is ON.
+
+THE TABLE (section 14) shows
+  Calendar news (group 41) - next   CPI m/m (USD, high)  Wed 15 Oct
+                                    18:00  (in 2h 05m)
+                                    "WINDOW NOW - ..." inside a window
+  - list from                       MT5 calendar (live) / the file
+  - calendar holidays               next holiday, or "not used"
+  No new trades before news         1 h before calendar news
+                                    "NOW - no new trades" when active
+  BLOCKED NOW                       "news soon - no new trades"
+The Short table shows the first and the last of these when ON.
+
+TODAY'S NEWS in the table (your session clock day, IST):
+  TODAY'S NEWS  Fri 05 Jun   HIGH news block trading
+    18:00  HIGH              NFP (USD)  in 1h 50m  F 115K
+  after the release:
+    18:00  HIGH              NFP (USD)  A 149K / F 115K  good for USD
+  inside its window:         "WINDOW NOW" at the start (red)
+  - A = actual, F = forecast: MT5's own numbers
+  - "good for USD" / "bad for USD": MT5's own judgement of the
+    actual against the forecast FOR THE DOLLAR. Gold often moves
+    the other way - it is not a trade signal.
+  - HIGH red, MEDIUM orange, past ones grey; a holiday shows as
+    "all day  HOLIDAY"
+  - Full table: all of today (up to 14 rows). Short table: the last
+    hour and what is still to come (up to 6)
+  - medium news show even when only HIGH news block trading; with
+    the calendar windows OFF the header says "for information"
+  - Strategy Tester (visual mode): from the saved file (no file =
+    no rows, the test still runs)
+
+HOW IT WAS CHECKED
+I cannot reach MT5's calendar here, so I gave the fake MT5 (section
+2 b) a made-up calendar for 2020-2026: the group 29 US releases as
+high impact, plus medium news, low news, news with no exact time,
+EUR news, US and EUR holidays. Then:
+  - the EA saved it to the file: every line right (both clock kinds,
+    USD / EUR / both)
+  - the whole EA (fake MT5) = the EA's core, trade for trade, to the
+    cent, 2021 - Oct 2026: Strategy Tester mode (reads the file),
+    live mode (both kinds of broker clock), hedge, EUR, 484 restarts,
+    a calendar that does not answer at first: 13 of 13 identical
+  - my Python simulator with these rules worked out SEPARATELY (not
+    from the EA code) = the EA's core: 6 of 6 identical (1 and 15
+    minutes; windows, high + medium, holidays, group 29, no new
+    trades 0.5 / 1 / 2 hours before)
+  - calendar news = the 4 group 29 releases gives exactly the group
+    29 result (2,884 trades, -18,407.64 both)
+  - with group 41 OFF every earlier test file is byte-identical
+  - today's news rows: printed at an NFP day before / after the
+    release and inside a window, full and short table; the same
+    trades with the table on or off
+The field names of MT5's calendar come from the MQL5 documentation -
+the real calendar has not been tested yet: compile (F7), attach it
+once with "save the calendar" ON and send me the Experts tab lines.
+
+WILL IT HELP? (honest)
+With the 4 US releases of group 29 (the only news list with history
+here), your 1-minute settings, 2021 - Oct 2026, risk 50:
+                                  trades    total   per trade
+  no news blocks (now)             2,839  -18,514     -0.13R
+  group 29 windows -10 / +20 min   2,906  -18,844     -0.13R
+    + no new trades 1 h before     2,857  -18,708     -0.13R
+    + no new trades 2 h before     2,809  -18,302     -0.13R
+    + no new trades 4 h before     2,739  -18,070     -0.13R
+Every row loses about 0.13R per trade: blocking news does not change
+the edge. The bigger calendar list (CPI, FOMC, ...) is not tested yet
+- send me the saved file and I will run it on the 5.75 years.

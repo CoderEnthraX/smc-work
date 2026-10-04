@@ -1,4 +1,4 @@
-# tools/ea - checks of the MT5 Expert Advisor (SMC_Structure_EA_v11.1.mq5)
+# tools/ea - checks of the MT5 Expert Advisor (SMC_Structure_EA_v11.2.mq5)
 
 MetaEditor (the MQL5 compiler) only runs on Windows, so the EA is checked here in two ways:
 
@@ -13,8 +13,8 @@ MetaEditor (the MQL5 compiler) only runs on Windows, so the EA is checked here i
 | Step | Command | Result when written (Oct 2026) |
 |---|---|---|
 | price files | `python3 mkdata.py` | fx.pkl, fx15.pkl, m1.bin, m15.bin from `../data/gold_m1_utc.npz` |
-| build | `python3 extract.py ../../SMC_Structure_EA_v11.1.mq5 core_x.inc && g++ -O2 -std=c++17 -o harness harness.cpp` | |
-| build | `python3 mql2cpp.py ../../SMC_Structure_EA_v11.1.mq5 ea_x.cpp && g++ -O2 -std=c++17 -o simmain simmain.cpp` | compiles with no warning from the EA |
+| build | `python3 extract.py ../../SMC_Structure_EA_v11.2.mq5 core_x.inc && g++ -O2 -std=c++17 -o harness harness.cpp` | |
+| build | `python3 mql2cpp.py ../../SMC_Structure_EA_v11.2.mq5 ea_x.cpp && g++ -O2 -std=c++17 -o simmain simmain.cpp` | compiles with no warning from the EA |
 | core vs simulator | `python3 tests1.py`, `tests2.py`, `tests3.py`, `tests4.py` | 105 runs: 104 identical, 1 float tie (a target exactly on a candle low) |
 | shared hedge money | `python3 shared_chk2.py` | separate replay: 0 risk mismatches, 0 orders while halted or paused |
 | whole EA, 1 year | `python3 fulltests.py` | 11 settings: same trades, same money to the cent (pending); prices within 0.01 (touch) |
@@ -27,6 +27,11 @@ MetaEditor (the MQL5 compiler) only runs on Windows, so the EA is checked here i
 | group 41 rules | `python3 caltests.py py` | Python simulator with the news rules worked out separately (`calflags.py`) = core |
 | group 41 whole EA | `python3 caltests.py ea` | whole EA = core: tester (file), live (both clocks), hedge, restarts, EUR |
 | group 41 effect | `python3 preeffect.py` | your 1m settings, group 29 releases, no new trades 1 / 2 / 4 h before: all about -0.13R per trade |
+| v11.2 OFF | all the rows above again | unit Price: every output file byte-identical to v11.1 |
+| v11.2 units | `python3 butests.py` | Python simulator (`buf_at` / `lim_at` in porthp.py) = core in 10 of 10 pips / % settings over 5.75 years; 10 pips = 1.0, 50 pips = 5.0; whole EA = core in 5 of 5 |
+| v11.2 restarts | `python3 burestart.py` | pips / % with forced restarts = no restarts |
+| v11.2 pip | `g++ -O2 -std=c++17 -o piptest piptest.cpp && ./piptest`, `python3 pinepip.py` | the automatic pip for 21 MT5 names and 14 TradingView symbols |
+| v11.2 effect | `python3 bueffect.py` | your 1m settings, buffer 1.0 / 10 pips / 0.02-0.5% / 50 pips: all lose (wider loses less per trade) |
 
 Notes
 - `porthp.py` = the simulator with TradingView's exact session test for bars longer than 1 minute (f_ovl);

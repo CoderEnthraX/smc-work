@@ -14,6 +14,7 @@ typedef std::string string;
 inline double MathAbs(double x)   { return std::fabs(x); }
 inline double MathFloor(double x) { return std::floor(x); }
 inline double MathCeil(double x)  { return std::ceil(x); }
+inline double MathRound(double x) { return std::round(x); }
 inline string IntegerToString(long v) { return std::to_string(v); }
 class CArrD { public: std::vector<double> v; void Clear() { v.clear(); } void Add(double x) { v.push_back(x); } double At(int i) { return v[i]; }
   int Size() { return (int)v.size(); } void DropFirst(int k) { if (k <= 0) return; if (k >= (int)v.size()) { v.clear(); return; } v.erase(v.begin(), v.begin() + k); }
@@ -199,6 +200,7 @@ int main(int argc, char **argv)
          else if (g_calT.Size() == 0 || (long)g_calT.At(g_calT.Size() - 1) != r.first) g_calT.Add((double)r.first);
       }
    }
+   S.buMode = (int)cl("buMode", 0); S.buPips = cd("buPips", 10.0); S.buPct = cd("buPct", 0.02); S.pipSz = cd("buPip", 0.1);
    S.ldOn = cb("ldOn", false); S.ldN = (int)cl("ldN", 3); S.ldD = (int)cl("ldD", 2); S.eqOn = cb("eqOn", false); S.eqPct = cd("eqPct", 50);
    S.cs = (int)cl("cs", 60); S.cmLots = 100; S.uv = 1.0; S.minLot = cd("minLot", 0.01); S.tick = 0.01;
    long htfSec = cl("htfSec", 900);

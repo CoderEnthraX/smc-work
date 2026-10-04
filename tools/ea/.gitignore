@@ -10,3 +10,4 @@ simmain
 __pycache__/
 *.log
 *.cfg
+piptest

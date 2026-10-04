@@ -320,8 +320,6 @@ def run(bars, P=None, htf=None, log=False):
     cnt = dict(arm=0, fill=0, canc=0, skip=0, pdSkip=0, dirSkip=0, htfSkip=0, lossHalt=0)
     kmax = max(0, int(math.ceil(rr - 1e-9)) - 1)
     sess2 = p["sess2"]
-    NEWS = p.get("news")   # v11.1 group 29: True for every bar inside an automatic US news window
-    PRE = p.get("pre")     # EA group 41: True for every bar where 'no new trades before news' applies (blocks new entries only)
 
     def fill_close(tr, px, bi, why):
         nonlocal eq_closed
@@ -400,25 +398,18 @@ def run(bars, P=None, htf=None, log=False):
         hT, hO, hX, hE = htf[bi]
         stT15 = hT if (p["r2"] or p["htfFilt"] or favMode or p["eqOn"] or agnMode or autoMode) else 0
         pos = sum(tr.dir * tr.q for tr in opn)
-        tc = t + p.get("barSec", 60) + IST
+        tc = t + 60 + IST
         tM = (tc // 60) % 1440
         dow = ((tc // 86400) + 3) % 7   # python weekday of the close time (epoch day 0 = Thursday)
-        bm = max(1, p.get("barSec", 60) // 60)
-        def ovl(t_, ln, a_, b_):
-            sp_ = (b_ - a_) % 1440
-            return sp_ > 0 and ((t_ - a_) % 1440 < sp_ or (a_ - t_) % 1440 < ln)
-        stWin = (p["hrOn"] == p["hrOff"]) or ovl(tM, bm, p["hrOn"] * 60, p["hrOff"] * 60)
-        if p.get("sessOff"):
-            stWin = True
+        stWin = (p["hrOn"] == p["hrOff"]) or ((tM - p["hrOn"] * 60) % 1440 < (p["hrOff"] - p["hrOn"]) * 60 % 1440)
         if sess2 is not None:
             stWin = any((tM - a0) % 1440 < (b0 - a0) % 1440 for a0, b0 in sess2)
         fa, fb = p["hrFlat"] * 60, p["hrOn"] * 60
-        dead = ovl(tM, bm, fa, fb) if p["hrFlat"] != p["hrOn"] else ((fa - tM) % 1440 < bm)
-        if p.get("sessOff"): dead = False
+        dead = ((tM - fa) % 1440 < (fb - fa) % 1440) if p["hrFlat"] != p["hrOn"] else tM == fa
         flatNow = dead and not deadPrev; deadPrev = dead
         dayk = (t + IST) // 86400
         newDay = prevDay is not None and dayk != prevDay; prevDay = dayk
-        wkB = (not p.get("sessOff")) and p["wkFlat"] and ((dow == p["wkDow"] and (tM >= p["wkHr"] * 60 or (p["wkHr"] * 60 - tM) % 1440 < bm)) or dow == 5 or dow == 6)
+        wkB = p["wkFlat"] and ((dow == p["wkDow"] and tM >= p["wkHr"] * 60) or dow == 5 or dow == 6)
         wkNow = wkB and not wkPrev; wkPrev = wkB
         if newDay:
             stDayTrades = 0; stDayPnl = 0.0; stDayHalt = False; stLossRun = 0
@@ -530,9 +521,7 @@ def run(bars, P=None, htf=None, log=False):
             eqOpen = True; eqLog.append((bi, eqLvl))
         eqBlock = p["eqOn"] and not autoMode and not eqOpen
         autoDir = (stT15 if eqOpen else -stT15) if autoMode else 0
-        nwNow = NEWS is not None and NEWS[bi]
-        preNow = PRE is not None and PRE[bi]
-        stGo = not stDayHalt and not wkB and not seqHalt and not ldHalt and not eqBlock and not nwNow and not preNow
+        stGo = not stDayHalt and not wkB and not seqHalt and not ldHalt and not eqBlock
         clsWhy = ""
 
         def cancel():
@@ -562,10 +551,6 @@ def run(bars, P=None, htf=None, log=False):
         if wkNow:
             if opn: clsWhy = "Weekend flat"
             if stDir != 0: cnt["canc"] += 1
-            cancel(); stDir = 0
-        if nwNow:   # 'When a window starts: Close any open trade' (default) - and nothing waits or arms inside it
-            if opn: clsWhy = "News window"
-            if stDir != 0: cnt["canc"] += 1; cnt["newsCanc"] = cnt.get("newsCanc", 0) + 1
             cancel(); stDir = 0
         if p["expBars"] > 0 and stDir != 0 and stArmBar is not None and bi - stArmBar >= p["expBars"]:
             cancel(); cnt["canc"] += 1; stDir = 0

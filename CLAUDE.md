@@ -7,8 +7,11 @@
   receiver only uses the free "MetaApi API") and the MQL5 VPS guide (`SMC_Strategy_v8.3_MQL5_VPS_GUIDE.pdf`).
 - Owner: **Punit** (punit7870@gmail.com). Works from a phone. Wants **simple English, short examples with
   numbers, tables**. Times are **IST** (Asia/Kolkata).
-- **Latest version: v11.1** = `SMC_Structure_Strategy_v11.1.txt` + `_NOTES.txt` + `_HANDBOOK.pdf`.
-- **MT5 EA: `SMC_Structure_EA_v11.1.mq5` + `_NOTES.txt`** = v11.1 rules in MQL5 + HEDGE mode (group 33 4th
+- **Latest version: v11.2** = `SMC_Structure_Strategy_v11.2.txt` + `_NOTES.txt` + `_HANDBOOK.pdf` (v11.1 + group 38
+  "Stop buffer unit": Price (as now, default) / Pips (auto per market) / % of price; see Versions).
+- **MT5 EA: `SMC_Structure_EA_v11.2.mq5` + `_NOTES.txt`** (v11.1 files kept) = v11.2 rules in MQL5 (group 38 at the END
+  of the EA inputs, after group 41; core BufAt / LimAt / RoundTick; adapter PipAuto from symbol name, base / profit
+  currency, SYMBOL_TRADE_CALC_MODE forex) + HEDGE mode (group 33 4th
   choice; money per side or shared) + group 40 (magic, touch / pending entries, broker clock FxPro UTC+2 EU
   DST, 20,000 warm-up bars, restart resume <= 5 bars via MT5 global variables, drawing). Same inputs /
   defaults as TradingView (groups 22 / 30 dropped). Core between `//==CORE-BEGIN==` / `//==CORE-END==` is
@@ -93,9 +96,13 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   the gate, a touch of the % opens it).
 - v11.1: "against the higher timeframe" choices (rule 1 only); "auto" choices (against the HTF until the
   equilibrium touch, then with it).
+- v11.2: group 38 "Stop buffer unit" (4 inputs at the end, 122 total): Price (as now) / Pips / % of price; pips 10, %
+  0.02, pip size 0 = auto (gold 0.10, silver 0.01, BTC 1, ETH 0.10, forex 0.0001, JPY 0.01, else 10 x mintick); %
+  = of the CHOCH* level; rounded to mintick; group 24 min / max stop read in the same unit (pips, or % of entry);
+  trailing stop uses it; table row 47. Pine f_stBuf / stPipSz; sim port112 buf_at / lim_at (tools/patches/sim112.py).
 
 ## How the v11.1 code works (key points)
-- 118 inputs. Groups: 20 strategy, 21 risk / loss recovery, 24 safety, 25 daily blocking windows,
+- 118 inputs (v11.2: 122, + group 38 stop buffer unit). Groups: 20 strategy, 21 risk / loss recovery, 24 safety, 25 daily blocking windows,
   33 direction, 34 v9 ideas, 35 floor, 36 loss pause, 37 equilibrium.
 - One higher-timeframe request: `f_tfTrC` returns `[trend, leg start, leg extreme, CHOCH/BOS count]`
   of the last CLOSED HTF candle. Auto HTF: 1m->15m, 5m->1h, 15m->4h, 1h->1D, 4h->1W, 1D->1M.
@@ -129,7 +136,7 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
 - All 13 v11.1 choices lose over 2021-26 (against, favourable, equilibrium, against+eq, auto, pause,
   2R, reverse ON, pullback 50, rule 1 only, rule 2 only, CHOCH+BOS); none positive in 2021-23.
 - ATR minimum stop (skip if stop < X x ATR14 of 1m, X 4..12): no X positive in 2021-23 (-0.17..-0.23R)
-  -> NOT worth a v11.2. The existing fixed "skip if stop closer than" $5 was better (-0.07R 2021-23,
+  -> NOT worth a version. The existing fixed "skip if stop closer than" $5 was better (-0.07R 2021-23,
   -0.015R 2024-26) but still not positive. Stops are 1.5..30x ATR14(1m); median stop 5 USD (2021) ->
   19 USD (2026).
 - Scripts: scratchpad only (fx.pkl / atr14.pkl / port112x.py with atrX / modes.py) - rebuild from
@@ -209,20 +216,25 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   rules, no pause): +4,732 / -1,834 / +3,668 / EMPTY Feb 2024 / +4,533 / +1,265. Flat $50 both sides lost
   every year. Not worth an MT5 EA. Page: https://claude.ai/artifact/6CZ9PWMAfb516YtBKwAcfs
 
+- **Stop buffer size, 1m, user settings, 2021 - Oct 2026 (v11.2 rules, rounded)**: 1.0 = 10 pips -18,514 (-0.13R, 5 of 6
+  years lose); 0.02% -22,350; 0.05% -19,840; 0.1% -17,216; 0.2% -12,519 (-0.12R); 0.5% -6,768 (-0.08R); 50 pips -10,583
+  (-0.10R); all but 1.0 / 0.02% lose every year. Wider loses less per trade, none profitable. 3 months (OANDA, port112):
+  1.0 +793, 0.02% +794, 0.05% +284, 0.1% -277, 0.2% -698, 50 pips -592 (opposite order). tools/ea/bueffect.py.
+
 ## Open items / next steps
 00. **Group 41**: ask the user to attach the EA once with "save the calendar to a file" ON and send
    SMC_calendar.csv -> test the REAL news list (CPI, FOMC ...) on 2021-2026. With group 29 releases only
    (1m, user settings): none -18,514 / windows -18,844 / +pre 1 h -18,708 / 2 h -18,302 / 4 h -18,070,
    all -0.13R per trade (tools/ea/preeffect.py) -> news blocking does not change the edge.
-0. **MT5 EA**: user compiles `SMC_Structure_EA_v11.1.mq5` in MetaEditor (F7) and sends any error lines; then
+0. **MT5 EA**: user compiles `SMC_Structure_EA_v11.2.mq5` in MetaEditor (F7) and sends any error lines; then
    Strategy Tester (Every tick based on real ticks) and a demo account. Fix compile errors with a patch, re-run
    `tools/ea` checks before delivering.
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,
    floor, groups 36 / 37, daily limits all OFF, Properties initial capital 100,000), MT5 XAUUSD M1 bars
    2023 -> today [RECEIVED: tools/data/gold_m1_utc.npz, 2021-2026], optional 2025 runs (against mode; equilibrium ON). Then: edge per year, stop-size rule,
    target from each trade's best point (MFE), hours / days, with vs against the HTF, streaks. Choose
-   rules on 2023-24, check them on 2025-26, report in plain English -> v11.2.
-2. **v11.2 ATR minimum stop: tested, NOT recommended** (see above). Edge monitor (pause when the win
+   rules on 2023-24, check them on 2025-26, report in plain English -> next version.
+2. **ATR minimum stop: tested, NOT recommended** (v11.2 became the stop buffer unit) (see above). Edge monitor (pause when the win
    rate of the last N trades falls below X%) not tested. The 5.75-year loss is the real issue: confirm
    in TradingView (v11.1 one-year backtests), then test any new idea on the 5.75 years BEFORE building.
 3. **Open question**: the auto mode's alternatives - (b) opposite trades from the HTF break until the
