@@ -158,6 +158,10 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   unsizable and NO trades 2025-26; $200 risk +2,172 (BE +2,955) with a -1,267 year. 4h against / auto =
   fit on 2021-23, failed 2024-26 (-0.6R); 4h longs only = gold's bull market, not an edge.
   Verdict: 15m still the best-supported; no new version for 1h / 4h.
+- **15m best setting, close & reverse / hedge**: reverse ON +2,533 (Rule C) / +1,089 (off) vs OFF +2,747 /
+  +1,232 -> keep OFF. Hedge (two copies Longs only + Shorts only, v8.4 method) +2,773 / +1,230 = no
+  change: long and short trades never overlapped (0 of 92; auto mode allows one side at a time). Plain
+  CHOCH 15m (no auto): hedge +825 vs one copy +1,037 (8 of 154 overlapped) -> no benefit.
 
 ## Open items / next steps
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,
