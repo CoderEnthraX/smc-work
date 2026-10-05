@@ -234,6 +234,19 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   shape) -> TV = a lucky path. Recovery off 0/52 profitable (-5,472..-1,345). Cap 10,000 = identical (max risk 4,082;
   4,474 in any set); caps 2,000 / 1,000 / 500 Day: 38 / 32 / 23 of 53 empty. The 30 Sep TV Rule C+ export (248f2)
   emptied by 27 Mar 2023 while FxPro same settings survived to Oct 2024 (75% same entries; one extra TV loss 5 Jan).
+- **Win/loss pattern study (Oct 2026, PDF sent: scratchpad pat/SMC_win_loss_patterns_2021-2026.pdf, 12 pages)**: user's
+  TV settings, recovery off, 2021-01 .. 2026-10: 1,844 trades, -0.12R, -11,253 (Python = core). Exits: SL 53%, TP 8%,
+  02:00 close 23% / news 11% / weekend 6% (those +0.37R, 64% win = most winners). Before entry winners ~= losers (rule,
+  wait, 1h trend); tight stops (<0.165% of price) -0.31R both halves; wide stops look better only because 42% end at
+  02:00 (TP vs SL stops $6.02 vs $5.72). 10-14 IST worse, 18-20 better both halves; 1st trade of day worst. Losers median
+  2h15, TP 6h. 23% of SL trades were +1R first but BE/step/partial/trail/smaller targets all worse (BE -15,222).
+  One change alone (grid1): none positive 2021-23; lose less: no time rules -524 (but 39/40 noisy sets lose, swap not
+  modelled ~2,100), 13-21 -5,679, buffer 10 -5,270, min stop $8 -1,295, rule 2 only -5,901. 720 combos (grid2): 32 +
+  on 2021-23, 3 + in both; #1 on 2021-23 +0.14R -> 2024-26 -0.05R; rank corr A vs B -0.07. "Lucky island" = no time
+  rules + buffer 3 + min stop $8 + 5R + eq 50: +2,141 (+0.07R, 40/40 noisy sets + recovery off) but 0 of 13 one-value
+  neighbours + in both halves; Rule C empties it 9 Jun 2026. Rule C 40 sets emptied: yours 35, 13-21 15 (real +9,020),
+  buffer 5 40, rule 2 only 40, min $8 21. Streaks 9-17 losses every year; split 3: 18 losses = 11,225 carried.
+  Scripts: scratchpad pat/ (portf.py ARM signal log, features.py, explore.py, grid.py, grid2.py, rc.py, report.py).
 
 ## Open items / next steps
 00. **Group 41**: ask the user to attach the EA once with "save the calendar to a file" ON and send
