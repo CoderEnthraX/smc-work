@@ -374,6 +374,8 @@ input bool     InR3Fb      = false;   //   - if the close is too far: fall back 
 input group "42. Loss recovery - start again from the base (v12.1)"
 input bool     InLmOn      = false;   // Start again from the base risk when the losses carried reach
 input double   InLmAmt     = 300.0;   //   - losses carried, in account currency
+input bool     InPmOn      = false;   // Start again from the base risk once this much is won back
+input double   InPmAmt     = 200.0;   //   - won back from the deepest point, in account currency
 
 //---------------------------------------------------------------- arrays used by the core (MQL5 version)
 class CArrD
@@ -545,8 +547,8 @@ public:
    int    buMode;
    double buPips, buPct, pipSz;
    bool   r3On, r3BrkOn, r3Fb; // v12.0: rule 3, 'only if the close is near the broken level', 'too far: fall back to rule 1 / 2'
-   bool   lmOn;                // v12.1: group 42 - start again from the base when the losses carried reach lmAmt
-   double lmAmt;
+   bool   lmOn, pmOn;          // v12.1: group 42 - start again from the base when the losses carried reach lmAmt / once pmAmt is won back
+   double lmAmt, pmAmt;
    double r3Brk;
    // broker facts, set by the adapter
    int    cs;
@@ -555,7 +557,7 @@ public:
    // worked out by Derive()
    bool   fav, agn, autoM, useCho, useBos, hfEff, u15, timeOn, intra, mvOn, mgOn, seqPlus;
    int    bMin, mvKMax;
-   CSet() { for (int i = 0; i < 32; i++) ndDays[i] = false; calOn = false; calHol = false; preOn = false; calPre = 0; calPost = 0; preSec = 0; buMode = 0; buPips = 0; buPct = 0; pipSz = 0; r3On = false; r3BrkOn = false; r3Fb = false; r3Brk = 0; lmOn = false; lmAmt = 0; }
+   CSet() { for (int i = 0; i < 32; i++) ndDays[i] = false; calOn = false; calHol = false; preOn = false; calPre = 0; calPost = 0; preSec = 0; buMode = 0; buPips = 0; buPct = 0; pipSz = 0; r3On = false; r3BrkOn = false; r3Fb = false; r3Brk = 0; lmOn = false; lmAmt = 0; pmOn = false; pmAmt = 0; }
    void Derive()
    {
       fav    = sig >= 3 && sig <= 5;
@@ -1283,7 +1285,8 @@ public:
    double seqLoss, seqTot, flPnl, flPeak, dayPnl, ptPnl, peakEq, riskNow, flFloor, flCush, flRisk;
    bool   seqHalt, seqCapOn, dayHalt, ptHalt, ddHit;
    int    cntSeqCap, dayTrades, lsRun, cntLs, ldRun, cntLd, prevDom;
-   int    cntLm;     // v12.1: times the losses carried reached the group 42 mark
+   int    cntLm, cntPm;   // v12.1: times the group 42 loss mark / profit mark started again from the base
+   double carPk;          // v12.1: the most carried in the current losing run (0 = nothing carried)
    long   ldUntil, prevWk, liveT;
    CMoney() { liveT = LNONE; Reset(); }
    void Reset()
@@ -1291,7 +1294,7 @@ public:
       seqLoss = 0; seqTot = 0; flPnl = 0; flPeak = 0; dayPnl = 0; ptPnl = 0; peakEq = NAD; riskNow = 0; flFloor = 0; flCush = 0; flRisk = 0;
       seqHalt = false; seqCapOn = false; dayHalt = false; ptHalt = false; ddHit = false;
       cntSeqCap = 0; dayTrades = 0; lsRun = 0; cntLs = 0; ldRun = 0; cntLd = 0; prevDom = -1;
-      cntLm = 0;
+      cntLm = 0; cntPm = 0; carPk = 0;
       ldUntil = LNONE; prevWk = LNONE;
    }
    double Car()        { return S.seqPlus ? Mx(0.0, -seqTot) : seqLoss; }
@@ -1326,7 +1329,7 @@ public:
       bool newWk = prevWk != LNONE && wk != prevWk;
       prevWk = wk;
       if (newDay) { dayTrades = 0; dayPnl = 0; dayHalt = false; lsRun = 0; }
-      if (newDay && seqHalt && S.capAct == 1) { seqHalt = false; seqLoss = 0; seqTot = 0; seqCapOn = false; }
+      if (newDay && seqHalt && S.capAct == 1) { seqHalt = false; seqLoss = 0; seqTot = 0; seqCapOn = false; carPk = 0; }
       if ((S.ptPer == 1 && newDay) || (S.ptPer == 2 && newWk)) { ptPnl = 0; ptHalt = false; }
    }
    // the trades closed on this bar (all sides that use this money), added together, oldest first
@@ -1363,6 +1366,9 @@ public:
       flPeak  = Mx(flPeak, flPnl);
       // v12.1: group 42 - the losses carried reached the mark: they are forgotten, the next trade risks the base again
       if (S.lmOn && S.seqMode != 0 && Car() >= S.lmAmt - 0.005) { seqLoss = 0; seqTot = 0; cntLm++; }
+      // v12.1: group 42 - the profit mark: won back from the deepest point of this losing run -> the rest is forgotten
+      if (S.pmOn && S.seqMode != 0 && Car() > 0.005 && carPk - Car() >= S.pmAmt - 0.005) { seqLoss = 0; seqTot = 0; cntPm++; }
+      carPk = Car() <= 0.005 ? 0.0 : Mx(carPk, Car());
       if (Car() <= 0.005 && S.capAct != 2) { seqHalt = false; seqCapOn = false; }
       for (int a = 0; a < n; a++)
       {
@@ -1391,7 +1397,7 @@ public:
          riskNow = S.seqMax;
          if (S.capAct == 3)
          {  // v12.1: the losses carried are forgotten and the next trade risks the base again (never above the cap)
-            if (car > 0.005) { seqLoss = 0; seqTot = 0; seqCapOn = false; }
+            if (car > 0.005) { seqLoss = 0; seqTot = 0; seqCapOn = false; carPk = 0; }
             riskNow = Mn(S.risk, S.seqMax);
          }
          else if (S.capAct != 0) seqHalt = true;
@@ -2110,7 +2116,7 @@ void FillSettings()
    S.calOn = InCalOn; S.calHol = InCalHol; S.calPre = InCalPre; S.calPost = InCalPost; S.preOn = InPreOn; S.preSec = (long)MathRound(InPreHrs * 3600.0);
    S.buMode = (int)InBuMode; S.buPips = InBuPips; S.buPct = InBuPct; S.pipSz = InBuPip > 0 ? InBuPip : PipAuto();
    S.r3On = InR3On; S.r3BrkOn = InR3BrkOn; S.r3Brk = InR3Brk; S.r3Fb = InR3Fb;
-   S.lmOn = InLmOn; S.lmAmt = InLmAmt;
+   S.lmOn = InLmOn; S.lmAmt = InLmAmt; S.pmOn = InPmOn; S.pmAmt = InPmAmt;
    S.cs = g_cs;
    S.cmLots = InCmMode == CM_LOT ? InCmUnit : g_contract;
    S.uv = 1.0;
@@ -2145,7 +2151,7 @@ string CheckInputs()
    if ((InCalOn || InCalSave) && ArraySize(g_calCur) == 0) return "Calendar currencies: give at least one, e.g. USD";
    if (InBuPips < 0 || InBuPct < 0 || InBuPct > 10 || InBuPip < 0) return "Stop buffer unit (group 38): pips and pip size 0 or more, % 0 - 10";
    if (InR3Brk < 0) return "Rule 3 (group 39): the distance from the broken level must be 0 or more";
-   if (InLmAmt < 0.01) return "Loss mark (group 42): the losses carried must be 0.01 or more";
+   if (InLmAmt < 0.01 || InPmAmt < 0.01) return "Loss / profit mark (group 42): the amounts must be 0.01 or more";
    if (StringLen(InCmt) < 1 || StringLen(InCmt) > 16 || StringFind(InCmt, " ") >= 0) return "Order comment: 1 - 16 characters, no spaces";
    return "";
 }
@@ -3652,6 +3658,7 @@ string RecoveryTxt()
               (S.seqMode == 4 ? "A+ - total below 0 + " + Mo(S.seqAdd) : (S.seqMode == 5 ? "B+ - 2 x total below 0" : "C+ - total below 0"))));
    if (S.split > 1.0) m = m + "  |  split over " + DoubleToString(S.split, 1) + " trades";
    if (S.lmOn) m = m + "  |  back to the base at " + Mo(S.lmAmt) + " carried";
+   if (S.pmOn) m = m + "  |  back to the base once " + Mo(S.pmAmt) + " is won back";
    if (S.seqFrom == 0) m = m + "  |  whole history";
    else if (S.seqFrom == 2) m = m + "  |  from " + SessTime(S.seqFromT, false);
    else m = m + (g_money[0].liveT == LNONE ? "  |  from live" : "  |  from live " + SessTime(g_money[0].liveT, false));
@@ -3880,9 +3887,13 @@ string Num(double v)
 string CapTxt() { return S.capAct == 3 ? " x back to the base" : ""; }
 string LmTxt()
 {
-   if (!S.lmOn) return "off";
+   if (!S.lmOn && !S.pmOn) return "off";
    if (S.seqMode == 0) return "on - but loss recovery is Off";
-   return "at " + Mo(S.lmAmt) + ":  " + MonTxt(I2(g_money[0].cntLm) + " x back to the base", I2(g_money[1].cntLm) + " x back to the base");
+   string a = "", b = "";
+   if (S.lmOn) { a = "loss " + Mo(S.lmAmt) + ": " + I2(g_money[0].cntLm) + " x"; b = "loss " + Mo(S.lmAmt) + ": " + I2(g_money[1].cntLm) + " x"; }
+   if (S.lmOn && S.pmOn) { a = a + "  |  "; b = b + "  |  "; }
+   if (S.pmOn) { a = a + "won back " + Mo(S.pmAmt) + ": " + I2(g_money[0].cntPm) + " x"; b = b + "won back " + Mo(S.pmAmt) + ": " + I2(g_money[1].cntPm) + " x"; }
+   return MonTxt(a, b);
 }
 // v12.0: rule 3 - entries at the close of the signal candle (group 39)
 string R3Txt()
@@ -4023,7 +4034,7 @@ void TblRows()
    Row("HTF EQUILIBRIUM FIRST (group 37)", EqTxt(), !S.eqOn && !S.autoM ? clrGray : (g_eqOpen ? clrLime : clrOrange));
    Row("STOP BUFFER (group 38)", BufTxt(), S.buMode != 0 ? clrAqua : clrGray);
    Row("RULE 3 - ENTRY AT THE SIGNAL CLOSE (group 39)", R3Txt(), S.r3On ? clrAqua : clrGray);
-   Row("LOSS MARK - BACK TO THE BASE (group 42)", LmTxt(), S.lmOn && S.seqMode != 0 ? clrAqua : clrGray);
+   Row("BACK TO THE BASE - loss / profit mark (group 42)", LmTxt(), (S.lmOn || S.pmOn) && S.seqMode != 0 ? clrAqua : clrGray);
    Row("Entries  |  magic", (string)(InExec == EX_TOUCH ? "touch (like TradingView)" : "pending orders") + "  |  " + IntegerToString(InMagic), clrSilver);
    Row("Counting since", SessTime(SrvToUtc(g_startT), true), clrGray);
 }

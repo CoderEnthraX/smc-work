@@ -37,7 +37,7 @@ int main(int argc, char **argv)
    InCalPost = (int)cl("calPost", 20); InCalHol = cb("calHol", true); InCalSave = cb("calSave", false); InPreOn = cb("preOn", false); InPreHrs = cd("preHrs", 1.0);
    InCalToday = (ECalToday)cl("calToday", 2);
    InBuMode = (EBuMode)cl("buMode", 0); InBuPips = cd("buPips", 10.0); InBuPct = cd("buPct", 0.02); InBuPip = cd("buPip", 0.0);
-   InR3On = cb("r3On", false); InR3BrkOn = cb("r3BrkOn", false); InR3Brk = cd("r3Brk", 3.0); InR3Fb = cb("r3Fb", false); InLmOn = cb("lmOn", false); InLmAmt = cd("lmAmt", 300.0);
+   InR3On = cb("r3On", false); InR3BrkOn = cb("r3BrkOn", false); InR3Brk = cd("r3Brk", 3.0); InR3Fb = cb("r3Fb", false); InLmOn = cb("lmOn", false); InLmAmt = cd("lmAmt", 300.0); InPmOn = cb("pmOn", false); InPmAmt = cd("pmAmt", 200.0);
    sim::calMode = (int)cl("calMode", 0); sim::calFail = cb("calFail", false); sim::calFailN = cl("calFailN", 0);
    if (cfg.count("fileDir")) sim::fileDir = cfg["fileDir"];
    if (cfg.count("simCal"))

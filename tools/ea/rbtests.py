@@ -1,7 +1,7 @@
 # v12.1 checks, FxPro gold 1m 2021 - Oct 2026:
 #  off  - with the new settings OFF the v12.1 core and whole EA write byte-identical files to v12.0 (old binaries: argv[2])
 #  py   - the Python simulator (porthp.py) == the EA core: the hard cap's 'start again from the base risk' and the group 42
-#         loss mark, with Rule A / B / C / B+ / C+, split, the floor, 'Stop for the day', the user's 10k account
+#         loss mark and profit mark (won back from the deepest point), with Rule A / B / C / B+ / C+, split, the floor, 'Stop for the day', the user's 10k account
 #  sep  - every trade's risk worked out SEPARATELY from the closed trades alone (no strategy code): the losses carried
 #         after each candle's closes, the loss mark, the rule, the split, the cap and its reset -> the risk of the next
 #         order, compared with the risk each order was sent with
@@ -42,10 +42,18 @@ PY = [('plain', UN()),
       ('lm_C3_day', UN(seqMode='C', split=3.0, seqMax=1000.0, capAct='Day', lmOn=True, lmAmt=2000.0)),
       ('lm_floor', UN(seqMode='C', split=3.0, lmOn=True, lmAmt=300.0, flMode='Cap', flAmt=2000.0)),
       ('cb_user_10k', UN(seqMode='C', split=3.0, seqMax=200.0, capAct='Base', lev=100.0, eq0=10000.0)),
-      ('lm_user_10k', UN(seqMode='C', split=3.0, seqMax=1e5, capAct='Day', lmOn=True, lmAmt=300.0, lev=100.0, eq0=10000.0))]
+      ('lm_user_10k', UN(seqMode='C', split=3.0, seqMax=1e5, capAct='Day', lmOn=True, lmAmt=300.0, lev=100.0, eq0=10000.0)),
+      # the profit mark
+      ('pm_C3_200', UN(seqMode='C', split=3.0, pmOn=True, pmAmt=200.0)), ('pm_C1_200', UN(seqMode='C', pmOn=True, pmAmt=200.0)),
+      ('pm_Cp3_200', UN(seqMode='C+', split=3.0, pmOn=True, pmAmt=200.0)), ('pm_A_100', UN(seqMode='A10', pmOn=True, pmAmt=100.0)),
+      ('pm_B2_300', UN(seqMode='B', split=2.0, pmOn=True, pmAmt=300.0)),
+      ('pm_lm_cb_C3', UN(seqMode='C', split=3.0, seqMax=400.0, capAct='Base', lmOn=True, lmAmt=1000.0, pmOn=True, pmAmt=200.0)),
+      ('pm_C3_day', UN(seqMode='C', split=3.0, seqMax=300.0, capAct='Day', pmOn=True, pmAmt=200.0)),
+      ('pm_user_10k', UN(seqMode='C', split=3.0, seqMax=1e5, capAct='Day', pmOn=True, pmAmt=200.0, lev=100.0, eq0=10000.0)),
+      ('pm_off_seq', UN(pmOn=True, pmAmt=200.0))]
 SEP = ('cb_C1_200', 'cb_C3_300', 'cb_Cp3_300', 'cb_A_400', 'cb_B_300', 'cb_Bp_500', 'cb_base_above', 'lm_C3_300', 'lm_C1_500', 'lm_Cp3_300',
-       'lm_A_200', 'lm_B_300', 'lm_cb_C3', 'cb_user_10k')
-SAME = [('lm_off_seq', 'plain')]
+       'lm_A_200', 'lm_B_300', 'lm_cb_C3', 'cb_user_10k', 'pm_C3_200', 'pm_C1_200', 'pm_Cp3_200', 'pm_A_100', 'pm_B2_300', 'pm_lm_cb_C3')
+SAME = [('lm_off_seq', 'plain'), ('pm_off_seq', 'plain')]
 def py_case(t):
     import io, contextlib
     name, P = t
@@ -55,23 +63,23 @@ def py_case(t):
 def sep_case(t):
     # the risk of every order from the closed trades alone
     name, P = t
-    p = dict(seqAdd=50.0, split=1.0, lmOn=False, lmAmt=300.0, risk=50.0); p.update(P)
+    p = dict(seqAdd=50.0, split=1.0, lmOn=False, lmAmt=300.0, pmOn=False, pmAmt=200.0, risk=50.0); p.update(P)
     rows = list(csv.DictReader(open('out_%s.csv' % name)))
     mode = p['seqMode']; plus = mode.endswith('+'); base = p['risk']; cap = p['seqMax']
     grp = defaultdict(float)
     for r in rows: grp[int(r['xbar'])] += float(r['pnl'])
     ev = sorted(grp)
-    debt = tot = 0.0; nlm = ncb = 0
+    debt = tot = pk = 0.0; nlm = ncb = npm = 0
     car = lambda: max(0.0, -tot) if plus else debt
     def risk():
-        nonlocal debt, tot, ncb
+        nonlocal debt, tot, ncb, pk
         c = car()
         if mode in ('A10', 'A+'): r = max(base, (c + p['seqAdd']) / p['split']) if c > 0.005 else base
         elif mode in ('B', 'B+'): r = max(base, 2.0 * c / p['split']) if c > 0.005 else base
         else: r = max(base, c / p['split']) if c > 0.005 else base
         if r > cap:
             if p['capAct'] == 'Base':
-                if c > 0.005: debt = tot = 0.0; ncb += 1
+                if c > 0.005: debt = tot = pk = 0.0; ncb += 1
                 r = min(base, cap)
             else: r = cap
         return r
@@ -82,12 +90,14 @@ def sep_case(t):
             s = grp[ev[ei]]; ei += 1
             d = debt - s; debt = 0.0 if d < 0.005 else d; tot += s
             if p['lmOn'] and car() >= p['lmAmt'] - 0.005: debt = tot = 0.0; nlm += 1
+            if p['pmOn'] and car() > 0.005 and pk - car() >= p['pmAmt'] - 0.005: debt = tot = 0.0; npm += 1
+            pk = 0.0 if car() <= 0.005 else max(pk, car())
             cur = risk()
         mx = max(mx, cur)
         if abs(cur - float(r['prisk'])) > 1e-3: bad.append((pb, cur, float(r['prisk'])))
-    ok = not bad and (ncb + nlm > 0 or name == 'cb_base_above')
-    return '%-14s %5d trades: every risk %s | resets: cap %4d, loss mark %4d | biggest risk %8.2f' % (
-        name, len(rows), 'as worked out' if not bad else '%d DIFFER, first %s' % (len(bad), bad[0]), ncb, nlm, mx), ok
+    ok = not bad and (ncb + nlm + npm > 0 or name == 'cb_base_above')
+    return '%-14s %5d trades: every risk %s | resets: cap %4d, loss mark %4d, profit mark %4d | biggest risk %8.2f' % (
+        name, len(rows), 'as worked out' if not bad else '%d DIFFER, first %s' % (len(bad), bad[0]), ncb, nlm, npm, mx), ok
 def same_case(t):
     a, b = t
     ra = list(csv.DictReader(open('out_%s.csv' % a))); rb = list(csv.DictReader(open('out_%s.csv' % b)))
@@ -146,7 +156,10 @@ EA = [('ea_cb_pend', dict(EAU, seqMode='C', split=3.0, seqMax=200.0, capAct='Bas
       # shared money: without the loss pause - with it, two sides closing on the SAME candle are counted in the real tick order
       # by the EA but in a fixed order by the core (it only sees candles), so the pause can start one trade apart (v12.0 too)
       ('ea_lmcb_hedge_shared', dict(EAU, seqMode='C', split=3.0, seqMax=250.0, capAct='Base', lmOn=True, lmAmt=300.0, ldOn=False), dict(Y, exec=1, dirMode=3, hedgeMoney=1, pbSwp2=1)),
-      ('ea_lmcb_hedge_shared_touch', dict(EAU, seqMode='C+', split=3.0, seqMax=250.0, capAct='Base', lmOn=True, lmAmt=300.0, ldOn=False), dict(Y, exec=0, dirMode=3, hedgeMoney=1, pbSwp2=1))]
+      ('ea_lmcb_hedge_shared_touch', dict(EAU, seqMode='C+', split=3.0, seqMax=250.0, capAct='Base', lmOn=True, lmAmt=300.0, ldOn=False), dict(Y, exec=0, dirMode=3, hedgeMoney=1, pbSwp2=1)),
+      ('ea_pm_pend', dict(EAU, seqMode='C', split=3.0, seqMax=1e5, capAct='Day', pmOn=True, pmAmt=200.0), dict(Y, exec=1, pbSwp2=1)),
+      ('ea_pm_hedge_own_touch', dict(EAU, seqMode='C', split=3.0, seqMax=400.0, capAct='Base', pmOn=True, pmAmt=150.0, lmOn=True, lmAmt=600.0), dict(Y, exec=0, dirMode=3, hedgeMoney=0, pbSwp2=1)),
+      ('ea_pm_hedge_shared', dict(EAU, seqMode='C', split=3.0, seqMax=400.0, capAct='Base', pmOn=True, pmAmt=150.0, ldOn=False), dict(Y, exec=1, dirMode=3, hedgeMoney=1, pbSwp2=1))]
 def ea_case(t):
     import io, contextlib
     name, P, e = t
@@ -165,7 +178,7 @@ def rs_case(t):
     a, sa = one(name + '_plain', dict(tester=0))
     b, sb = one(name + '_restart', dict(tester=0, restartEvery=1500))
     return '%-22s no restarts: %s | with restarts: %s | %s' % (name, sa, sb, 'IDENTICAL' if a == b else 'DIFFER'), a == b
-RS = [('rs_cb_pend', EA[0][1], EA[0][2]), ('rs_lmcb_hedge_shared', EA[3][1], EA[3][2])]
+RS = [('rs_cb_pend', EA[0][1], EA[0][2]), ('rs_lmcb_hedge_shared', EA[3][1], EA[3][2]), ('rs_pm_pend', EA[5][1], EA[5][2])]
 if __name__ == '__main__':
     which = sys.argv[1] if len(sys.argv) > 1 else 'all'
     res = []

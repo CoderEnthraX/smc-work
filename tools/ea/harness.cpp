@@ -203,7 +203,7 @@ int main(int argc, char **argv)
       }
    }
    S.buMode = (int)cl("buMode", 0); S.buPips = cd("buPips", 10.0); S.buPct = cd("buPct", 0.02); S.pipSz = cd("buPip", 0.1);
-   S.r3On = cb("r3On", false); S.r3BrkOn = cb("r3BrkOn", false); S.r3Brk = cd("r3Brk", 3.0); S.r3Fb = cb("r3Fb", false); S.lmOn = cb("lmOn", false); S.lmAmt = cd("lmAmt", 300.0);
+   S.r3On = cb("r3On", false); S.r3BrkOn = cb("r3BrkOn", false); S.r3Brk = cd("r3Brk", 3.0); S.r3Fb = cb("r3Fb", false); S.lmOn = cb("lmOn", false); S.lmAmt = cd("lmAmt", 300.0); S.pmOn = cb("pmOn", false); S.pmAmt = cd("pmAmt", 200.0);
    S.ldOn = cb("ldOn", false); S.ldN = (int)cl("ldN", 3); S.ldD = (int)cl("ldD", 2); S.eqOn = cb("eqOn", false); S.eqPct = cd("eqPct", 50);
    S.cs = (int)cl("cs", 60); S.cmLots = 100; S.uv = 1.0; S.minLot = cd("minLot", 0.01); S.tick = 0.01;
    long htfSec = cl("htfSec", 900);

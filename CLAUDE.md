@@ -125,7 +125,8 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   separately; fall back with R1 = R2 = off = no fall back, identical; whole EA = core 8/8; 484 restarts identical (3).
   Parser PARSED OK. Side numbers (recovery off, user settings, 2021-26, NOT a profit study): r3 -11,312 (1,943 tr),
   r3 + near 3 -11,572 (1,857), + fall back -11,693 (1,909; 74 fell back); v11.2 -11,253 (1,844).
-- v12.1 (user asked; built "without the profit rule"; ONLY the two strategy files, no notes / handbook; NO profit test):
+- v12.1 (user asked; ONLY the two strategy files, no notes / handbook; NO profit test). First built "without the profit rule"
+  (I misheard: the user had said WITH it) - the profit mark (4.) was then added to the same v12.1 files:
   1. HARD CAP 4th choice (end of the list) "Start again from the base risk (forget the losses)" (EA CAP_BASE = 3): next risk >
   cap (the old test, after split) -> if carried > 0.005: seqLoss = seqTot = 0, capOn false; risk = min(base, cap); never halts.
   2. group 42 (Pine + EA, end): stLmOn "Start again from the base risk when the losses carried reach" + stLmAmt 300: after the
@@ -134,16 +135,22 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   (0.1-24) = the EA's PreHit: today + tomorrow f_auDay (stAuN1..4), time_close < T and time_close + bar > T - hours; needs
   news master + group 29 ON + intraday; in stGo (cancels waiting orders, skips signals, open trades run on); audit / BLOCKED
   NOW "news soon - no new trades". Table rows 49 / 50 (51 rows). Pine 130 inputs, EA 145.
-  The user first asked for a "$200 profit -> back to $50" rule: explained that Rule C is already at base at a new high; the
-  only new version would be "won back $200 since the lowest point" - user chose to build WITHOUT it.
+  4. group 42 (after the loss mark): stPmOn "Start again from the base risk once this much is won back" + stPmAmt 200 (EA
+  InPmOn / InPmAmt): stCarPk = the most carried in the current losing run (0 when nothing carried; cleared by every reset:
+  cap Base, Day reset, loss mark); after the closes (after the loss mark): carried > 0.005 and stCarPk - carried >= amt -
+  0.005 -> seqLoss = seqTot = 0 (stCntPm); then stCarPk = carried <= 0.005 ? 0 : max(stCarPk, carried). Pine 132 inputs,
+  EA 147; table row 50 = "BACK TO THE BASE - loss / profit mark (group 42)".
+  (Why "won back": Rule C is already at base at a new high, so "the account made $200" would change nothing.)
   Tools: patches/patch121.py, ea121.py, sim121.py (port121.py; porthp capAct "Base", lmOn / lmAmt); ea/rbtests.py. Checks:
-  OFF byte-identical to v12.0 (core 5 x 5.75 y, whole EA 2 x 1 y; porthp 2 + port121 3 months); Python = core 19/19;
-  separate risk replay from the closed trades 14/14 (every order's risk; 18-1,216 cap resets, 39-250 loss-mark resets);
-  Pine pre-news written out from the Pine = calflags.py 6/6 (1m 0.5 / 1 / 2 / 24 h, 15m 1 / 2 h); whole EA = core 5/5
+  OFF byte-identical to v12.0 (core 5 x 5.75 y, whole EA 2 x 1 y; porthp 2 + port121 3 months); Python = core 28/28;
+  separate risk replay from the closed trades 20/20 (every order's risk; 18-1,216 cap resets, 16-250 loss-mark resets,
+  23-91 profit-mark resets);
+  Pine pre-news written out from the Pine = calflags.py 6/6 (1m 0.5 / 1 / 2 / 24 h, 15m 1 / 2 h); whole EA = core 8/8
   (shared hedge WITHOUT the loss pause - with it, same-candle closes of the two sides are ordered by tick in the EA and
   by candle in the core -> pause can differ; pre-existing, also v12.0; big Rule C sizes in shared hedge also differ via the
-  leverage cap on live equity); restarts 484 identical (2). Parser PARSED OK. Side numbers (one 10k account from Jan 2021,
-  user settings, lev 100): cap 200 'start again' emptied 19 Aug 2022 (482 trades); loss mark 300 emptied 13 Apr 2023.
+  leverage cap on live equity); restarts 484 identical (3). Parser PARSED OK. Side numbers (one 10k account from Jan 2021,
+  user settings, Rule C split 3, lev 100): cap 200 'start again' emptied 19 Aug 2022 (482 trades); loss mark 300 emptied
+  13 Apr 2023; profit mark 200 alone emptied 10 May 2022 (440 trades, risk up to 1,356 - it does not limit the risk).
 
 ## How the v11.1 code works (key points)
 - 118 inputs (v11.2: 122, + group 38 stop buffer unit). Groups: 20 strategy, 21 risk / loss recovery, 24 safety, 25 daily blocking windows,

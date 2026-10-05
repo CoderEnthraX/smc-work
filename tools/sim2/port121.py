@@ -15,7 +15,7 @@ DEF = dict(
     # v12.0: rule 3 - enter at the close of the signal candle; r3BrkOn = only when the close is at most r3Brk beyond the broken level
     r3On=False, r3BrkOn=False, r3Brk=3.0, r3Fb=False, pbSwp2=False,
     # v12.1: group 42 - start again from the base when the losses carried reach lmAmt; capAct 'Base' = the cap's 4th choice
-    lmOn=False, lmAmt=300.0,
+    lmOn=False, lmAmt=300.0, pmOn=False, pmAmt=200.0,
     # v8.4 / v9.0
     direction="Both",          # Both / Longs / Shorts
     bosRiskPct=100.0,          # a: risk % for stacked BOS trades
@@ -328,6 +328,7 @@ def run(bars, P=None, htf=None, log=False):
     stAddRisk = 1.0
     stBosSeen = False; frozen = None; bosFill = {}
     seqLoss = 0.0; seqHalt = False; seqCapOn = False; seqLog = []; seqTot = 0.0; flPnl = 0.0; flPeak = 0.0
+    carPk = 0.0   # v12.1: the most carried in the current losing run
     ldRun = 0; ldUntil = None; ldLog = []; eqOpen = False; prevE = None; eqLog = []
     plus = p["seqMode"] in ("A+", "B+", "C+")
     car = lambda: max(0.0, -seqTot) if plus else seqLoss
@@ -431,7 +432,7 @@ def run(bars, P=None, htf=None, log=False):
         if newDay:
             stDayTrades = 0; stDayPnl = 0.0; stDayHalt = False; stLossRun = 0
             if seqHalt and p["capAct"] == "Day":
-                seqHalt = False; seqLoss = 0.0; seqCapOn = False; seqTot = 0.0
+                seqHalt = False; seqLoss = 0.0; seqCapOn = False; seqTot = 0.0; carPk = 0.0
 
         # fills (v8.1 way: newest entry bar)
         newOpen = [tr for tr in opn if tr.ebar == bi]
@@ -454,6 +455,10 @@ def run(bars, P=None, htf=None, log=False):
             # v12.1: group 42 - the losses carried reached the mark: forgotten, the next trade risks the base again
             if p["lmOn"] and p["seqMode"] != "Off" and car() >= p["lmAmt"] - 0.005:
                 seqLoss = 0.0; seqTot = 0.0; cnt["lm"] = cnt.get("lm", 0) + 1
+            # v12.1: group 42 - the profit mark: won back from the deepest point of this losing run -> the rest is forgotten
+            if p["pmOn"] and p["seqMode"] != "Off" and car() > 0.005 and carPk - car() >= p["pmAmt"] - 0.005:
+                seqLoss = 0.0; seqTot = 0.0; cnt["pm"] = cnt.get("pm", 0) + 1
+            carPk = 0.0 if car() <= 0.005 else max(carPk, car())
             if car() <= 0.005 and p["capAct"] != "Perm":
                 seqHalt = False; seqCapOn = False
         for tr in closed[nClosedSeen:]:
@@ -525,7 +530,7 @@ def run(bars, P=None, htf=None, log=False):
             if p["capAct"] == "Base":
                 # v12.1: the losses carried are forgotten and the next trade risks the base again (never above the cap)
                 if car() > 0.005:
-                    seqLoss = 0.0; seqTot = 0.0; seqCapOn = False; cnt["capBase"] = cnt.get("capBase", 0) + 1
+                    seqLoss = 0.0; seqTot = 0.0; seqCapOn = False; carPk = 0.0; cnt["capBase"] = cnt.get("capBase", 0) + 1
                 riskNow = min(p["risk"], p["seqMax"])
             elif p["capAct"] != "Clamp": seqHalt = True
         else:
