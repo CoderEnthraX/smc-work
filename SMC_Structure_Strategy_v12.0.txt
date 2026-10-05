@@ -1,5 +1,5 @@
 //@version=6
-// SMC Structure Strategy  -  v12.0  -  main-tier CHOCH/BOS, rule 1 + rule 2, confirmed HTF, on-time session/news/weekend rules, news windows on chosen dates, automatic US news schedule + US market holidays on the New York clock, frozen broker bracket, commission + spread model, lot-step sizing, exact trade counters, profit-target stop, TheConnector message format, commission and spread set by you per ticker, master news switch, rule 2 bracket fixed at arming, signal audit labels, one extra trade for every same-side BOS (each with its own bracket and tag), opposite CHOCH closes every trade, a limit on trades open at once, larger dark audit labels, optional step stop and break-even stop, no compiler warnings, day reset of the recovery halt before sizing, a table row for orders TradingView refused, v7.1's order handling (order ids, fill check, close rule) with a TheConnector tag from the signal candle's time, each stacked trade closed only by its own stop, target or close (close rule ANY), a safety net for any stop, target or close TradingView misses, cancels sent only for an order that is really waiting and every close sent last in the candle (v8.2's closes and brackets were wiped out on TradingView), trade direction (both / longs only / shorts only) so two copies can hedge, spaces taken out of the symbol and the tag, price settings take up to 8 decimals, v9.0 ideas as switches that are all OFF by default (smaller risk for stacked BOS trades, higher-timeframe filter, structure trailing stop, target at the next liquidity, partial profit, premium / discount filter, pause after losses in a row), v9.1: a waiting order is cancelled when a new BOS prints before it fills (it never moves to the new leg), Rule A = losses carried + your Rule A amount, the hard cap stops trading until you raise it, v10.0: loss recovery Rule A / B / C never below the base risk, Rule C = carry the losses, v10.1: every trade on the chart counts for loss recovery again, Rule A+ / B+ / C+ recover only the loss of the total P&L below zero, v10.2: loss recovery counts from the whole chart history (default), the moment the strategy goes live, or a date, v10.3: split the loss over this many trades (the rule's amount divided, never below the base risk), v10.4: account floor with profit lock (risk = % of the cushion above the floor), v11.0: pause for days after losses in a row, higher-timeframe-favourable modes, higher timeframe equilibrium first, v11.1: against-the-higher-timeframe modes and auto modes, v11.2: stop buffer in price, pips (automatic per market) or % of price, v12.0: rule 3 enters at the close of the signal candle, rule 4 the same only when the entry-to-stop distance is within your limits (skip, or fall back to rule 1 / 2)  -  ASCII only
+// SMC Structure Strategy  -  v12.0  -  main-tier CHOCH/BOS, rule 1 + rule 2, confirmed HTF, on-time session/news/weekend rules, news windows on chosen dates, automatic US news schedule + US market holidays on the New York clock, frozen broker bracket, commission + spread model, lot-step sizing, exact trade counters, profit-target stop, TheConnector message format, commission and spread set by you per ticker, master news switch, rule 2 bracket fixed at arming, signal audit labels, one extra trade for every same-side BOS (each with its own bracket and tag), opposite CHOCH closes every trade, a limit on trades open at once, larger dark audit labels, optional step stop and break-even stop, no compiler warnings, day reset of the recovery halt before sizing, a table row for orders TradingView refused, v7.1's order handling (order ids, fill check, close rule) with a TheConnector tag from the signal candle's time, each stacked trade closed only by its own stop, target or close (close rule ANY), a safety net for any stop, target or close TradingView misses, cancels sent only for an order that is really waiting and every close sent last in the candle (v8.2's closes and brackets were wiped out on TradingView), trade direction (both / longs only / shorts only) so two copies can hedge, spaces taken out of the symbol and the tag, price settings take up to 8 decimals, v9.0 ideas as switches that are all OFF by default (smaller risk for stacked BOS trades, higher-timeframe filter, structure trailing stop, target at the next liquidity, partial profit, premium / discount filter, pause after losses in a row), v9.1: a waiting order is cancelled when a new BOS prints before it fills (it never moves to the new leg), Rule A = losses carried + your Rule A amount, the hard cap stops trading until you raise it, v10.0: loss recovery Rule A / B / C never below the base risk, Rule C = carry the losses, v10.1: every trade on the chart counts for loss recovery again, Rule A+ / B+ / C+ recover only the loss of the total P&L below zero, v10.2: loss recovery counts from the whole chart history (default), the moment the strategy goes live, or a date, v10.3: split the loss over this many trades (the rule's amount divided, never below the base risk), v10.4: account floor with profit lock (risk = % of the cushion above the floor), v11.0: pause for days after losses in a row, higher-timeframe-favourable modes, higher timeframe equilibrium first, v11.1: against-the-higher-timeframe modes and auto modes, v11.2: stop buffer in price, pips (automatic per market) or % of price, v12.0: rule 3 enters at the close of the signal candle, optionally only when the close is at most N beyond the broken level  -  ASCII only
 strategy("SMC Structure Strategy", "SMC STRAT", overlay = true,
      max_bars_back = 2000, max_lines_count = 500, max_labels_count = 500, dynamic_requests = true,
      initial_capital = 10000, currency = currency.USD, default_qty_type = strategy.fixed, default_qty_value = 1,
@@ -2424,11 +2424,10 @@ stBuMode = input.string("Price (as now)", "Stop buffer unit", options = ["Price 
 stBuPips = input.float(10.0, "  - stop buffer in pips", minval = 0.0, step = 0.1, group = gBu, tooltip = "Used only when the unit is Pips. 10 (default) = 1.00 on gold, 0.10 on silver, 10 on Bitcoin, 0.0010 on EURUSD, 0.10 on USDJPY.")
 stBuPct  = input.float(0.02, "  - stop buffer in % of price", minval = 0.0, maxval = 10.0, step = 0.001, group = gBu, tooltip = "Used only when the unit is % of price. 0.02 (default) = 0.02% of the level: 0.80 on gold at 4,000, 20 on Bitcoin at 100,000, 0.00022 on EURUSD at 1.10.")
 stBuPip  = input.float(0.0, "  - pip size (0 = automatic)", minval = 0.0, step = 0.00000001, group = gBu, tooltip = "0 (default) = automatic from the ticker (the table shows the pip it uses). Type a number only if your broker counts pips differently, e.g. 0.01 for gold.")
-gCc = "39. Entry at the close of the signal candle - rules 3 / 4 (v12.0)"
-stCcMode = input.string("Off (rules 1 / 2 as now)", "Entry at the close of the signal candle", options = ["Off (rules 1 / 2 as now)", "RULE 3 - always enter at the close", "RULE 4 - enter at the close only if the stop distance is within the limits"], group = gCc, tooltip = "OFF (default): rules 1 and 2 as before - the strategy waits for the pullback.\n\nRULE 3: the moment a candle CLOSES and confirms the signal (your CHOCH; a BOS too if you trade BOS), the strategy enters - a market order that fills at the open of the next candle, which is practically the close. No pullback. Rules 1 and 2 are not used. Stop = the CHOCH* level + your stop buffer, as always; target = your R multiple from the entry; the size comes from your risk and that distance.\n\nRULE 4: the same, but first the distance from the close to the stop is checked against the two limits below. A huge signal candle means a far stop: the setup is skipped (or falls back to rule 1 / 2, see below).\n\nExample: stop 4,089.00. The candle closes at 4,101.00: distance 12.00, inside 3 - 30, enters. A huge candle closes at 4,125.00: distance 36.00 - more than 30, skipped.\n\nEverything else is unchanged: entry hours, news windows, weekend, loss pause, loss recovery, the higher-timeframe filters (b, favourable / against / auto), group 24. Rule 3 / 4 do NOT need the higher timeframe to agree (like rule 1). A signal outside the entry hours or while trading is blocked opens nothing - there is no late entry. With close and reverse ON, a signal that reverses an open trade enters one candle later, after the old trade is closed.")
-stCcMax = input.float(30.0, "  - RULE 4: skip if the stop is FURTHER than  (0 = off)", minval = 0.0, step = 0.00000001, group = gCc, tooltip = "RULE 4 only. The largest entry-to-stop distance a trade may have, in the unit of group 38 (Price = dollars on gold; pips; or % of the entry price). 30 (default) = 30.00 on gold. 0 = no upper limit.")
-stCcMin = input.float(3.0, "  - RULE 4: skip if the stop is CLOSER than  (0 = off)", minval = 0.0, step = 0.00000001, group = gCc, tooltip = "RULE 4 only. The smallest entry-to-stop distance a trade may have, same unit. 3 (default) = 3.00 on gold - a very tight stop is mostly noise. A setup with a stop this close is always skipped (a pullback entry would be even closer). 0 = no lower limit.")
-stCcFar = input.string("Skip the setup", "  - RULE 4: when the stop is too far", options = ["Skip the setup", "Fall back to RULE 1 / 2 (wait for the pullback)"], group = gCc, tooltip = "RULE 4 only.\n\nSKIP THE SETUP (default): a signal candle with a stop further than the limit opens nothing.\n\nFALL BACK TO RULE 1 / 2: the setup is armed the normal way instead - a limit order at the pullback (rule 1) or the broken pivot (rule 2), with your rule 1 / 2 switches and the higher-timeframe rule of rule 2. That pullback entry must keep the same rule 4 limits: if its stop is further than the limit (or closer than the minimum) it is cancelled too.")
+gCc = "39. RULE 3 - enter at the close of the signal candle (v12.0)"
+stR3On    = input.bool(false, "RULE 3 - enter at the close of the signal candle", group = gCc, tooltip = "OFF (default): rules 1 and 2 as before - the strategy waits for the pullback.\n\nON: the moment a candle CLOSES and confirms the signal (your CHOCH; a BOS too if you trade BOS), the strategy enters - a market order that fills at the open of the next candle, which is practically the close. It does not matter where the candle closes. No pullback; rules 1 and 2 are not used. Stop = the CHOCH* level + your stop buffer, as always; target = your R multiple from the entry; the size comes from your risk and that distance.\n\nGroup 24 'Skip the setup if the stop is CLOSER / FURTHER than' (0 = off) works for rule 3 too, like for rules 1 and 2.\n\nEverything else is unchanged: entry hours, news windows, weekend, loss pause, loss recovery, the higher-timeframe filters (b, favourable / against / auto). Rule 3 does NOT need the higher timeframe to agree (like rule 1). A signal outside the entry hours or while trading is blocked opens nothing - there is no late entry. With close and reverse ON, a signal that reverses an open trade enters one candle later, after the old trade is closed.")
+stR3BrkOn = input.bool(false, "  - RULE 3: only if the close is near the broken level", group = gCc, tooltip = "OFF (default): rule 3 enters wherever the signal candle closes.\n\nON: rule 3 enters only when the close is at most the distance set in the next setting (default 3) beyond the level the candle broke (the broken high of a bullish CHOCH, the broken low of a bearish one). A candle that closes far beyond it is skipped.\n\nExample with 3: the broken high is 4,100.00. Close 4,102.50 = 2.50 beyond: enters. Close 4,108.00 = 8.00 beyond: skipped.")
+stR3Brk   = input.float(3.0, "  - the most the close may be beyond the broken level", minval = 0.0, step = 0.00000001, group = gCc, tooltip = "Used only with the switch above ON. In the unit of group 38 like group 24: Price = dollars on gold (3 = 3.00); Pips (3 pips = 0.30 on gold); % of the price. 3 (default).")
 
 // what kind of market is on the chart - 1 forex, 2 gold, 3 silver, 4 crypto, 5 index / other (sets the lot size)
 var string _tk   = syminfo.ticker
@@ -2445,14 +2444,9 @@ var bool  stBuPctM  = stBuMode == "% of price"
 // v11.2: the stop buffer beyond the level _lv, in price (pips x pip, or % of the level, rounded to the price step; else the group 20 buffer)
 f_stBuf(float _lv) =>
     stBuPipM ? math.round_to_mintick(stBuPips * stPipSz) : stBuPctM ? math.round_to_mintick(_lv * stBuPct / 100.0) : stSlBuf
-// v12.0: rules 3 / 4 (group 39) - a rule 4 limit in price (the unit of group 38: price, pips, or % of the entry price), and the check
-var bool stCcOn = stCcMode != "Off (rules 1 / 2 as now)"
-var bool stCcR4 = stCcMode == "RULE 4 - enter at the close only if the stop distance is within the limits"
-var bool stCcFb = stCcFar == "Fall back to RULE 1 / 2 (wait for the pullback)"
-f_stCcLim(float _v, float _ent) =>
-    stBuPipM ? _v * stPipSz : stBuPctM ? _ent * _v / 100.0 : _v
-f_stCcOk(float _r, float _ent) =>
-    (stCcMin <= 0 or _r >= f_stCcLim(stCcMin, _ent)) and (stCcMax <= 0 or _r <= f_stCcLim(stCcMax, _ent))
+// v12.0: the rule 3 'near the broken level' distance in price (the unit of group 38: price, pips, or % of the close)
+f_stR3Lim(float _v, float _px) =>
+    stBuPipM ? _v * stPipSz : stBuPctM ? _px * _v / 100.0 : _v
 // v8.4: spaces are taken out too - "GOLD " or " XAUUSD" typed with a space was refused by the broker
 var string stSymSend = str.replace_all(str.replace_all(stWhSym != "" ? stWhSym : syminfo.ticker, '"', ""), " ", "")
 var string stTagTx   = str.replace_all(str.replace_all(stTcTag, '"', ""), " ", "")
@@ -2718,12 +2712,9 @@ var int stCntMvx  = 0       // v7.4: trades that ended at a moved stop (break-ev
 var int stCntMoves = 0      // v7.4: stop moves sent
 var int stCntR1   = 0
 var int stCntR2   = 0
-var int stCntR3   = 0       // v12.0: trades entered at the close of the signal candle (rule 3 / 4)
-var int stCntCcFar  = 0     // v12.0: rule 4 - signals skipped, stop too far
-var int stCntCcNear = 0     // v12.0: rule 4 - signals skipped, stop too close
-var int stCntCcFb   = 0     // v12.0: rule 4 - setups that fell back to rule 1 / 2
-var bool stCcLim  = false   // v12.0: a rule 4 setup that fell back - its pullback entry keeps the rule 4 limits
-var int  stMktBar = na      // v12.0: the bar a rule 3 / 4 market entry was sent on
+var int stCntR3   = 0       // v12.0: trades entered at the close of the signal candle (rule 3)
+var int stCntR3Far = 0      // v12.0: rule 3 signals skipped - the close too far beyond the broken level
+var int stMktBar  = na      // v12.0: the bar a rule 3 market entry was sent on
 var int stCntCap  = 0
 var bool stCapFlag = false
 var int stClosed  = 0
@@ -3414,7 +3405,7 @@ if stBosCnl and stDir != 0 and not na(stArmBar) and bar_index > stArmBar and ((s
     stCntBosCnl += 1
     stDir := 0
 
-// v12.0: a rule 3 / 4 entry at the signal close has ONE chance - it is sent on the signal candle (or on the next one when an
+// v12.0: a rule 3 entry at the signal close has ONE chance - it is sent on the signal candle (or on the next one when an
 // opposite trade had to close first) and fills at the next open. It is never sent again at a later price.
 if stDir != 0 and stRule == 3 and ((not na(stMktBar) and bar_index > stMktBar) or (not na(stArmBar) and bar_index > stArmBar + 1))
     f_audEnd("CANCELLED - the entry at the signal close did not fill", stAudCancC)
@@ -3543,35 +3534,23 @@ if (stSigUp or stSigDn) and stGo
         bool _agst  = (_d == 1 and stT15 == -1) or (_d == -1 and stT15 == 1)
         bool _use   = stAutoM ? (stAutoDir != 0 and _d == stAutoDir and (stEqOpen ? ((stR2On and not na(_piv)) or (not stR2On and stR1On)) : stR1On)) : stAgn ? (_agst and stR1On) : _agree ? ((stR2On and not na(_piv)) or (not stR2On and stR1On)) : (stR1On and not stHfEff)
         bool _hfSkip = (stAutoM and not _use) or (not stAutoM and stAgn and not _agst and stR1On) or (not stAutoM and not stAgn and not _agree and stR1On and stHfEff)
-        // v12.0: rules 3 / 4 - enter at the close of this candle. Rules 1 / 2 are not used (a rule 4 setup may fall back to them);
-        // the higher-timeframe filters still are (like rule 1: no agreement needed)
-        float _ccSl   = na(_opl) ? na : (_d == 1 ? _opl - f_stBuf(_opl) : _opl + f_stBuf(_opl))
-        float _ccR    = na(_ccSl) ? na : _d * (close - _ccSl)
-        bool  _ccFar  = stCcR4 and not na(_ccR) and stCcMax > 0 and _ccR > f_stCcLim(stCcMax, close)
-        bool  _ccNear = stCcR4 and not na(_ccR) and stCcMin > 0 and _ccR < f_stCcLim(stCcMin, close)
-        bool  _ccMkt  = stCcOn and not _ccFar and not _ccNear
-        bool  _ccBack = stCcOn and _ccFar and not _ccNear and stCcFb
-        bool  _useM   = stAutoM ? (stAutoDir != 0 and _d == stAutoDir) : stAgn ? _agst : (_agree or not stHfEff)
-        if stCcOn
-            _hfSkip := _ccMkt ? not _useM : _ccBack ? _hfSkip : false
-            _use    := _ccMkt ? _useM : _ccBack ? _use : false
+        // v12.0: RULE 3 - enter at the close of this candle. Rules 1 / 2 are not used; the higher-timeframe filters still are
+        // (like rule 1: no agreement needed). Optionally only when the close is near the broken level.
+        float _r3B   = na(_piv) ? na : _d * (close - _piv)
+        bool  _r3Far = stR3On and stR3BrkOn and (na(_r3B) or _r3B > f_stR3Lim(stR3Brk, close))
+        bool  _useM  = stAutoM ? (stAutoDir != 0 and _d == stAutoDir) : stAgn ? _agst : (_agree or not stHfEff)
+        if stR3On
+            _hfSkip := not _r3Far and not _useM
+            _use    := not _r3Far and _useM
         if _hfSkip
             stCntHf += 1
         _audS := not _use ? (stAutoM ? (stAutoDir == 0 ? "SKIP - higher timeframe not clear (auto mode)" : _d != stAutoDir ? (stEqOpen ? "SKIP - auto mode: with the higher timeframe only (equilibrium reached)" : "SKIP - auto mode: against the higher timeframe only (equilibrium not reached)") : stEqOpen ? "SKIP - no broken pivot" : "SKIP - rule 1 is off (auto mode, first part)") : stAgn ? (not stR1On ? "SKIP - rule 1 is off (against mode)" : _agree ? "SKIP - with the higher timeframe (against mode)" : "SKIP - higher timeframe not clear (against mode)") : _agree ? "SKIP - no broken pivot" : stHfEff and stR1On ? (stFav ? "SKIP - against the higher timeframe (favourable mode)" : "SKIP - against the higher timeframe (filter)") : "SKIP - HTF not agreeing (rule 2 only)") : na(_opl) ? "SKIP - no stop level" : ((_agree and stR2On and not stAgn ? "R2" : "R1") + " ARMED")
-        if stCcOn
-            string _ccD = na(_ccR) ? "" : str.tostring(_ccR, format.mintick)
-            if _ccMkt
-                _audS := not _useM ? (stAutoM ? "SKIP - auto mode: other side now" : stAgn ? "SKIP - not against the higher timeframe (against mode)" : stFav ? "SKIP - against the higher timeframe (favourable mode)" : "SKIP - against the higher timeframe (filter)") : na(_opl) ? "SKIP - no stop level" : (stCcR4 ? "R4" : "R3") + " ARMED - entry at the close, stop " + _ccD
-            else if _ccNear
-                _audS := "SKIP - RULE 4: stop too close (" + _ccD + ")"
-                stCntCcNear += 1
-            else if not _ccBack
-                _audS := "SKIP - RULE 4: stop too far (" + _ccD + ")"
-                stCntCcFar += 1
+        if stR3On
+            if _r3Far
+                _audS := "SKIP - RULE 3: " + (na(_r3B) ? "no broken level" : "close " + str.tostring(_r3B, format.mintick) + " beyond the broken level")
+                stCntR3Far += 1
             else
-                _audS := _audS + "\n(RULE 4 fell back: stop " + _ccD + " too far at the close)"
-                if _use and not na(_opl)
-                    stCntCcFb += 1
+                _audS := not _useM ? (stAutoM ? "SKIP - auto mode: other side now" : stAgn ? "SKIP - not against the higher timeframe (against mode)" : stFav ? "SKIP - against the higher timeframe (favourable mode)" : "SKIP - against the higher timeframe (filter)") : na(_opl) ? "SKIP - no stop level" : "R3 ARMED - entry at the close"
         if _use and not na(_opl)
             if stDir != 0
                 stCntCanc += 1
@@ -3594,8 +3573,7 @@ if (stSigUp or stSigDn) and stGo
             // v9.0 a: a trade added by a same-side BOS risks less
             stAddRk  := _addB and stBkOn ? stBkPct / 100.0 : 1.0
             stDir  := _d
-            stRule := stCcOn and _ccMkt ? 3 : (_agree and stR2On and not stAgn ? 2 : 1)
-            stCcLim  := _ccBack
+            stRule := stR3On ? 3 : (_agree and stR2On and not stAgn ? 2 : 1)
             stMktBar := na
             stSl   := _d == 1 ? _opl - f_stBuf(_opl) : _opl + f_stBuf(_opl)
             stFix  := stRule == 2 ? _piv : na
@@ -3638,9 +3616,7 @@ if stGo and stDir != 0 and (strategy.position_size == 0 or (stDir == 1 ? strateg
     // v11.2: the group 24 limits in the unit of group 38 (pips, or % of the entry price)
     float _mnS = stBuPipM ? stMinStop * stPipSz : stBuPctM ? stEnt * stMinStop / 100.0 : stMinStop
     float _mxS = stBuPipM ? stMaxStop * stPipSz : stBuPctM ? stEnt * stMaxStop / 100.0 : stMaxStop
-    // v12.0: the rule 4 limits - for the entry at the close, and for a pullback entry a rule 4 setup fell back to
-    bool _ccOk = not ((stRule == 3 and stCcR4) or stCcLim) or f_stCcOk(_r, stEnt)
-    bool _dOk = (stMinStop <= 0 or _r >= _mnS) and (stMaxStop <= 0 or _r <= _mxS) and _lotOk and _ccOk
+    bool _dOk = (stMinStop <= 0 or _r >= _mnS) and (stMaxStop <= 0 or _r <= _mxS) and _lotOk
     // v9.0 f: premium / discount - a buy at or below the line of the leg, a sell at or above it
     float _pdL  = stPdOn ? f_retLvl(trendDir, mAnch, mOrig, stPdPct) : na
     bool  _pdOk = not stPdOn or (not na(_pdL) and (stDir == 1 ? stEnt <= _pdL + syminfo.mintick / 2 : stEnt >= _pdL - syminfo.mintick / 2))
@@ -3846,9 +3822,7 @@ if stStatOn and bar_index == last_bar_index
     if stMinStop > 0 or stMaxStop > 0
         _buT := _buT + "  |  skip closer " + (stMinStop > 0 ? str.tostring(stMinStop) + _buU : "off") + " / further " + (stMaxStop > 0 ? str.tostring(stMaxStop) + _buU : "off")
     f_stCell(stTbl, 47, "STOP BUFFER (group 38)", _buT, stBuPipM or stBuPctM ? color.aqua : color.gray)
-    // v12.0: entries at the close of the signal candle (group 39)
-    string _ccU = stBuPipM ? " pips" : stBuPctM ? " %" : ""
-    string _ccT = not stCcOn ? "off - rules 1 / 2" : (stCcR4 ? "RULE 4 (" + (stCcMin > 0 ? str.tostring(stCcMin) : "0") + " - " + (stCcMax > 0 ? str.tostring(stCcMax) : "no max") + _ccU + ")" : "RULE 3") + "  -  " + str.tostring(stCntR3) + " entered at the close"
-    if stCcR4
-        _ccT := _ccT + "  |  skipped: too far " + str.tostring(stCntCcFar) + " / too close " + str.tostring(stCntCcNear) + (stCcFb ? "  |  fell back " + str.tostring(stCntCcFb) : "")
-    f_stCell(stTbl, 48, "ENTRY AT THE SIGNAL CLOSE (group 39)", _ccT, stCcOn ? color.aqua : color.gray)
+    // v12.0: rule 3 - entries at the close of the signal candle (group 39)
+    string _r3U = stBuPipM ? " pips" : stBuPctM ? " %" : ""
+    string _r3T = not stR3On ? "off - rules 1 / 2" : "on  -  " + str.tostring(stCntR3) + " entered at the close" + (stR3BrkOn ? "  |  close within " + str.tostring(stR3Brk) + _r3U + " of the break: " + str.tostring(stCntR3Far) + " skipped" : "")
+    f_stCell(stTbl, 48, "RULE 3 - ENTRY AT THE SIGNAL CLOSE (group 39)", _r3T, stR3On ? color.aqua : color.gray)

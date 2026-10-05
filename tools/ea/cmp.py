@@ -26,7 +26,7 @@ def cfg_of(P, cs):
              eqOn=p['eqOn'], eqPct=p['eqPct'], seqMax=p['seqMax'], capAct={'Clamp': 0, 'Day': 1, 'Perm': 2}[p['capAct']],
              seqFrom=0 if p['liveT'] is None else 2, seqFromT=p['liveT'] or 0, htfSec=p['htfTf'], cs=cs,
              auOn=bool(p.get('news') is not None), sessMode=2 if p.get('sessOff') else 0, minLot=0.01,
-             pbSwp2=p['pbSwp2'], ccMode={'Off': 0, 'R3': 1, 'R4': 2}[p['ccMode']], ccMax=p['ccMax'], ccMin=p['ccMin'], ccFb=p['ccFb'])
+             pbSwp2=p['pbSwp2'], r3On=p['r3On'], r3BrkOn=p['r3BrkOn'], r3Brk=p['r3Brk'])
     assert p['trailBuf'] is None and p['liqMaxR'] == 0 and p['sess2'] is None and not p['ldAll'] and p['seqMode'] != 'A91' and p['bosMode'] != 'Freeze'
     return c
 def run_py(P, cs):

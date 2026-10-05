@@ -12,8 +12,8 @@ DEF = dict(
     mvStep=False, mvBe=False,
     # v11.2: stop buffer unit - "Price" (as before) / "Pips" / "Pct"; pip = the pip of the market; tick = the smallest price step
     buMode="Price", buPips=10.0, buPct=0.02, pip=0.1, tick=0.01,
-    # v12.0: entry at the close of the signal candle - ccMode "Off" / "R3" / "R4"; R4 limits (0 = off, unit of group 38); ccFb = fall back to rule 1 / 2
-    ccMode="Off", ccMax=30.0, ccMin=3.0, ccFb=False, pbSwp2=False,
+    # v12.0: rule 3 - enter at the close of the signal candle; r3BrkOn = only when the close is at most r3Brk beyond the broken level
+    r3On=False, r3BrkOn=False, r3Brk=3.0, pbSwp2=False,
     # v8.4 / v9.0
     direction="Both",          # Both / Longs / Shorts
     bosRiskPct=100.0,          # a: risk % for stacked BOS trades
@@ -299,11 +299,6 @@ def lim_at(p, v, ent):
     return v
 
 
-def cc_ok(p, r, ent):
-    """v12.0: the rule 4 limits (Pine f_stCcOk)"""
-    return (p["ccMin"] <= 0 or r >= lim_at(p, p["ccMin"], ent)) and (p["ccMax"] <= 0 or r <= lim_at(p, p["ccMax"], ent))
-
-
 def run(bars, P=None, htf=None, log=False):
     p = dict(DEF)
     if P: p.update(P)
@@ -324,7 +319,7 @@ def run(bars, P=None, htf=None, log=False):
     stDir = 0; stRule = 0; stSl = None; stFix = None; stPend = []; stOrdLive = False
     stLast = None  # (ent, sl, tgt, q)
     stSeq = 0; stPlaced = False; stEntLock = None; stArmBar = None
-    stCcLim = False; stMktBar = None   # v12.0
+    stMktBar = None   # v12.0
     stCeilPrev = stFlorPrev = None
     stDayTrades = 0; stDayPnl = 0.0; stDayHalt = False; stLossRun = 0
     deadPrev = False; wkPrev = False; prevDay = None
@@ -626,21 +621,14 @@ def run(bars, P=None, htf=None, log=False):
                     use = p["r1"] and stT15 == -d
                 if autoMode:
                     use = autoDir != 0 and d == autoDir and ((((p["r2"] and piv is not None) or (not p["r2"] and p["r1"]))) if eqOpen else p["r1"])
-                # v12.0: rules 3 / 4 - enter at the close of this candle (higher-timeframe filters still apply, no agreement needed)
-                ccOn = p["ccMode"] != "Off"; ccR4 = p["ccMode"] == "R4"
-                ccSl = None if opl is None else (opl - buf_at(p, opl) if d == 1 else opl + buf_at(p, opl))
-                ccR = None if ccSl is None else d * (c - ccSl)
-                ccFar = ccR4 and ccR is not None and p["ccMax"] > 0 and ccR > lim_at(p, p["ccMax"], c)
-                ccNear = ccR4 and ccR is not None and p["ccMin"] > 0 and ccR < lim_at(p, p["ccMin"], c)
-                ccMkt = ccOn and not ccFar and not ccNear
-                ccBack = ccOn and ccFar and not ccNear and p["ccFb"]
-                if ccOn:
+                # v12.0: rule 3 - enter at the close of this candle (higher-timeframe filters still apply, no agreement needed);
+                # optionally only when the close is at most r3Brk beyond the broken level (the pivot)
+                if p["r3On"]:
+                    r3B = None if piv is None else d * (c - piv)
+                    r3Far = p["r3BrkOn"] and (r3B is None or r3B > lim_at(p, p["r3Brk"], c))
                     useM = (autoDir != 0 and d == autoDir) if autoMode else ((stT15 == -d) if agnMode else (agree or not (p["htfFilt"] or favMode)))
-                    if ccMkt: use = useM
-                    elif not ccBack: use = False
-                    if ccNear: cnt["ccNear"] = cnt.get("ccNear", 0) + 1
-                    elif ccFar and not ccBack: cnt["ccFar"] = cnt.get("ccFar", 0) + 1
-                    elif ccBack and use and opl is not None: cnt["ccFb"] = cnt.get("ccFb", 0) + 1
+                    use = useM and not r3Far
+                    if r3Far: cnt["r3Far"] = cnt.get("r3Far", 0) + 1
                 if use and opl is not None:
                     if stDir != 0: cnt["canc"] += 1
                     cancel()
@@ -648,8 +636,8 @@ def run(bars, P=None, htf=None, log=False):
                     stSeq += 1
                     base = ("L" if d == 1 else "S") + str(stSeq)
                     stPend = [base]
-                    stDir = d; stRule = 3 if (ccOn and ccMkt) else (2 if (agree and p["r2"] and not agnMode) else 1)
-                    stCcLim = ccBack; stMktBar = None
+                    stDir = d; stRule = 3 if p["r3On"] else (2 if (agree and p["r2"] and not agnMode) else 1)
+                    stMktBar = None
                     stSl = opl - buf_at(p, opl) if d == 1 else opl + buf_at(p, opl)
                     stFix = piv if stRule == 2 else None
                     stAddRisk = p["bosRiskPct"] / 100.0 if addB else 1.0
@@ -690,7 +678,6 @@ def run(bars, P=None, htf=None, log=False):
             lim = max(0.0, eqNow * p["lev"] / stEnt - abs(pos))
             if q > lim: q = math.floor(lim / st) * st
             dOk = (p["minStop"] <= 0 or r >= lim_at(p, p["minStop"], stEnt)) and (p["maxStop"] <= 0 or r <= lim_at(p, p["maxStop"], stEnt))
-            if ((stRule == 3 and p["ccMode"] == "R4") or stCcLim) and not cc_ok(p, r, stEnt): dOk = False   # v12.0
             pdOk = True
             if p["pdOn"]:
                 eqL = retLvl(trendDir, mA, mO, p["pdPct"])

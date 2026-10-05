@@ -33,8 +33,8 @@ MetaEditor (the MQL5 compiler) only runs on Windows, so the EA is checked here i
 | v11.2 pip | `g++ -O2 -std=c++17 -o piptest piptest.cpp && ./piptest`, `python3 pinepip.py` | the automatic pip for 21 MT5 names and 14 TradingView symbols |
 | v11.2 effect | `python3 bueffect.py` | your 1m settings, buffer 1.0 / 10 pips / 0.02-0.5% / 50 pips: all lose (wider loses less per trade) |
 | v12.0 OFF | `python3 cctests.py off <folder with the v11.2 harness + simmain>` | group 39 Off: core 5 settings x 5.75 years and whole EA 2 settings x 1 year byte-identical to v11.2 |
-| v12.0 rules 3 / 4 | `python3 cctests.py py` | Python simulator = core in 14 of 14 settings (rule 3, rule 4 skip / fall back, units, reverse, BOS stacks, partial, filters, Rule C), 2021-2026; 36,593 entries at the close checked separately from the bars |
-| v12.0 whole EA | `python3 cctests.py ea` | whole EA = core in 5 of 5 (touch, pending, fall back, hedge, Rule C), 484 restarts = no restarts |
+| v12.0 rule 3 | `python3 cctests.py py` | Python simulator = core in 14 of 14 settings (rule 3, near the broken level 1 / 3 / 8, pips / %, group 24 with rule 3 and rules 1 + 2, reverse, BOS stacks, partial, filters, Rule C), 2021-2026; 35,443 entries at the close checked separately (next open, near the broken level, group 24, size, target) |
+| v12.0 whole EA | `python3 cctests.py ea` | whole EA = core in 5 of 5 (touch, near the level pending, near the level + group 24, hedge, Rule C), 484 restarts = no restarts |
 
 Notes
 - `porthp.py` = the simulator with TradingView's exact session test for bars longer than 1 minute (f_ovl);

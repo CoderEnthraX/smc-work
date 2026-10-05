@@ -6,14 +6,13 @@ File: SMC_Structure_Strategy_v12.0.txt     Pine Script v6      ASCII only.
 Handbook: SMC_Structure_Strategy_v12.0_HANDBOOK.pdf - every setting, with
 examples and the value to use.
 
-v12.0 - two new entry rules. RULE 3 enters at the CLOSE of the candle
-  that confirms the signal (your CHOCH). RULE 4 does the same, but only
-  when the distance from the entry to the stop is within your limits
-  (default 3 to 30); a bigger one is skipped, or falls back to rule 1 / 2.
-  A new group 39 at the end of the settings. Default "Off (rules 1 / 2 as
-  now)": with it v12.0 trades exactly like v11.2.
+v12.0 - a new entry rule. RULE 3 enters at the CLOSE of the candle that
+  confirms the signal (your CHOCH), wherever it closes. An optional switch
+  lets it enter only when the close is near the level the candle broke
+  (default 3). A new group 39 at the end of the settings, everything OFF:
+  with it OFF v12.0 trades exactly like v11.2.
 
-SETTINGS: 126 - the 122 of v11.2 in the same places + 4 new at the end.
+SETTINGS: 125 - the 122 of v11.2 in the same places + 3 new at the end.
   Replace the code while you are FLAT (no open trade), then delete the
   alert and create it again.
 
@@ -25,24 +24,18 @@ TradingView:  https://webhook.theconnector.fr/YOUR_ACCESS_KEY
 --------------------------------------------------------------------------
 WHAT v12.0 CHANGES
 --------------------------------------------------------------------------
-121. ENTRY AT THE CLOSE OF THE SIGNAL CANDLE (group 39, the last 4)
-       Entry at the close of the signal candle
-                         Off (rules 1 / 2 as now)  /  RULE 3 - always
-                         enter at the close  /  RULE 4 - enter at the
-                         close only if the stop distance is within the
-                         limits
-       - RULE 4: skip if the stop is FURTHER than (0 = off)    30
-       - RULE 4: skip if the stop is CLOSER than (0 = off)      3
-       - RULE 4: when the stop is too far
-                         Skip the setup  /  Fall back to RULE 1 / 2
-                         (wait for the pullback)
+121. RULE 3 - ENTER AT THE CLOSE OF THE SIGNAL CANDLE (group 39, last 3)
+       RULE 3 - enter at the close of the signal candle          OFF
+       - RULE 3: only if the close is near the broken level      OFF
+       - the most the close may be beyond the broken level       3
 
-     RULE 3: the moment a candle CLOSES and confirms the signal (your
-     CHOCH; a BOS too if you trade BOS), the strategy buys or sells at
-     market. TradingView and MT5 cannot fill on a candle that has already
-     closed, so the order fills at the OPEN of the next candle - a second
-     later, practically the close price. No pullback is waited for.
-     Rules 1 and 2 are not used while rule 3 / 4 is on.
+     RULE 3 (OFF by default): the moment a candle CLOSES and confirms the
+     signal (your CHOCH; a BOS too if you trade BOS), the strategy buys or
+     sells at market. It does not matter where the candle closes.
+     TradingView and MT5 cannot fill on a candle that has already closed,
+     so the order fills at the OPEN of the next candle - a second later,
+     practically the close price. No pullback is waited for. Rules 1 and 2
+     are not used while rule 3 is on.
 
      The stop and target are the usual ones:
        stop   = the CHOCH* level + your stop buffer (group 20 / 38)
@@ -55,94 +48,92 @@ WHAT v12.0 CHANGES
        distance 12.00   target 4,101 + 36 = 4,137 (+ the commission push)
        size 50 / (12 + 0.76) = 3.9  ->  4 oz = 0.04 lot
 
-     RULE 4: the same, but first the distance from the close to the stop
-     is checked against the two limits:
-       candle closes at   stop       distance   rule 4 (3 - 30)
-       4,101.00           4,089.00   12.00      enters
-       4,125.00 (huge)    4,089.00   36.00      too far
-       4,091.50           4,089.00    2.50      too close - skipped
-     The limits are in the unit of group 38 like group 24: Price =
-     dollars on gold (30 = 30.00); Pips (30 = 30 pips = 3.00 on gold!);
-     % (of the entry price). 0 = that limit off.
+     "ONLY IF THE CLOSE IS NEAR THE BROKEN LEVEL" (OFF by default): rule 3
+     enters only when the close is at most the distance (default 3) beyond
+     the level the candle broke - the broken high of a bullish CHOCH, the
+     broken low of a bearish one. A huge candle that closes far beyond it
+     is skipped (no trade, no pullback order).
+       broken high   candle closes at   beyond   with 3
+       4,100.00      4,102.50           2.50     enters
+       4,100.00      4,103.00           3.00     enters (3.00 is allowed)
+       4,100.00      4,108.00           8.00     skipped
+     The distance is in the unit of group 38 like group 24: Price = dollars
+     on gold (3 = 3.00); Pips (3 pips = 0.30 on gold!); % of the price.
 
-     "WHEN THE STOP IS TOO FAR":
-       Skip the setup (default)  the signal opens nothing.
-       Fall back to RULE 1 / 2   the setup is armed the normal way
-                                 instead: a limit order at the pullback
-                                 (rule 1) or the broken pivot (rule 2),
-                                 with your rule 1 / 2 switches and the
-                                 higher-timeframe rule of rule 2. That
-                                 pullback entry must keep the SAME
-                                 limits (3 - 30): if its stop distance is
-                                 outside them, it is cancelled too.
-     A stop that is too CLOSE is always skipped (a pullback entry would be
-     even closer).
+     SKIP IF THE STOP IS CLOSER / FURTHER THAN: these are the group 24
+     settings you already have - "Skip the setup if the stop is CLOSER than
+     this (price)" and "... FURTHER than this (price)", 0 = off (default).
+     They work for ALL entry rules: rule 1, rule 2 and now rule 3 (for
+     rule 3 the distance is from the close to the stop). Example with
+     CLOSER 5 and FURTHER 30: a stop 12.00 away trades; 3.00 or 36.00 away
+     is skipped.
 
      WHAT STAYS THE SAME: entry hours (06:00 - 23:00 for you), the 02:00
      force close, the weekend, news windows, US holidays, the loss pause,
-     loss recovery, the floor, the daily limits, group 24, the higher-
-     timeframe filters (b, favourable / against / auto). Rule 3 / 4 do NOT
-     need the higher timeframe to agree (like rule 1).
+     loss recovery, the floor, the daily limits, the higher-timeframe
+     filters (b, favourable / against / auto). Rule 3 does NOT need the
+     higher timeframe to agree (like rule 1).
 
      ONE CHANCE: the market order is sent on the signal candle only. A
      signal outside the entry hours, or while trading is blocked, opens
      nothing - there is no late entry. With "close and reverse" ON, a
      signal that reverses an open trade enters one candle later (after the
-     old trade is closed), and rule 4 checks that candle's close.
+     old trade is closed).
 
      THE BROKER MESSAGE: unchanged. The alert fires when the order fills
      ("Order fills only") and TheConnector opens the trade at market with
      the stop and target, exactly as for rules 1 and 2.
 
-     THE TABLE: a new last row "ENTRY AT THE SIGNAL CLOSE (group 39)", e.g.
-       RULE 4 (3 - 30)  -  12 entered at the close  |  skipped: too far 4
-       / too close 1
-     The audit labels (group 20) say "R3 ARMED - entry at the close, stop
-     12.00", "SKIP - RULE 4: stop too far (36.00)" and so on.
+     THE TABLE: a new last row "RULE 3 - ENTRY AT THE SIGNAL CLOSE (group
+     39)", e.g. "on - 12 entered at the close | close within 3 of the
+     break: 4 skipped". The audit labels (group 20) say "R3 ARMED - entry
+     at the close" or "SKIP - RULE 3: close 8.00 beyond the broken level".
 
 122. IS IT BETTER? (honest)
      NOT TESTED for profit - you asked me to build it without the test.
-     It was tested only for CORRECTNESS (below). Three things to know:
+     It was tested only for CORRECTNESS (below). Things to know:
      - Entering at the close puts the stop further away than rule 1's
        25% pullback (about one third further), so the SAME risk buys a
        SMALLER size, and the target is further away too.
      - Every entry is a market order: you pay the full spread at once.
      - 5.75 years of tests found no 1-minute entry setting that made money
        in both 2021-23 and 2024-26. Run v12.0 in TradingView (rule 3, then
-       rule 4) on the same dates as before and compare, and use a demo
-       account before real money. I can run the 5.75-year test whenever
-       you want it.
+       rule 3 with the broken-level option) on the same dates as before and
+       compare, and use a demo account before real money. I can run the
+       5.75-year test whenever you want it.
 
 --------------------------------------------------------------------------
 HOW v12.0 WAS CHECKED
 --------------------------------------------------------------------------
   - A Pine Script parser (the full Pine grammar) read v12.0 without a
-    syntax error (PARSED OK). The 28 new names are declared before they
+    syntax error (PARSED OK). The 14 new names are declared before they
     are used and clash with no old one. ASCII only; no tabs; no
     strategy.close_all.
-  - The settings: the 122 of v11.2 unchanged in the same places + 4 new
-    at the end = 126.
+  - The settings: the 122 of v11.2 unchanged in the same places + 3 new
+    at the end = 125.
   - Group 39 OFF = v11.2, every trade, byte for byte: the Python
     simulator (4 runs, one of them 5.75 years of your settings) and the
     MT5 EA's own code (5 settings over 5.75 years, and the whole EA for a
     year in 2 settings).
-  - RULE 3 / 4 ON, FxPro gold 1m 2021 - Oct 2026, 14 settings (rule 3,
-    rule 4 skip / fall back, other limits, pips and % units, close and
-    reverse, BOS with stacked trades, partial profit, filter b, against
-    and auto modes, Rule C): the Python simulator and the EA's own code
-    (two separate programs) gave the same trades, to the cent, 14 of 14.
-  - All 36,593 trades entered at the close in those runs, checked
+  - RULE 3 ON, FxPro gold 1m 2021 - Oct 2026, 14 settings (rule 3 alone,
+    near the broken level 1 / 3 / 8, pips and % units, group 24 closer /
+    further with rule 3 and with rules 1 + 2, close and reverse, BOS with
+    stacked trades, partial profit, filter b, against and auto modes,
+    Rule C): the Python simulator and the EA's own code (two separate
+    programs) gave the same trades, to the cent, 14 of 14.
+  - All 35,443 trades entered at the close in those runs, checked
     separately from the bars: filled at the open of the candle after the
-    signal candle; the stop distance at the signal close inside the rule
-    4 limits; the size from the risk; every target exit at the close
-    +/- (R x distance + costs) - all correct.
+    signal candle; with the option ON the close within the distance of
+    the broken level (10,425 trades); group 24 closer / further; the
+    size from the risk; every target exit at the close +/- (R x distance
+    + costs) - all correct.
   - This is not the TradingView compiler. If TradingView shows an error
     when you save, send me the line and the message.
 
 ==========================================================================
 EVERYTHING BELOW IS FROM THE v11.2 NOTES - still true for v12.0. The new
-entry rules (item 121) are optional; with "Off" v12.0 works exactly
-like v11.2.
+entry rule (item 121) is optional; with it OFF v12.0 works exactly like
+v11.2.
 ==========================================================================
 --------------------------------------------------------------------------
 WHAT v11.2 CHANGES

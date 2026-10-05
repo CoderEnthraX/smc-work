@@ -6,60 +6,55 @@ The EA follows the TradingView strategy v12.0. Install it like v11.1
 (section 3); you can delete SMC_Structure_EA_v11.2 from MT5.
 
 
-NEW IN v12.0 - RULE 3 / RULE 4: ENTER AT THE CLOSE OF THE SIGNAL CANDLE
------------------------------------------------------------------------
-The same rules as the TradingView strategy v12.0 (its notes, item 121).
+NEW IN v12.0 - RULE 3: ENTER AT THE CLOSE OF THE SIGNAL CANDLE
+---------------------------------------------------------------
+The same rule as the TradingView strategy v12.0 (its notes, item 121).
 A new group at the very END of the EA settings (after group 38), so your
 saved settings keep their places:
-  39. Entry at the close of the signal candle - rules 3 / 4 (v12.0)
-    Entry at the close of the signal candle
-                         Off (rules 1 / 2 as now) / RULE 3 - always
-                         enter at the close / RULE 4 - enter at the
-                         close only if the stop distance is within
-                         the limits
-    - RULE 4: skip if the stop is FURTHER than (0 = off)    30
-    - RULE 4: skip if the stop is CLOSER than (0 = off)      3
-    - RULE 4: when the stop is too far      Skip the setup / Fall back
-                                            to RULE 1 / 2 (wait for the
-                                            pullback)
-Default "Off": the EA trades exactly like v11.2 (tested, byte for byte).
+  39. RULE 3 - enter at the close of the signal candle (v12.0)
+    RULE 3 - enter at the close of the signal candle            false
+    - RULE 3: only if the close is near the broken level        false
+    - the most the close may be beyond the broken level         3.0
+Everything OFF by default: the EA trades exactly like v11.2 (tested,
+byte for byte).
 
 RULE 3: when a candle closes and confirms the signal (your CHOCH), the
 EA buys or sells AT MARKET on the first tick of the next candle - the
-same moment TradingView fills it (the next open). Stop = CHOCH* level +
-buffer; target = your R from the entry; size from your risk.
-RULE 4: the same, only if the distance from the close to the stop is
-within the limits (3 - 30 = 3.00 - 30.00 on gold in the Price unit;
-the unit of group 38 like group 24). Too far: skipped, or falls back to
-rule 1 / 2 (a pullback order that must keep the same limits). Too
-close: always skipped.
-Example: stop 4,089.00; the candle closes at 4,101.00 -> distance 12.00,
-enters; a huge candle closes at 4,125.00 -> 36.00, too far.
+same moment TradingView fills it (the next open). Wherever the candle
+closes. Stop = CHOCH* level + buffer; target = your R from the entry;
+size from your risk.
+NEAR THE BROKEN LEVEL (option): rule 3 enters only when the close is at
+most 3 (default) beyond the level the candle broke. Broken high 4,100.00:
+close 4,102.50 -> enters; close 4,108.00 -> skipped. Unit of group 38
+like group 24 (Price = dollars on gold).
+SKIP IF THE STOP IS CLOSER / FURTHER THAN: group 24 (0 = off), for all
+entry rules - rule 1, rule 2 and rule 3.
 
-"How entries are executed" (group 40) does not matter for rules 3 / 4:
-both touch and pending mode send a MARKET order at once. If the order
-does not fill on that candle (refused, market closed), the setup is
-dropped - it is never sent again at a later price (TradingView does the
-same). With "close and reverse" ON a signal that reverses an open trade
-enters one candle later, after the old trade is closed.
+"How entries are executed" (group 40) does not matter for rule 3: both
+touch and pending mode send a MARKET order at once. If the order does not
+fill on that candle (refused, market closed), the setup is dropped - it
+is never sent again at a later price (TradingView does the same). With
+"close and reverse" ON a signal that reverses an open trade enters one
+candle later, after the old trade is closed.
 
-THE TABLE: "ENTRY AT THE SIGNAL CLOSE (group 39)" (Full table), e.g.
-"RULE 4 (3 - 30)  -  12 entered  |  skipped: too far 4 / too close 1",
-and "- by ENTRY RULE 3 / 4 (signal close)" under the entries. The audit
-(group 20) writes "R4 ARMED - entry at the close" or "SKIP - RULE 4:
-stop too far (36.00)" in the Experts tab.
+THE TABLE: "RULE 3 - ENTRY AT THE SIGNAL CLOSE (group 39)" (Full table),
+e.g. "on - 12 entered at the close | close within 3 of the break: 4
+skipped", and "- by ENTRY RULE 3 (signal close)" under the entries. The
+audit (group 20) writes "R3 ARMED - entry at the close" or "SKIP - RULE
+3: close 8.00 beyond the broken level" in the Experts tab.
 
 HOW IT WAS CHECKED
   - group 39 Off: every output file byte-identical to v11.2 (the EA's
     core: 5 settings over 5.75 years; the whole EA: 2 settings, a year)
-  - rule 3 / 4: the whole EA in the fake MT5 = the EA's core, trade for
-    trade, to the cent, in 5 of 5 settings (rule 3 touch, rule 4
-    pending, rule 4 fall back, hedge, Rule C), 2025
+  - rule 3: the whole EA in the fake MT5 = the EA's core, trade for
+    trade, to the cent, in 5 of 5 settings (rule 3 touch, near the
+    broken level pending, near the level + group 24 limits, hedge,
+    Rule C), 2025
   - the EA's core = the Python simulator (a separate program): 14 of 14
-    settings over 2021 - Oct 2026; 36,593 entries at the close checked
+    settings over 2021 - Oct 2026; 35,443 entries at the close checked
     one by one from the bars
   - forced restarts (unload + load at 484 random ticks): identical to no
-    restarts (rule 3 touch, rule 4 fall back with pending mode)
+    restarts (rule 3 touch, near the broken level with pending mode)
   NOT checked here: the real MQL5 compiler. Compile it (F7) and send me
   any error lines.
 
