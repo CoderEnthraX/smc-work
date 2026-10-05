@@ -23,10 +23,10 @@ def cfg_of(P, cs):
              lqOn=p['liqTgt'], lqMin=p['liqMinR'], ppOn=p['partOn'], ppPct=p['partPct'], ppR=p['partR'], ppBe=p['partBe'], pdOn=p['pdOn'], pdPct=p['pdPct'],
              lsOn=p['lossN'] > 0, lsN=max(1, p['lossN']), bosCnl=p['bosMode'] == 'Cancel', seqMode=SEQ[p['seqMode']], seqAdd=p['seqAdd'], split=p['split'],
              flMode={'Off': 0, 'Size': 1, 'Cap': 2}[p['flMode']], flAmt=p['flAmt'], flLock=p['flLock'], flPct=p['flPct'], ldOn=p['ldOn'], ldN=p['ldN'], ldD=p['ldD'],
-             eqOn=p['eqOn'], eqPct=p['eqPct'], seqMax=p['seqMax'], capAct={'Clamp': 0, 'Day': 1, 'Perm': 2}[p['capAct']],
+             eqOn=p['eqOn'], eqPct=p['eqPct'], seqMax=p['seqMax'], capAct={'Clamp': 0, 'Day': 1, 'Perm': 2, 'Base': 3}[p['capAct']],
              seqFrom=0 if p['liveT'] is None else 2, seqFromT=p['liveT'] or 0, htfSec=p['htfTf'], cs=cs,
              auOn=bool(p.get('news') is not None), sessMode=2 if p.get('sessOff') else 0, minLot=0.01,
-             pbSwp2=p['pbSwp2'], r3On=p['r3On'], r3BrkOn=p['r3BrkOn'], r3Brk=p['r3Brk'], r3Fb=p['r3Fb'])
+             pbSwp2=p['pbSwp2'], r3On=p['r3On'], r3BrkOn=p['r3BrkOn'], r3Brk=p['r3Brk'], r3Fb=p['r3Fb'], lmOn=p['lmOn'], lmAmt=p['lmAmt'])
     assert p['trailBuf'] is None and p['liqMaxR'] == 0 and p['sess2'] is None and not p['ldAll'] and p['seqMode'] != 'A91' and p['bosMode'] != 'Freeze'
     return c
 def run_py(P, cs):

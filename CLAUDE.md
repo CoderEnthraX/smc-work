@@ -7,10 +7,13 @@
   receiver only uses the free "MetaApi API") and the MQL5 VPS guide (`SMC_Strategy_v8.3_MQL5_VPS_GUIDE.pdf`).
 - Owner: **Punit** (punit7870@gmail.com). Works from a phone. Wants **simple English, short examples with
   numbers, tables**. Times are **IST** (Asia/Kolkata).
-- **Latest version: v12.0** = `SMC_Structure_Strategy_v12.0.txt` + `_NOTES.txt` + `_HANDBOOK.pdf` (v11.2 + group 39
+- **Latest version: v12.1** = `SMC_Structure_Strategy_v12.1.txt` + `SMC_Structure_EA_v12.1.mq5` ONLY (the user asked for no
+  notes / handbook for v12.1 - the v12.0 notes + handbook still describe everything else; see Versions). Before it:
+  **v12.0** = `SMC_Structure_Strategy_v12.0.txt` + `_NOTES.txt` + `_HANDBOOK.pdf` (v11.2 + group 39
   "RULE 3 - enter at the close of the signal candle", all OFF; option "only if the close is near the broken level",
   default 3; option "if the close is too far: fall back to RULE 1 / 2"; see Versions). v11.2 files kept.
-- **MT5 EA: `SMC_Structure_EA_v12.0.mq5` + `_NOTES.txt`** (v11.1 / v11.2 files kept) = v12.0 rules in MQL5 (group 39 at the
+- **MT5 EA: `SMC_Structure_EA_v12.1.mq5`** (v12.0 + ECap CAP_BASE = 3 + group 42 InLmOn / InLmAmt at the very END; notes = the
+  v12.0 EA notes) / `SMC_Structure_EA_v12.0.mq5` + `_NOTES.txt` (v11.1 / v11.2 files kept) = v12.0 rules in MQL5 (group 39 at the
   very END, after group 38; core r3Far / r3Fb / r3Use + side mktBar / cntR3 / cntR3Far / cntR3Fb; BkPlace(..., mkt): a rule 3 entry is a MARKET
   order at the next candle's first tick in touch AND pending mode, dropped if not filled on that candle; group 38 after
   group 41; core BufAt / LimAt / RoundTick; adapter PipAuto from symbol name, base / profit
@@ -122,6 +125,25 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   separately; fall back with R1 = R2 = off = no fall back, identical; whole EA = core 8/8; 484 restarts identical (3).
   Parser PARSED OK. Side numbers (recovery off, user settings, 2021-26, NOT a profit study): r3 -11,312 (1,943 tr),
   r3 + near 3 -11,572 (1,857), + fall back -11,693 (1,909; 74 fell back); v11.2 -11,253 (1,844).
+- v12.1 (user asked; built "without the profit rule"; ONLY the two strategy files, no notes / handbook; NO profit test):
+  1. HARD CAP 4th choice (end of the list) "Start again from the base risk (forget the losses)" (EA CAP_BASE = 3): next risk >
+  cap (the old test, after split) -> if carried > 0.005: seqLoss = seqTot = 0, capOn false; risk = min(base, cap); never halts.
+  2. group 42 (Pine + EA, end): stLmOn "Start again from the base risk when the losses carried reach" + stLmAmt 300: after the
+  closes are counted, carried >= amt - 0.005 -> seqLoss = seqTot = 0 (stCntLm); all six rules; recovery Off = nothing.
+  3. Pine only, group 41 (before 42): stPreOn "No NEW trades in the hours before news (group 29 US releases)" + stPreHrs 1.0
+  (0.1-24) = the EA's PreHit: today + tomorrow f_auDay (stAuN1..4), time_close < T and time_close + bar > T - hours; needs
+  news master + group 29 ON + intraday; in stGo (cancels waiting orders, skips signals, open trades run on); audit / BLOCKED
+  NOW "news soon - no new trades". Table rows 49 / 50 (51 rows). Pine 130 inputs, EA 145.
+  The user first asked for a "$200 profit -> back to $50" rule: explained that Rule C is already at base at a new high; the
+  only new version would be "won back $200 since the lowest point" - user chose to build WITHOUT it.
+  Tools: patches/patch121.py, ea121.py, sim121.py (port121.py; porthp capAct "Base", lmOn / lmAmt); ea/rbtests.py. Checks:
+  OFF byte-identical to v12.0 (core 5 x 5.75 y, whole EA 2 x 1 y; porthp 2 + port121 3 months); Python = core 19/19;
+  separate risk replay from the closed trades 14/14 (every order's risk; 18-1,216 cap resets, 39-250 loss-mark resets);
+  Pine pre-news written out from the Pine = calflags.py 6/6 (1m 0.5 / 1 / 2 / 24 h, 15m 1 / 2 h); whole EA = core 5/5
+  (shared hedge WITHOUT the loss pause - with it, same-candle closes of the two sides are ordered by tick in the EA and
+  by candle in the core -> pause can differ; pre-existing, also v12.0; big Rule C sizes in shared hedge also differ via the
+  leverage cap on live equity); restarts 484 identical (2). Parser PARSED OK. Side numbers (one 10k account from Jan 2021,
+  user settings, lev 100): cap 200 'start again' emptied 19 Aug 2022 (482 trades); loss mark 300 emptied 13 Apr 2023.
 
 ## How the v11.1 code works (key points)
 - 118 inputs (v11.2: 122, + group 38 stop buffer unit). Groups: 20 strategy, 21 risk / loss recovery, 24 safety, 25 daily blocking windows,
@@ -275,7 +297,7 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
    SMC_calendar.csv -> test the REAL news list (CPI, FOMC ...) on 2021-2026. With group 29 releases only
    (1m, user settings): none -18,514 / windows -18,844 / +pre 1 h -18,708 / 2 h -18,302 / 4 h -18,070,
    all -0.13R per trade (tools/ea/preeffect.py) -> news blocking does not change the edge.
-0. **MT5 EA**: user compiles `SMC_Structure_EA_v12.0.mq5` in MetaEditor (F7) and sends any error lines; then
+0. **MT5 EA**: user compiles `SMC_Structure_EA_v12.1.mq5` in MetaEditor (F7) and sends any error lines; then
    Strategy Tester (Every tick based on real ticks) and a demo account. Fix compile errors with a patch, re-run
    `tools/ea` checks before delivering.
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,
