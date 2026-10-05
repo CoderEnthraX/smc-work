@@ -16,6 +16,7 @@ inline double MathFloor(double x) { return std::floor(x); }
 inline double MathCeil(double x)  { return std::ceil(x); }
 inline double MathRound(double x) { return std::round(x); }
 inline string IntegerToString(long v) { return std::to_string(v); }
+inline string DoubleToString(double v, int d) { char b[64]; snprintf(b, sizeof(b), "%.*f", d, v); return string(b); }   // v12.0 notes
 class CArrD { public: std::vector<double> v; void Clear() { v.clear(); } void Add(double x) { v.push_back(x); } double At(int i) { return v[i]; }
   int Size() { return (int)v.size(); } void DropFirst(int k) { if (k <= 0) return; if (k >= (int)v.size()) { v.clear(); return; } v.erase(v.begin(), v.begin() + k); }
   void RemoveAt(int i) { v.erase(v.begin() + i); } };
@@ -42,10 +43,11 @@ double GUp(double p) { return grid ? std::ceil(p / 0.01 - 1e-7) / 100.0 : p; }
 
 void BkCancel(int side) { for (int i = (int)pend.size() - 1; i >= 0; i--) if (pend[i].side == side) pend.erase(pend.begin() + i); }
 void BkCancelPiece(int side, int piece) { for (int i = (int)pend.size() - 1; i >= 0; i--) if (pend[i].side == side && pend[i].piece == piece) pend.erase(pend.begin() + i); }
-void BkPlace(int side, int seq, int piece, int dir, double ent, double sl, double tgt, double q)
+void BkPlace(int side, int seq, int piece, int dir, double ent, double sl, double tgt, double q, bool mkt)
 {
    double rk = g_money[g_sideMi[side]].riskNow * g_side[side].addRk;
    if (dir == 1) { ent = GDn(ent); sl = GDn(sl); tgt = GUp(tgt); } else { ent = GUp(ent); sl = GUp(sl); tgt = GDn(tgt); }
+   if (mkt) ent = dir == 1 ? 1e300 : -1e300;   // v12.0: a market order = filled at the next open
    for (auto &p : pend) if (p.side == side && p.seq == seq && p.piece == piece) { p.dir = dir; p.lim = ent; p.sl = sl; p.tgt = tgt; p.q = q; p.pbar = curBar; p.prisk = rk; return; }
    pend.push_back(POrd{side, seq, piece, dir, ent, q, sl, tgt, curBar, rk});
 }
@@ -201,6 +203,7 @@ int main(int argc, char **argv)
       }
    }
    S.buMode = (int)cl("buMode", 0); S.buPips = cd("buPips", 10.0); S.buPct = cd("buPct", 0.02); S.pipSz = cd("buPip", 0.1);
+   S.ccMode = (int)cl("ccMode", 0); S.ccMax = cd("ccMax", 30.0); S.ccMin = cd("ccMin", 3.0); S.ccFb = cb("ccFb", false);
    S.ldOn = cb("ldOn", false); S.ldN = (int)cl("ldN", 3); S.ldD = (int)cl("ldD", 2); S.eqOn = cb("eqOn", false); S.eqPct = cd("eqPct", 50);
    S.cs = (int)cl("cs", 60); S.cmLots = 100; S.uv = 1.0; S.minLot = cd("minLot", 0.01); S.tick = 0.01;
    long htfSec = cl("htfSec", 900);

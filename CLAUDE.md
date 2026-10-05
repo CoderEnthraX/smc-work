@@ -7,10 +7,13 @@
   receiver only uses the free "MetaApi API") and the MQL5 VPS guide (`SMC_Strategy_v8.3_MQL5_VPS_GUIDE.pdf`).
 - Owner: **Punit** (punit7870@gmail.com). Works from a phone. Wants **simple English, short examples with
   numbers, tables**. Times are **IST** (Asia/Kolkata).
-- **Latest version: v11.2** = `SMC_Structure_Strategy_v11.2.txt` + `_NOTES.txt` + `_HANDBOOK.pdf` (v11.1 + group 38
-  "Stop buffer unit": Price (as now, default) / Pips (auto per market) / % of price; see Versions).
-- **MT5 EA: `SMC_Structure_EA_v11.2.mq5` + `_NOTES.txt`** (v11.1 files kept) = v11.2 rules in MQL5 (group 38 at the END
-  of the EA inputs, after group 41; core BufAt / LimAt / RoundTick; adapter PipAuto from symbol name, base / profit
+- **Latest version: v12.0** = `SMC_Structure_Strategy_v12.0.txt` + `_NOTES.txt` + `_HANDBOOK.pdf` (v11.2 + group 39
+  "Entry at the close of the signal candle": Off (default) / RULE 3 / RULE 4 with limits 3 - 30 + skip / fall back;
+  see Versions). v11.2 files kept.
+- **MT5 EA: `SMC_Structure_EA_v12.0.mq5` + `_NOTES.txt`** (v11.1 / v11.2 files kept) = v12.0 rules in MQL5 (group 39 at the
+  very END, after group 38; core CcOk + side mktBar / ccLim / cntR3..; BkPlace(..., mkt): a rule 3 / 4 entry is a MARKET
+  order at the next candle's first tick in touch AND pending mode, dropped if not filled on that candle; group 38 after
+  group 41; core BufAt / LimAt / RoundTick; adapter PipAuto from symbol name, base / profit
   currency, SYMBOL_TRADE_CALC_MODE forex) + HEDGE mode (group 33 4th
   choice; money per side or shared) + group 40 (magic, touch / pending entries, broker clock FxPro UTC+2 EU
   DST, 20,000 warm-up bars, restart resume <= 5 bars via MT5 global variables, drawing). Same inputs /
@@ -100,6 +103,16 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   0.02, pip size 0 = auto (gold 0.10, silver 0.01, BTC 1, ETH 0.10, forex 0.0001, JPY 0.01, else 10 x mintick); %
   = of the CHOCH* level; rounded to mintick; group 24 min / max stop read in the same unit (pips, or % of entry);
   trailing stop uses it; table row 47. Pine f_stBuf / stPipSz; sim port112 buf_at / lim_at (tools/patches/sim112.py).
+- v12.0 (user asked, permission "just build it", NO profit test - user declined to spend tokens): group 39 "Entry at the
+  close of the signal candle" (4 inputs at the end, 126 total): stCcMode Off / RULE 3 (market at the signal close =
+  fills next open, rules 1 / 2 unused, HTF filters apply, no agreement needed) / RULE 4 (same, only if entry-to-stop
+  distance at the close within [stCcMin 3, stCcMax 30], 0 = off, unit of group 38 like group 24); stCcFar "Skip the
+  setup" (default) / "Fall back to RULE 1 / 2" (normal pullback setup, which must keep the same limits - stCcLim);
+  too close always skipped. stRule 3 = market; one chance (stMktBar; cancelled if not filled the next bar, or 2 bars
+  when reverse closes an opposite trade first); stEnt = close; strategy.entry limit = na; table row 48; audit texts.
+  Sim: port120.py / porthp.py ccMode R3/R4, ccMax/ccMin/ccFb + pbSwp2 (tools/patches/sim120.py). Checks (cctests.py):
+  OFF byte-identical (sim 4, core 5 x 5.75 y, whole EA 2 x 1 y); Python = core 14/14 settings 2021-26; 36,593
+  market entries checked separately; whole EA = core 5/5; 484 restarts identical. Parser PARSED OK.
 
 ## How the v11.1 code works (key points)
 - 118 inputs (v11.2: 122, + group 38 stop buffer unit). Groups: 20 strategy, 21 risk / loss recovery, 24 safety, 25 daily blocking windows,
@@ -253,7 +266,7 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
    SMC_calendar.csv -> test the REAL news list (CPI, FOMC ...) on 2021-2026. With group 29 releases only
    (1m, user settings): none -18,514 / windows -18,844 / +pre 1 h -18,708 / 2 h -18,302 / 4 h -18,070,
    all -0.13R per trade (tools/ea/preeffect.py) -> news blocking does not change the edge.
-0. **MT5 EA**: user compiles `SMC_Structure_EA_v11.2.mq5` in MetaEditor (F7) and sends any error lines; then
+0. **MT5 EA**: user compiles `SMC_Structure_EA_v12.0.mq5` in MetaEditor (F7) and sends any error lines; then
    Strategy Tester (Every tick based on real ticks) and a demo account. Fix compile errors with a patch, re-run
    `tools/ea` checks before delivering.
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,

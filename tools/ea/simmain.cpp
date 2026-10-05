@@ -16,6 +16,7 @@ int main(int argc, char **argv)
    while (std::getline(f, line)) { std::istringstream ss(line); string k, v; if (ss >> k >> v) cfg[k] = v; }
    // the EA's settings (same keys as the core harness)
    InSig = (ESig)cl("sig", 0); InR1 = cb("r1", true); InR2 = cb("r2", true); InPb = cd("pb", 50); InRR = cd("rr", 3); InSlBuf = cd("slBuf", 0);
+   InPbSwp2 = cb("pbSwp2", false);
    InRev = cb("rev", true); InEntMode = cb("once", false) ? ENT_ONCE : ENT_CONT; InSessMode = (ESess)cl("sessMode", 0);
    InTzHours = cl("tzBase", 19800) / 3600.0; InTzDst = (EDst)cl("tzRule", 0); InHrOn = cl("hrOn", 6); InHrOff = cl("hrOff", 23); InHrFlat = cl("hrFlat", 2);
    InRisk = cd("risk", 50); InLotStep = cd("lotStep", 0.01); InRndMax = cd("rndMax", 25); InLev = cd("lev", 30);
@@ -36,6 +37,7 @@ int main(int argc, char **argv)
    InCalPost = (int)cl("calPost", 20); InCalHol = cb("calHol", true); InCalSave = cb("calSave", false); InPreOn = cb("preOn", false); InPreHrs = cd("preHrs", 1.0);
    InCalToday = (ECalToday)cl("calToday", 2);
    InBuMode = (EBuMode)cl("buMode", 0); InBuPips = cd("buPips", 10.0); InBuPct = cd("buPct", 0.02); InBuPip = cd("buPip", 0.0);
+   InCcMode = (ECcMode)cl("ccMode", 0); InCcMax = cd("ccMax", 30.0); InCcMin = cd("ccMin", 3.0); InCcFar = (ECcFar)cl("ccFb", 0);
    sim::calMode = (int)cl("calMode", 0); sim::calFail = cb("calFail", false); sim::calFailN = cl("calFailN", 0);
    if (cfg.count("fileDir")) sim::fileDir = cfg["fileDir"];
    if (cfg.count("simCal"))
