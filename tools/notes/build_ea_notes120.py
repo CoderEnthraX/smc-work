@@ -22,6 +22,7 @@ saved settings keep their places:
     RULE 3 - enter at the close of the signal candle            false
     - RULE 3: only if the close is near the broken level        false
     - the most the close may be beyond the broken level         3.0
+    - if the close is too far: fall back to RULE 1 / 2          false
 Everything OFF by default: the EA trades exactly like v11.2 (tested,
 byte for byte).
 
@@ -34,6 +35,13 @@ NEAR THE BROKEN LEVEL (option): rule 3 enters only when the close is at
 most 3 (default) beyond the level the candle broke. Broken high 4,100.00:
 close 4,102.50 -> enters; close 4,108.00 -> skipped. Unit of group 38
 like group 24 (Price = dollars on gold).
+FALL BACK TO RULE 1 / 2 (option): a close too far is not skipped - the
+signal gets the normal rule 1 / 2 setup instead, by your RULE 1 / RULE 2
+switches (close 4,108.00 -> buy limit at 4,100 by rule 2, or at the
+pullback % by rule 1). Rules 1 + 2 + 3 ON = rule 3 first, then rule 1 / 2;
+only rule 3 ON = rule 3 or nothing. With the option OFF a close too far
+is always skipped. The fall-back orders are normal rule 1 / 2 orders
+(touch or pending, group 40).
 SKIP IF THE STOP IS CLOSER / FURTHER THAN: group 24 (0 = off), for all
 entry rules - rule 1, rule 2 and rule 3.
 
@@ -46,9 +54,11 @@ candle later, after the old trade is closed.
 
 THE TABLE: "RULE 3 - ENTRY AT THE SIGNAL CLOSE (group 39)" (Full table),
 e.g. "on - 12 entered at the close | close within 3 of the break: 4
-skipped", and "- by ENTRY RULE 3 (signal close)" under the entries. The
-audit (group 20) writes "R3 ARMED - entry at the close" or "SKIP - RULE
-3: close 8.00 beyond the broken level" in the Experts tab.
+skipped, 7 fell back to rule 1 / 2", and "- by ENTRY RULE 3 (signal
+close)" under the entries. The audit (group 20) writes "R3 ARMED - entry
+at the close", "SKIP - RULE 3: close 8.00 beyond the broken level" or
+"R1 ARMED (RULE 3: close 8.00 beyond the broken level - fall back)" in
+the Experts tab.
 
 HOW IT WAS CHECKED
 """ + CHECK + """

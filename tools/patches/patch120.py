@@ -1,10 +1,11 @@
 # v11.2 -> v12.0 : RULE 3 - enter at the close of the signal candle (group 39, everything OFF by default)
 #   + optional: only when the close is at most N beyond the broken level (default 3, OFF)
+#   + optional: a close too far beyond it falls back to the normal RULE 1 / 2 setup instead of being skipped (OFF)
 #   The 'skip if the stop is CLOSER / FURTHER than' limits are the existing group 24 settings (0 = off): they already
 #   apply to every entry rule, rule 3 included.
 R = "/home/user/smc-work/"
 s = open(R + "SMC_Structure_Strategy_v11.2.txt").read()
-assert "stR3On" not in s and "stCntR3" not in s and "stMktBar" not in s and "f_stR3Lim" not in s
+assert "stR3Fb" not in s and "stR3On" not in s and "stCntR3" not in s and "stMktBar" not in s and "f_stR3Lim" not in s
 
 
 def rep(s, old, new, n=1):
@@ -17,7 +18,7 @@ def rep(s, old, new, n=1):
 l2 = s.split("\n")[1]
 assert l2.startswith("// SMC Structure Strategy  -  v11.2  -  ")
 s = rep(s, l2, l2.replace("v11.2  -  ", "v12.0  -  ", 1).replace(
-    "  -  ASCII only", ", v12.0: rule 3 enters at the close of the signal candle, optionally only when the close is at most N beyond the broken level  -  ASCII only"))
+    "  -  ASCII only", ", v12.0: rule 3 enters at the close of the signal candle, optionally only when the close is at most N beyond the broken level (or fall back to rule 1 / 2)  -  ASCII only"))
 
 # ---- the new settings, at the END of the list (group 39)
 old = 'stBuPip  = input.float(0.0, "  - pip size (0 = automatic)", '
@@ -28,7 +29,8 @@ s = s[:j] + (
     'stR3On    = input.bool(false, "RULE 3 - enter at the close of the signal candle", group = gCc, tooltip = '
     '"OFF (default): rules 1 and 2 as before - the strategy waits for the pullback.\\n\\n'
     'ON: the moment a candle CLOSES and confirms the signal (your CHOCH; a BOS too if you trade BOS), the strategy enters - a market order that fills at the '
-    'open of the next candle, which is practically the close. It does not matter where the candle closes. No pullback; rules 1 and 2 are not used. '
+    'open of the next candle, which is practically the close. It does not matter where the candle closes. No pullback; rules 1 and 2 are not used '
+    '(except by the fall-back switch at the end of this group). '
     'Stop = the CHOCH* level + your stop buffer, as always; target = your R multiple from the entry; the size comes from your risk and that distance.\\n\\n'
     'Group 24 \'Skip the setup if the stop is CLOSER / FURTHER than\' (0 = off) works for rule 3 too, like for rules 1 and 2.\\n\\n'
     'Everything else is unchanged: entry hours, news windows, weekend, loss pause, loss recovery, the higher-timeframe filters (b, favourable / against / auto). '
@@ -37,11 +39,20 @@ s = s[:j] + (
     'stR3BrkOn = input.bool(false, "  - RULE 3: only if the close is near the broken level", group = gCc, tooltip = '
     '"OFF (default): rule 3 enters wherever the signal candle closes.\\n\\n'
     'ON: rule 3 enters only when the close is at most the distance set in the next setting (default 3) beyond the level the candle broke (the broken high of a bullish CHOCH, the broken low '
-    'of a bearish one). A candle that closes far beyond it is skipped.\\n\\n'
+    'of a bearish one). A candle that closes far beyond it is skipped - or, with \'if the close is too far: fall back to RULE 1 / 2\' ON, it gets the normal '
+    'rule 1 / 2 setup instead.\\n\\n'
     'Example with 3: the broken high is 4,100.00. Close 4,102.50 = 2.50 beyond: enters. Close 4,108.00 = 8.00 beyond: skipped.")\n'
     'stR3Brk   = input.float(3.0, "  - the most the close may be beyond the broken level", minval = 0.0, step = 0.00000001, group = gCc, tooltip = '
     '"Used only with the switch above ON. In the unit of group 38 like group 24: Price = dollars on gold (3 = 3.00); Pips (3 pips = 0.30 on gold); '
     '% of the price. 3 (default).")\n'
+    'stR3Fb    = input.bool(false, "  - if the close is too far: fall back to RULE 1 / 2", group = gCc, tooltip = '
+    '"Used only with \'RULE 3: only if the close is near the broken level\' ON.\\n\\n'
+    'OFF (default): a signal candle that closes too far beyond the broken level is skipped - no trade.\\n\\n'
+    'ON: that signal gets the normal setup instead, exactly as with rule 3 OFF - RULE 1 (the pullback %) or RULE 2 (the broken pivot, when the higher '
+    'timeframe agrees), by your RULE 1 / RULE 2 switches. With RULE 1 and RULE 2 both OFF it is skipped.\\n\\n'
+    'So: rules 1 + 2 + 3 ON = rule 3 first, then rule 1 / 2 when the close is too far. Only rule 3 ON = rule 3 or nothing.\\n\\n'
+    'Example with 3: broken high 4,100, the candle closes at 4,108 = 8 beyond: no entry at the close; instead a buy limit at 4,100 (rule 2) or at '
+    'the pullback % (rule 1).")\n'
 ) + s[j:]
 
 # ---- helper after the stop buffer function (v11.2)
@@ -55,6 +66,7 @@ s = rep(s, old, old + (
 s = rep(s, "var int stCntR2   = 0\n", "var int stCntR2   = 0\n"
         "var int stCntR3   = 0       // v12.0: trades entered at the close of the signal candle (rule 3)\n"
         "var int stCntR3Far = 0      // v12.0: rule 3 signals skipped - the close too far beyond the broken level\n"
+        "var int stCntR3Fb = 0       // v12.0: rule 3 signals that fell back to rule 1 / 2 - the close too far\n"
         "var int stMktBar  = na      // v12.0: the bar a rule 3 market entry was sent on\n")
 
 # ---- fill counters
@@ -81,11 +93,14 @@ old = ("        if (stAutoM and not _use) or (not stAutoM and stAgn and not _ags
 s = rep(s, old, (
     "        bool _hfSkip = (stAutoM and not _use) or (not stAutoM and stAgn and not _agst and stR1On) or (not stAutoM and not stAgn and not _agree and stR1On and stHfEff)\n"
     "        // v12.0: RULE 3 - enter at the close of this candle. Rules 1 / 2 are not used; the higher-timeframe filters still are\n"
-    "        // (like rule 1: no agreement needed). Optionally only when the close is near the broken level.\n"
+    "        // (like rule 1: no agreement needed). Optionally only when the close is near the broken level; a close too far\n"
+    "        // beyond it is skipped, or (fall-back switch ON) gets the normal rule 1 / 2 setup computed above.\n"
     "        float _r3B   = na(_piv) ? na : _d * (close - _piv)\n"
     "        bool  _r3Far = stR3On and stR3BrkOn and (na(_r3B) or _r3B > f_stR3Lim(stR3Brk, close))\n"
+    "        bool  _r3Fb  = _r3Far and stR3Fb and (stR1On or stR2On)\n"
+    "        bool  _r3Use = stR3On and not _r3Fb\n"
     "        bool  _useM  = stAutoM ? (stAutoDir != 0 and _d == stAutoDir) : stAgn ? _agst : (_agree or not stHfEff)\n"
-    "        if stR3On\n"
+    "        if _r3Use\n"
     "            _hfSkip := not _r3Far and not _useM\n"
     "            _use    := not _r3Far and _useM\n"
     "        if _hfSkip\n"
@@ -93,13 +108,16 @@ s = rep(s, old, (
 old = '        if _use and not na(_opl)\n            if stDir != 0\n                stCntCanc += 1\n                f_audEnd("CANCELLED - new signal", stAudCancC)\n'
 s = rep(s, old, (
     "        if stR3On\n"
-    "            if _r3Far\n"
+    "            if _r3Fb\n"
+    '                _audS := "RULE 3: " + (na(_r3B) ? "no broken level" : "close " + str.tostring(_r3B, format.mintick) + " beyond the broken level") + " - fall back to RULE 1 / 2:\\n" + _audS\n'
+    "                stCntR3Fb += 1\n"
+    "            else if _r3Far\n"
     '                _audS := "SKIP - RULE 3: " + (na(_r3B) ? "no broken level" : "close " + str.tostring(_r3B, format.mintick) + " beyond the broken level")\n'
     "                stCntR3Far += 1\n"
     "            else\n"
     '                _audS := not _useM ? (stAutoM ? "SKIP - auto mode: other side now" : stAgn ? "SKIP - not against the higher timeframe (against mode)" : stFav ? "SKIP - against the higher timeframe (favourable mode)" : "SKIP - against the higher timeframe (filter)") : na(_opl) ? "SKIP - no stop level" : "R3 ARMED - entry at the close"\n') + old)
 s = rep(s, "            stRule := _agree and stR2On and not stAgn ? 2 : 1\n",
-        "            stRule := stR3On ? 3 : (_agree and stR2On and not stAgn ? 2 : 1)\n"
+        "            stRule := _r3Use ? 3 : (_agree and stR2On and not stAgn ? 2 : 1)\n"
         "            stMktBar := na\n")
 s = rep(s, "            stFix  := _agree and stR2On and not stAgn ? _piv : na\n",
         "            stFix  := stRule == 2 ? _piv : na\n")
@@ -126,7 +144,7 @@ j = s.index("\n", i) + 1
 s = s[:j] + (
     "    // v12.0: rule 3 - entries at the close of the signal candle (group 39)\n"
     '    string _r3U = stBuPipM ? " pips" : stBuPctM ? " %" : ""\n'
-    '    string _r3T = not stR3On ? "off - rules 1 / 2" : "on  -  " + str.tostring(stCntR3) + " entered at the close" + (stR3BrkOn ? "  |  close within " + str.tostring(stR3Brk) + _r3U + " of the break: " + str.tostring(stCntR3Far) + " skipped" : "")\n'
+    '    string _r3T = not stR3On ? "off - rules 1 / 2" : "on  -  " + str.tostring(stCntR3) + " entered at the close" + (stR3BrkOn ? "  |  close within " + str.tostring(stR3Brk) + _r3U + " of the break: " + str.tostring(stCntR3Far) + " skipped" + (stR3Fb ? ", " + str.tostring(stCntR3Fb) + " fell back to rule 1 / 2" : "") : "")\n'
     '    f_stCell(stTbl, 48, "RULE 3 - ENTRY AT THE SIGNAL CLOSE (group 39)", _r3T, stR3On ? color.aqua : color.gray)\n'
 ) + s[j:]
 

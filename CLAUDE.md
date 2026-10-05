@@ -9,9 +9,9 @@
   numbers, tables**. Times are **IST** (Asia/Kolkata).
 - **Latest version: v12.0** = `SMC_Structure_Strategy_v12.0.txt` + `_NOTES.txt` + `_HANDBOOK.pdf` (v11.2 + group 39
   "RULE 3 - enter at the close of the signal candle", all OFF; option "only if the close is near the broken level",
-  default 3; see Versions). v11.2 files kept.
+  default 3; option "if the close is too far: fall back to RULE 1 / 2"; see Versions). v11.2 files kept.
 - **MT5 EA: `SMC_Structure_EA_v12.0.mq5` + `_NOTES.txt`** (v11.1 / v11.2 files kept) = v12.0 rules in MQL5 (group 39 at the
-  very END, after group 38; core r3Far + side mktBar / cntR3 / cntR3Far; BkPlace(..., mkt): a rule 3 entry is a MARKET
+  very END, after group 38; core r3Far / r3Fb / r3Use + side mktBar / cntR3 / cntR3Far / cntR3Fb; BkPlace(..., mkt): a rule 3 entry is a MARKET
   order at the next candle's first tick in touch AND pending mode, dropped if not filled on that candle; group 38 after
   group 41; core BufAt / LimAt / RoundTick; adapter PipAuto from symbol name, base / profit
   currency, SYMBOL_TRADE_CALC_MODE forex) + HEDGE mode (group 33 4th
@@ -105,17 +105,23 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   trailing stop uses it; table row 47. Pine f_stBuf / stPipSz; sim port112 buf_at / lim_at (tools/patches/sim112.py).
 - v12.0 (user asked, permission "just build it", NO profit test - user declined to spend tokens). REDONE once: the first
   build (4 inputs: RULE 3 / RULE 4 = entry-to-stop limits 3 - 30, skip / fall back) misread the user. What they meant:
-  group 39 (3 inputs at the end, 125 total, all OFF): stR3On "RULE 3 - enter at the close of the signal candle"
+  group 39 (4 inputs at the end, 126 total, all OFF): stR3On "RULE 3 - enter at the close of the signal candle"
   (market at the signal close = fills next open, wherever it closes; rules 1 / 2 unused; HTF filters apply, no
   agreement needed); stR3BrkOn "only if the close is near the broken level" + stR3Brk 3.0 = the most the close may be
   beyond the pivot the candle broke (_piv: stCeilPrev long / stFlorPrev short; unit of group 38 like group 24,
-  f_stR3Lim); too far = skip, no fall back. "Skip if the stop is CLOSER / FURTHER than" = the EXISTING group 24
+  f_stR3Lim); too far = skip, or with stR3Fb "if the close is too far: fall back to RULE 1 / 2" (asked after the
+  redo) the normal rule 1 / 2 setup (_r3Fb = _r3Far and stR3Fb and (stR1On or stR2On); _r3Use = stR3On and not _r3Fb
+  -> keeps the v11.2 _use / stRule). R1+R2+R3 = rule 3 then 1 / 2; only R3 = rule 3 or skip.
+  "Skip if the stop is CLOSER / FURTHER than" = the EXISTING group 24
   inputs (0 = off), already for rules 1 / 2 / 3 - nothing new. stRule 3 = market; one chance (stMktBar; cancelled if
   not filled the next bar, or 2 bars when reverse closes an opposite trade first); stEnt = close; strategy.entry
   limit = na; table row 48; audit "R3 ARMED" / "SKIP - RULE 3: close X beyond the broken level".
-  Sim: port120.py / porthp.py r3On / r3BrkOn / r3Brk + pbSwp2 (tools/patches/sim120.py). Checks (cctests.py): OFF
-  byte-identical (sim 4, core 5 x 5.75 y, whole EA 2 x 1 y); Python = core 14/14 settings 2021-26; 35,443 market
-  entries checked separately (10,425 near-break); whole EA = core 5/5; 484 restarts identical. Parser PARSED OK.
+  Sim: port120.py / porthp.py r3On / r3BrkOn / r3Brk / r3Fb + pbSwp2 (tools/patches/sim120.py). Checks (cctests.py): OFF
+  byte-identical (sim 4, core 5 x 5.75 y, whole EA 2 x 1 y); Python = core 26/26 settings 2021-26 (12 with the fall
+  back); 54,348 market entries + 762 fall-back trades (rule 2 pivot / rule 1 pullback level from the engine) checked
+  separately; fall back with R1 = R2 = off = no fall back, identical; whole EA = core 8/8; 484 restarts identical (3).
+  Parser PARSED OK. Side numbers (recovery off, user settings, 2021-26, NOT a profit study): r3 -11,312 (1,943 tr),
+  r3 + near 3 -11,572 (1,857), + fall back -11,693 (1,909; 74 fell back); v11.2 -11,253 (1,844).
 
 ## How the v11.1 code works (key points)
 - 118 inputs (v11.2: 122, + group 38 stop buffer unit). Groups: 20 strategy, 21 risk / loss recovery, 24 safety, 25 daily blocking windows,

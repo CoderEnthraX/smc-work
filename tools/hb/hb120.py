@@ -9,23 +9,34 @@ CHK = sys.argv[1] if len(sys.argv) > 1 else "CHK"
 
 def ch_v120():
     h = chap("WHAT IS NEW IN v12.0", "Rule 3: enter at the close of the signal candle",
-             "A new group 39 at the end of the settings. Everything is OFF by default - with it OFF v12.0 trades exactly like v11.2.", True)
+             "A new group 39 (4 settings) at the end of the settings. Everything is OFF by default - with it OFF v12.0 trades exactly like v11.2.", True)
     h += card("RULE 3 - enter at the close of the signal candle", "OFF", "your choice", [
         ("OFF", "Rules 1 and 2 as before: the strategy waits for the pullback (rule 1) or the broken pivot (rule 2)."),
-        ("ON", "When a candle CLOSES and confirms the signal (your CHOCH), the strategy enters at market - wherever the candle closes. It fills at the OPEN of the next candle - practically the close. No pullback. Rules 1 and 2 are not used."),
+        ("ON", "When a candle CLOSES and confirms the signal (your CHOCH), the strategy enters at market - wherever the candle closes. It fills at the OPEN of the next candle - practically the close. No pullback. Rules 1 and 2 are not used (except by the fall back at the end of the group)."),
         ("STOP / TARGET", "As always: stop = the CHOCH* level + your stop buffer; target = your R multiple from the entry; the size comes from your risk and that distance."),
         ("FILTERS", "Rule 3 does not need the higher timeframe to agree (like rule 1). Filter b, the favourable / against / auto modes, entry hours, news, weekend and the loss pause all still apply.")])
     h += card("- RULE 3: only if the close is near the broken level", "OFF", "your choice", [
         ("OFF", "Rule 3 enters wherever the signal candle closes."),
-        ("ON", "Rule 3 enters only when the close is at most the distance set in the next setting (default 3) beyond the level the candle broke (the broken high of a bullish CHOCH, the broken low of a bearish one). A huge candle that closes far beyond it is skipped.")])
+        ("ON", "Rule 3 enters only when the close is at most the distance set in the next setting (default 3) beyond the level the candle broke (the broken high of a bullish CHOCH, the broken low of a bearish one). A huge candle that closes far beyond it is skipped - or, with the fall back ON, gets the normal rule 1 / 2 setup.")])
     h += card("- the most the close may be beyond the broken level", "3", "3", [
         ("UNIT", "The unit of group 38, like group 24: Price = dollars on gold (3 = 3.00); Pips (3 pips = 0.30 on gold!); % of the price."),
         ("USED", "Only with the switch above ON. 3.00 exactly is allowed.")])
+    h += card("- if the close is too far: fall back to RULE 1 / 2", "OFF", "your choice", [
+        ("OFF", "A signal candle that closes too far beyond the broken level is skipped - no trade."),
+        ("ON", "That signal gets the normal setup instead, exactly as with rule 3 OFF: rule 2 (a limit at the broken pivot) when the higher timeframe agrees, otherwise rule 1 (a limit at your pullback %), by your RULE 1 / RULE 2 switches. The limit may never be reached - then there is no trade."),
+        ("USED", "Only with 'RULE 3: only if the close is near the broken level' ON. With RULE 1 and RULE 2 both OFF a close too far is still skipped.")])
     h += "<div style='break-inside: avoid'><h3>Example - a bullish CHOCH, the broken high at 4,100.00, the option ON with 3</h3>"
-    h += table(["The CHOCH candle closes at", "Beyond the broken high", "Rule 3 alone", "Rule 3 + 'near the broken level' 3"], [
-        ["4,102.50", "2.50", "buys at the next open", "<b>buys</b>"],
-        ["4,103.00", "3.00", "buys at the next open", "<b>buys</b> (3.00 is allowed)"],
-        ["4,108.00 (a huge candle)", "8.00", "buys at the next open", "<b>skipped</b>"]], num=(1,)) + "</div>"
+    h += table(["The CHOCH candle closes at", "Beyond the broken high", "Rule 3 alone", "+ 'near the broken level' 3", "+ fall back ON"], [
+        ["4,102.50", "2.50", "buys at the next open", "<b>buys</b>", "<b>buys</b>"],
+        ["4,103.00", "3.00", "buys at the next open", "<b>buys</b> (3.00 is allowed)", "<b>buys</b>"],
+        ["4,108.00 (a huge candle)", "8.00", "buys at the next open", "<b>skipped</b>", "<b>buy limit</b> at 4,100 (rule 2) or 4,105 (rule 1)"]], num=(1,)) + "</div>"
+    h += "<p>The rule 1 level in the last row: CHOCH* level 4,090, candle high 4,110, pullback 25%: 4,110 - 25% of 20 = 4,105. Rule 2 (the broken pivot 4,100) is used when the higher timeframe agrees.</p>"
+    h += "<div style='break-inside: avoid'><h3>Which rule trades - 'near the broken level' ON and the fall back ON</h3>"
+    h += table(["RULE 1", "RULE 2", "RULE 3", "Close near the level", "Close too far"], [
+        ["on", "on", "on", "rule 3 at the close", "rule 2 (agrees) or rule 1"],
+        ["on", "off", "on", "rule 3 at the close", "rule 1"],
+        ["off", "on", "on", "rule 3 at the close", "rule 2 (only if the higher timeframe agrees)"],
+        ["off", "off", "on", "rule 3 at the close", "skipped"]]) + "<p class='small'>With the fall back OFF, a close too far is always skipped.</p></div>"
     h += "<p>With the stop at 4,089.00 (CHOCH* level 4,090.00 + buffer 1.00) and a close of 4,101.00: distance 12.00, target 4,101 + 3 x 12 = 4,137 (+ the commission push), size 50 / (12 + 0.76) = 3.9, so 4 oz = 0.04 lot.</p>"
     h += box("Skip if the stop is closer / further than - for ALL entry rules", "These are the group 24 settings you already have: 'Skip the setup if the stop is CLOSER than this (price)' and "
              "'... FURTHER than this (price)', 0 = off (default). They work for rule 1, rule 2 and now rule 3 (for rule 3 the distance is from the close to the stop). "
@@ -33,20 +44,20 @@ def ch_v120():
     h += box("One chance - no late entry", "The market order is sent on the signal candle only. A signal outside the entry hours, or while trading is blocked, opens nothing. "
              "With 'close and reverse' ON, a signal that reverses an open trade enters one candle later (after the old trade is closed). "
              "The broker message is unchanged: the alert fires when the order fills and TheConnector opens the trade at market with the stop and target.")
-    h += box("The table and the audit labels", "A new last row 'RULE 3 - ENTRY AT THE SIGNAL CLOSE (group 39)', e.g. 'on - 12 entered at the close | close within 3 of the break: 4 skipped'. "
-             "The audit labels say 'R3 ARMED - entry at the close' or 'SKIP - RULE 3: close 8.00 beyond the broken level'.")
+    h += box("The table and the audit labels", "A new last row 'RULE 3 - ENTRY AT THE SIGNAL CLOSE (group 39)', e.g. 'on - 12 entered at the close | close within 3 of the break: 4 skipped, 7 fell back to rule 1 / 2'. "
+             "The audit labels say 'R3 ARMED - entry at the close', 'SKIP - RULE 3: close 8.00 beyond the broken level', or 'RULE 3: close 8.00 beyond the broken level - fall back to RULE 1 / 2' above the rule 1 / 2 label.")
     h += box("Honest", "NOT tested for profit - you asked for the build without the 5.75-year test; it was tested only for correctness. Entering at the close puts the stop further away than "
              "rule 1's 25% pullback (about one third), so the same risk buys a smaller size, and every entry pays the full spread at once. The 5.75-year study found no 1-minute entry setting "
              "that made money in both 2021-23 and 2024-26. Run it in TradingView on the same dates as before, then on a demo account, before real money.", "warn")
     h += box("The MT5 EA v12.0", "The same group 39 at the end of the EA settings. Both 'touch' and 'pending' modes send a market order at once on the first tick of the next candle; "
-             "if it does not fill on that candle the setup is dropped, like TradingView.")
+             "if it does not fill on that candle the setup is dropped, like TradingView. A fall-back setup uses normal rule 1 / 2 orders.")
     return h
 
 
 def ch_tests120():
     h = chap("HOW v12.0 WAS CHECKED", "Parser, settings, the simulator and the MT5 EA's own code", "")
     h += "<ul><li>A Pine Script parser (the full Pine grammar) read v12.0 without a syntax error. New names declared before use, no clashes, ASCII only, no tabs, no strategy.close_all.</li>" \
-         "<li>Settings: the 122 of v11.2 unchanged in the same places + 3 new at the end = 125.</li></ul>"
+         "<li>Settings: the 122 of v11.2 unchanged in the same places + 4 new at the end = 126.</li></ul>"
     h += CHK
     h += "<p class='small'>This is not the TradingView compiler. If TradingView shows an error when you save, send the line and the message.</p>"
     return h

@@ -369,6 +369,7 @@ input group "39. RULE 3 - enter at the close of the signal candle (v12.0)"
 input bool     InR3On      = false;   // RULE 3 - enter at the close of the signal candle
 input bool     InR3BrkOn   = false;   //   - RULE 3: only if the close is near the broken level
 input double   InR3Brk     = 3.0;     //   - the most the close may be beyond the broken level
+input bool     InR3Fb      = false;   //   - if the close is too far: fall back to RULE 1 / 2
 
 //---------------------------------------------------------------- arrays used by the core (MQL5 version)
 class CArrD
@@ -539,7 +540,7 @@ public:
    long   preSec;
    int    buMode;
    double buPips, buPct, pipSz;
-   bool   r3On, r3BrkOn;       // v12.0: rule 3, and 'only if the close is near the broken level'
+   bool   r3On, r3BrkOn, r3Fb; // v12.0: rule 3, 'only if the close is near the broken level', 'too far: fall back to rule 1 / 2'
    double r3Brk;
    // broker facts, set by the adapter
    int    cs;
@@ -548,7 +549,7 @@ public:
    // worked out by Derive()
    bool   fav, agn, autoM, useCho, useBos, hfEff, u15, timeOn, intra, mvOn, mgOn, seqPlus;
    int    bMin, mvKMax;
-   CSet() { for (int i = 0; i < 32; i++) ndDays[i] = false; calOn = false; calHol = false; preOn = false; calPre = 0; calPost = 0; preSec = 0; buMode = 0; buPips = 0; buPct = 0; pipSz = 0; r3On = false; r3BrkOn = false; r3Brk = 0; }
+   CSet() { for (int i = 0; i < 32; i++) ndDays[i] = false; calOn = false; calHol = false; preOn = false; calPre = 0; calPost = 0; preSec = 0; buMode = 0; buPips = 0; buPct = 0; pipSz = 0; r3On = false; r3BrkOn = false; r3Fb = false; r3Brk = 0; }
    void Derive()
    {
       fav    = sig >= 3 && sig <= 5;
@@ -1412,7 +1413,7 @@ public:
    bool   ordLive, lastCapQ, placed, ppSent;
    string closeWhy, last;
    int    cntArm, cntFill, cntCanc, cntSkip, cntR1, cntR2, cntDir, cntHf, cntPd, cntBosCnl, cntExp, cntCap, cntMoves;
-   int    cntR3, cntR3Far;   // v12.0
+   int    cntR3, cntR3Far, cntR3Fb;   // v12.0
    int    ntrk;
    TrkRec trk[MAXP];
    CSide() { k = 0; dirF = 0; mi = 0; Reset(); }
@@ -1424,7 +1425,7 @@ public:
       ordLive = false; lastCapQ = false; placed = false; ppSent = false;
       closeWhy = ""; last = "";
       cntArm = 0; cntFill = 0; cntCanc = 0; cntSkip = 0; cntR1 = 0; cntR2 = 0; cntDir = 0; cntHf = 0; cntPd = 0; cntBosCnl = 0; cntExp = 0; cntCap = 0; cntMoves = 0;
-      cntR3 = 0; cntR3Far = 0;
+      cntR3 = 0; cntR3Far = 0; cntR3Fb = 0;
       ntrk = 0;
    }
    double PosSize()        { double s = 0; for (int i = 0; i < g_io[k].nPos; i++) s += g_io[k].pos[i].dir * g_io[k].pos[i].q; return s; }
@@ -1651,16 +1652,20 @@ public:
             else             use = S.r1 && !S.hfEff;
             bool hfSkip = (S.autoM && !use) || (!S.autoM && S.agn && !agst && S.r1) || (!S.autoM && !S.agn && !agree && S.r1 && S.hfEff);
             // v12.0: rule 3 - enter at the close of this candle (rules 1 / 2 not used; the higher-timeframe filters still apply,
-            // no agreement needed - like rule 1). Optionally only when the close is near the broken level (the pivot).
+            // no agreement needed - like rule 1). Optionally only when the close is near the broken level (the pivot); a close
+            // too far is skipped, or (fall-back switch ON) keeps the normal rule 1 / 2 setup computed above.
             double r3B   = IsNa(piv) ? NAD : d * (g_c - piv);
             bool   r3Far = S.r3On && S.r3BrkOn && (IsNa(r3B) || r3B > LimAt(S.r3Brk, g_c));
+            bool   r3Fb  = r3Far && S.r3Fb && (S.r1 || S.r2);
+            bool   r3Use = S.r3On && !r3Fb;
             bool   useM  = S.autoM ? (g_autoDir != 0 && d == g_autoDir) : (S.agn ? agst : (agree || !S.hfEff));
-            if (S.r3On)
+            if (r3Use)
             {
                hfSkip = !r3Far && !useM;
                use    = !r3Far && useM;
                if (r3Far) cntR3Far++;
             }
+            if (r3Fb) cntR3Fb++;
             if (hfSkip) cntHf++;
             if (use && !IsNa(opl))
             {
@@ -1674,14 +1679,14 @@ public:
                ppSent  = false;
                addRk   = (addB && S.bkOn) ? S.bkPct / 100.0 : 1.0;
                dir     = d;
-               rule    = S.r3On ? 3 : ((agree && S.r2 && !S.agn) ? 2 : 1);
+               rule    = r3Use ? 3 : ((agree && S.r2 && !S.agn) ? 2 : 1);
                mktBar  = NAI;
                sl      = d == 1 ? opl - BufAt(opl) : opl + BufAt(opl);
                fix     = rule == 2 ? piv : NAD;
-               Note(sg + ": " + Id() + (rule == 3 ? " R3 ARMED - entry at the close" : (rule == 2 ? " R2 ARMED" : " R1 ARMED")));
+               Note(sg + ": " + Id() + (rule == 3 ? " R3 ARMED - entry at the close" : (rule == 2 ? " R2 ARMED" : " R1 ARMED")) + (!r3Fb ? (string)"" : (IsNa(r3B) ? (string)" (RULE 3: no broken level - fall back)" : " (RULE 3: close " + DoubleToString(r3B, 2) + " beyond the broken level - fall back)")));
             }
-            else if (S.r3On && r3Far) Note(sg + ": SKIP - RULE 3: " + (IsNa(r3B) ? (string)"no broken level" : "close " + DoubleToString(r3B, 2) + " beyond the broken level"));
-            else if (!use) Note(sg + ": SKIP - " + (S.autoM ? "auto mode side / rule" : (S.agn ? "not against the higher timeframe" : (agree && !S.r3On ? "no broken pivot" : "higher timeframe filter"))));
+            else if (r3Use && r3Far) Note(sg + ": SKIP - RULE 3: " + (IsNa(r3B) ? (string)"no broken level" : "close " + DoubleToString(r3B, 2) + " beyond the broken level"));
+            else if (!use) Note(sg + ": SKIP - " + (S.autoM ? "auto mode side / rule" : (S.agn ? "not against the higher timeframe" : (agree && !r3Use ? "no broken pivot" : "higher timeframe filter"))));
             else Note(sg + ": SKIP - no stop level");
          }
          else Note(sg + ": SKIP - " + (dirNo ? "trade direction" : (!g_win ? "outside session hours" : (opp ? "in a trade (reverse is off)" : (full ? "max trades open" : "already in a trade the same way")))));
@@ -2089,7 +2094,7 @@ void FillSettings()
    S.ldOn = InLdOn; S.ldN = InLdN; S.ldD = InLdD; S.eqOn = InEqOn; S.eqPct = InEqPct;
    S.calOn = InCalOn; S.calHol = InCalHol; S.calPre = InCalPre; S.calPost = InCalPost; S.preOn = InPreOn; S.preSec = (long)MathRound(InPreHrs * 3600.0);
    S.buMode = (int)InBuMode; S.buPips = InBuPips; S.buPct = InBuPct; S.pipSz = InBuPip > 0 ? InBuPip : PipAuto();
-   S.r3On = InR3On; S.r3BrkOn = InR3BrkOn; S.r3Brk = InR3Brk;
+   S.r3On = InR3On; S.r3BrkOn = InR3BrkOn; S.r3Brk = InR3Brk; S.r3Fb = InR3Fb;
    S.cs = g_cs;
    S.cmLots = InCmMode == CM_LOT ? InCmUnit : g_contract;
    S.uv = 1.0;
@@ -3566,6 +3571,7 @@ int SideCnt(int k, int what)
    if (what == 11) return g_side[k].cntCap;
    if (what == 13) return g_side[k].cntR3;
    if (what == 14) return g_side[k].cntR3Far;
+   if (what == 15) return g_side[k].cntR3Fb;
    return g_side[k].cntMoves;
 }
 int    CntSum(int what) { int t = 0; for (int k = 0; k < g_nSides; k++) t += SideCnt(k, what); return t; }
@@ -3858,7 +3864,7 @@ string R3Txt()
    if (!S.r3On) return "off - rules 1 / 2";
    string u = S.buMode == 1 ? " pips" : (S.buMode == 2 ? " %" : "");
    string t = "on  -  " + CntTxt(13) + " entered at the close";
-   if (S.r3BrkOn) t = t + "  |  close within " + Num(S.r3Brk) + u + " of the break: " + CntTxt(14) + " skipped";
+   if (S.r3BrkOn) t = t + "  |  close within " + Num(S.r3Brk) + u + " of the break: " + CntTxt(14) + " skipped" + (S.r3Fb ? ", " + CntTxt(15) + " fell back to rule 1 / 2" : "");
    return t;
 }
 // v11.2: the stop buffer in use, in price

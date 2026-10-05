@@ -1,5 +1,5 @@
 # v12.0 in the Python simulators: RULE 3 - enter at the close of the signal candle (group 39), optionally only when the
-#   close is at most r3Brk beyond the broken level
+#   close is at most r3Brk beyond the broken level; r3Fb = a close too far falls back to the normal rule 1 / 2 setup
 #   + PULLBACK RULE 3 (pbSwp2, in the Pine since v10.0 and in the EA core) so the simulators can run the user's settings
 #   sim2/port112.py -> sim2/port120.py (the TradingView mirror) and ea/porthp.py (the EA checks), same edits
 R = "/home/user/smc-work/tools/"
@@ -73,7 +73,7 @@ def patch(s):
     s = rep(s, '    buMode="Price", buPips=10.0, buPct=0.02, pip=0.1, tick=0.01,\n',
             '    buMode="Price", buPips=10.0, buPct=0.02, pip=0.1, tick=0.01,\n'
             '    # v12.0: rule 3 - enter at the close of the signal candle; r3BrkOn = only when the close is at most r3Brk beyond the broken level\n'
-            '    r3On=False, r3BrkOn=False, r3Brk=3.0, pbSwp2=False,\n')
+            '    r3On=False, r3BrkOn=False, r3Brk=3.0, r3Fb=False, pbSwp2=False,\n')
     s = rep(s, "    stSeq = 0; stPlaced = False; stEntLock = None; stArmBar = None\n",
             "    stSeq = 0; stPlaced = False; stEntLock = None; stArmBar = None\n"
             "    stMktBar = None   # v12.0\n")
@@ -90,16 +90,22 @@ def patch(s):
 """, """                if autoMode:
                     use = autoDir != 0 and d == autoDir and ((((p["r2"] and piv is not None) or (not p["r2"] and p["r1"]))) if eqOpen else p["r1"])
                 # v12.0: rule 3 - enter at the close of this candle (higher-timeframe filters still apply, no agreement needed);
-                # optionally only when the close is at most r3Brk beyond the broken level (the pivot)
+                # optionally only when the close is at most r3Brk beyond the broken level (the pivot); a close too far is skipped,
+                # or (r3Fb) keeps the normal rule 1 / 2 setup computed above
+                r3Use = False
                 if p["r3On"]:
                     r3B = None if piv is None else d * (c - piv)
                     r3Far = p["r3BrkOn"] and (r3B is None or r3B > lim_at(p, p["r3Brk"], c))
-                    useM = (autoDir != 0 and d == autoDir) if autoMode else ((stT15 == -d) if agnMode else (agree or not (p["htfFilt"] or favMode)))
-                    use = useM and not r3Far
-                    if r3Far: cnt["r3Far"] = cnt.get("r3Far", 0) + 1
+                    r3Fb = r3Far and p["r3Fb"] and (p["r1"] or p["r2"])
+                    if not r3Fb:
+                        r3Use = True
+                        useM = (autoDir != 0 and d == autoDir) if autoMode else ((stT15 == -d) if agnMode else (agree or not (p["htfFilt"] or favMode)))
+                        use = useM and not r3Far
+                    if r3Fb: cnt["r3Fb"] = cnt.get("r3Fb", 0) + 1
+                    elif r3Far: cnt["r3Far"] = cnt.get("r3Far", 0) + 1
 """)
     s = rep(s, '                    stDir = d; stRule = 2 if (agree and p["r2"] and not agnMode) else 1\n',
-            '                    stDir = d; stRule = 3 if p["r3On"] else (2 if (agree and p["r2"] and not agnMode) else 1)\n'
+            '                    stDir = d; stRule = 3 if r3Use else (2 if (agree and p["r2"] and not agnMode) else 1)\n'
             '                    stMktBar = None\n')
     s = rep(s, '            stEnt = stEntLock if (p["once"] and stPlaced and stEntLock is not None) else (stFix if stRule == 2 else retLvl(trendDir, mA, mO, p["pb"]))\n',
             '            stEnt = c if stRule == 3 else (stEntLock if (p["once"] and stPlaced and stEntLock is not None) else (stFix if stRule == 2 else retLvl(trendDir, mA, mO, p["pb"])))\n')
