@@ -7,13 +7,15 @@
   receiver only uses the free "MetaApi API") and the MQL5 VPS guide (`SMC_Strategy_v8.3_MQL5_VPS_GUIDE.pdf`).
 - Owner: **Punit** (punit7870@gmail.com). Works from a phone. Wants **simple English, short examples with
   numbers, tables**. Times are **IST** (Asia/Kolkata).
-- **Latest version: v12.1** = `SMC_Structure_Strategy_v12.1.txt` + `SMC_Structure_EA_v12.1.mq5` ONLY (the user asked for no
-  notes / handbook for v12.1 - the v12.0 notes + handbook still describe everything else; see Versions). Before it:
+- **Latest version: v12.2** = `SMC_Structure_Strategy_v12.2.txt` + `SMC_Structure_EA_v12.2.mq5` ONLY (no notes / handbook for
+  v12.1 / v12.2, as the user asked - the v12.0 notes + handbook still describe everything else; see Versions). v12.1 files kept
+  (they hold the profit mark that v12.2 removed). Before them:
   **v12.0** = `SMC_Structure_Strategy_v12.0.txt` + `_NOTES.txt` + `_HANDBOOK.pdf` (v11.2 + group 39
   "RULE 3 - enter at the close of the signal candle", all OFF; option "only if the close is near the broken level",
   default 3; option "if the close is too far: fall back to RULE 1 / 2"; see Versions). v11.2 files kept.
-- **MT5 EA: `SMC_Structure_EA_v12.1.mq5`** (v12.0 + ECap CAP_BASE = 3 + group 42 InLmOn / InLmAmt at the very END; notes = the
-  v12.0 EA notes) / `SMC_Structure_EA_v12.0.mq5` + `_NOTES.txt` (v11.1 / v11.2 files kept) = v12.0 rules in MQL5 (group 39 at the
+- **MT5 EA: `SMC_Structure_EA_v12.2.mq5`** (v12.1 without the profit mark + ESeq SEQ_AS / SEQ_BS / SEQ_CS = 7 / 8 / 9 + group
+  43 InSp1..InSpAdd at the very END; core StepBase(flPnl), money basNow) / `SMC_Structure_EA_v12.1.mq5` (v12.0 + ECap CAP_BASE
+  = 3 + group 42 InLmOn / InLmAmt / InPmOn / InPmAmt at the very END; notes = the v12.0 EA notes) / `SMC_Structure_EA_v12.0.mq5` + `_NOTES.txt` (v11.1 / v11.2 files kept) = v12.0 rules in MQL5 (group 39 at the
   very END, after group 38; core r3Far / r3Fb / r3Use + side mktBar / cntR3 / cntR3Far / cntR3Fb; BkPlace(..., mkt): a rule 3 entry is a MARKET
   order at the next candle's first tick in touch AND pending mode, dropped if not filled on that candle; group 38 after
   group 41; core BufAt / LimAt / RoundTick; adapter PipAuto from symbol name, base / profit
@@ -151,6 +153,23 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   leverage cap on live equity); restarts 484 identical (3). Parser PARSED OK. Side numbers (one 10k account from Jan 2021,
   user settings, Rule C split 3, lev 100): cap 200 'start again' emptied 19 Aug 2022 (482 trades); loss mark 300 emptied
   13 Apr 2023; profit mark 200 alone emptied 10 May 2022 (440 trades, risk up to 1,356 - it does not limit the risk).
+- v12.2 (user asked + answered 7 questions; ONLY the two strategy files; NO profit test): built from v12.1 as it was BEFORE
+  the profit mark (git ec60510 files, so the profit mark is gone: Pine 132 -> 130 + 8 = 138 inputs, EA 147 -> 145 + 8 = 153).
+  'Loss-recovery sizing' + 3 choices at the end: "Rule A split / Rule B split / Rule C split (X, the base grows with the profit
+  - group 43)" = Rule A / B / C (loss since the high, split, cap, loss mark all as before) but the BASE = max(base risk,
+  min(step base, hard cap)); step base = OPTION 2 (the user's choice): the step AMOUNT / its parts, not the actual profit, so
+  a loss never makes the next base bigger; profit = stFlPnl (counted closed trades, never reset). Group 43 (8 inputs, user
+  left the steps after 1,000 to me): step 1 200 / 3, step 2 500 / 5, step 3 1,000 / 8, then every 500 more (stSpInc) one more
+  part (stSpAdd 1): 66.67, 100, 125, 166.67 (1,500 / 9), 200 (2,000 / 10), 227.27, 250, 269.23, 285.71, ... 312.50 (5,000 / 16),
+  384.62 (10,000 / 26); always rising, never reaches 500 (500 / 1). Next risk = max(step base, Rule A / B / C ask). The step
+  base is clamped to the cap so it never triggers the cap action itself; the cap's 'start again' gives min(step base, cap).
+  Pine f_stStep / stSplitM / stBaseNow, table row 51 "PROFIT STEPS"; EA StepBase / basNow / SpTxt; seqPlus = 4..6 only.
+  Tools: patches/patch122.py, ea122.py, sim122.py (port122.py; porthp seqMode As / Bs / Cs, sp1..spAdd, step_base);
+  ea/sptests.py (rbtests.py lost its profit-mark settings). Checks: OFF byte-identical to v12.1 (core 7 incl. cap reset +
+  loss mark, whole EA 2; porthp 2 + port122 3 months); Python = core 18/18; every order's risk replayed separately 12/12 (121-611
+  orders on profit steps each); steps with Rule C = C, C split with no steps = C; whole EA = core 5/5; restarts identical (2).
+  Parser PARSED OK. Side number: user 1m settings, Rule C split, one 10k account from Jan 2021 = empty 3 Mar 2021 (profit
+  never reached 200 - the steps never started).
 
 ## How the v11.1 code works (key points)
 - 118 inputs (v11.2: 122, + group 38 stop buffer unit). Groups: 20 strategy, 21 risk / loss recovery, 24 safety, 25 daily blocking windows,
@@ -304,7 +323,7 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
    SMC_calendar.csv -> test the REAL news list (CPI, FOMC ...) on 2021-2026. With group 29 releases only
    (1m, user settings): none -18,514 / windows -18,844 / +pre 1 h -18,708 / 2 h -18,302 / 4 h -18,070,
    all -0.13R per trade (tools/ea/preeffect.py) -> news blocking does not change the edge.
-0. **MT5 EA**: user compiles `SMC_Structure_EA_v12.1.mq5` in MetaEditor (F7) and sends any error lines; then
+0. **MT5 EA**: user compiles `SMC_Structure_EA_v12.2.mq5` in MetaEditor (F7) and sends any error lines; then
    Strategy Tester (Every tick based on real ticks) and a demo account. Fix compile errors with a patch, re-run
    `tools/ea` checks before delivering.
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,

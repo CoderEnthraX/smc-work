@@ -1,5 +1,6 @@
 # v12.1 checks, FxPro gold 1m 2021 - Oct 2026:
 #  off  - with the new settings OFF the v12.1 core and whole EA write byte-identical files to v12.0 (old binaries: argv[2])
+#  (v12.2 removed the profit mark - its settings are out of this list; the replay still knows it)
 #  py   - the Python simulator (porthp.py) == the EA core: the hard cap's 'start again from the base risk' and the group 42
 #         loss mark and profit mark (won back from the deepest point), with Rule A / B / C / B+ / C+, split, the floor, 'Stop for the day', the user's 10k account
 #  sep  - every trade's risk worked out SEPARATELY from the closed trades alone (no strategy code): the losses carried
@@ -42,18 +43,10 @@ PY = [('plain', UN()),
       ('lm_C3_day', UN(seqMode='C', split=3.0, seqMax=1000.0, capAct='Day', lmOn=True, lmAmt=2000.0)),
       ('lm_floor', UN(seqMode='C', split=3.0, lmOn=True, lmAmt=300.0, flMode='Cap', flAmt=2000.0)),
       ('cb_user_10k', UN(seqMode='C', split=3.0, seqMax=200.0, capAct='Base', lev=100.0, eq0=10000.0)),
-      ('lm_user_10k', UN(seqMode='C', split=3.0, seqMax=1e5, capAct='Day', lmOn=True, lmAmt=300.0, lev=100.0, eq0=10000.0)),
-      # the profit mark
-      ('pm_C3_200', UN(seqMode='C', split=3.0, pmOn=True, pmAmt=200.0)), ('pm_C1_200', UN(seqMode='C', pmOn=True, pmAmt=200.0)),
-      ('pm_Cp3_200', UN(seqMode='C+', split=3.0, pmOn=True, pmAmt=200.0)), ('pm_A_100', UN(seqMode='A10', pmOn=True, pmAmt=100.0)),
-      ('pm_B2_300', UN(seqMode='B', split=2.0, pmOn=True, pmAmt=300.0)),
-      ('pm_lm_cb_C3', UN(seqMode='C', split=3.0, seqMax=400.0, capAct='Base', lmOn=True, lmAmt=1000.0, pmOn=True, pmAmt=200.0)),
-      ('pm_C3_day', UN(seqMode='C', split=3.0, seqMax=300.0, capAct='Day', pmOn=True, pmAmt=200.0)),
-      ('pm_user_10k', UN(seqMode='C', split=3.0, seqMax=1e5, capAct='Day', pmOn=True, pmAmt=200.0, lev=100.0, eq0=10000.0)),
-      ('pm_off_seq', UN(pmOn=True, pmAmt=200.0))]
+      ('lm_user_10k', UN(seqMode='C', split=3.0, seqMax=1e5, capAct='Day', lmOn=True, lmAmt=300.0, lev=100.0, eq0=10000.0))]
 SEP = ('cb_C1_200', 'cb_C3_300', 'cb_Cp3_300', 'cb_A_400', 'cb_B_300', 'cb_Bp_500', 'cb_base_above', 'lm_C3_300', 'lm_C1_500', 'lm_Cp3_300',
-       'lm_A_200', 'lm_B_300', 'lm_cb_C3', 'cb_user_10k', 'pm_C3_200', 'pm_C1_200', 'pm_Cp3_200', 'pm_A_100', 'pm_B2_300', 'pm_lm_cb_C3')
-SAME = [('lm_off_seq', 'plain'), ('pm_off_seq', 'plain')]
+       'lm_A_200', 'lm_B_300', 'lm_cb_C3', 'cb_user_10k')
+SAME = [('lm_off_seq', 'plain')]
 def py_case(t):
     import io, contextlib
     name, P = t
@@ -156,10 +149,7 @@ EA = [('ea_cb_pend', dict(EAU, seqMode='C', split=3.0, seqMax=200.0, capAct='Bas
       # shared money: without the loss pause - with it, two sides closing on the SAME candle are counted in the real tick order
       # by the EA but in a fixed order by the core (it only sees candles), so the pause can start one trade apart (v12.0 too)
       ('ea_lmcb_hedge_shared', dict(EAU, seqMode='C', split=3.0, seqMax=250.0, capAct='Base', lmOn=True, lmAmt=300.0, ldOn=False), dict(Y, exec=1, dirMode=3, hedgeMoney=1, pbSwp2=1)),
-      ('ea_lmcb_hedge_shared_touch', dict(EAU, seqMode='C+', split=3.0, seqMax=250.0, capAct='Base', lmOn=True, lmAmt=300.0, ldOn=False), dict(Y, exec=0, dirMode=3, hedgeMoney=1, pbSwp2=1)),
-      ('ea_pm_pend', dict(EAU, seqMode='C', split=3.0, seqMax=1e5, capAct='Day', pmOn=True, pmAmt=200.0), dict(Y, exec=1, pbSwp2=1)),
-      ('ea_pm_hedge_own_touch', dict(EAU, seqMode='C', split=3.0, seqMax=400.0, capAct='Base', pmOn=True, pmAmt=150.0, lmOn=True, lmAmt=600.0), dict(Y, exec=0, dirMode=3, hedgeMoney=0, pbSwp2=1)),
-      ('ea_pm_hedge_shared', dict(EAU, seqMode='C', split=3.0, seqMax=400.0, capAct='Base', pmOn=True, pmAmt=150.0, ldOn=False), dict(Y, exec=1, dirMode=3, hedgeMoney=1, pbSwp2=1))]
+      ('ea_lmcb_hedge_shared_touch', dict(EAU, seqMode='C+', split=3.0, seqMax=250.0, capAct='Base', lmOn=True, lmAmt=300.0, ldOn=False), dict(Y, exec=0, dirMode=3, hedgeMoney=1, pbSwp2=1))]
 def ea_case(t):
     import io, contextlib
     name, P, e = t
@@ -178,7 +168,7 @@ def rs_case(t):
     a, sa = one(name + '_plain', dict(tester=0))
     b, sb = one(name + '_restart', dict(tester=0, restartEvery=1500))
     return '%-22s no restarts: %s | with restarts: %s | %s' % (name, sa, sb, 'IDENTICAL' if a == b else 'DIFFER'), a == b
-RS = [('rs_cb_pend', EA[0][1], EA[0][2]), ('rs_lmcb_hedge_shared', EA[3][1], EA[3][2]), ('rs_pm_pend', EA[5][1], EA[5][2])]
+RS = [('rs_cb_pend', EA[0][1], EA[0][2]), ('rs_lmcb_hedge_shared', EA[3][1], EA[3][2])]
 if __name__ == '__main__':
     which = sys.argv[1] if len(sys.argv) > 1 else 'all'
     res = []

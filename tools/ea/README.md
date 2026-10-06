@@ -1,4 +1,4 @@
-# tools/ea - checks of the MT5 Expert Advisor (SMC_Structure_EA_v12.1.mq5)
+# tools/ea - checks of the MT5 Expert Advisor (SMC_Structure_EA_v12.2.mq5)
 
 MetaEditor (the MQL5 compiler) only runs on Windows, so the EA is checked here in two ways:
 
@@ -13,8 +13,8 @@ MetaEditor (the MQL5 compiler) only runs on Windows, so the EA is checked here i
 | Step | Command | Result when written (Oct 2026) |
 |---|---|---|
 | price files | `python3 mkdata.py` | fx.pkl, fx15.pkl, m1.bin, m15.bin from `../data/gold_m1_utc.npz` |
-| build | `python3 extract.py ../../SMC_Structure_EA_v12.1.mq5 core_x.inc && g++ -O2 -std=c++17 -o harness harness.cpp` | |
-| build | `python3 mql2cpp.py ../../SMC_Structure_EA_v12.1.mq5 ea_x.cpp && g++ -O2 -std=c++17 -o simmain simmain.cpp` | compiles with no warning from the EA |
+| build | `python3 extract.py ../../SMC_Structure_EA_v12.2.mq5 core_x.inc && g++ -O2 -std=c++17 -o harness harness.cpp` | |
+| build | `python3 mql2cpp.py ../../SMC_Structure_EA_v12.2.mq5 ea_x.cpp && g++ -O2 -std=c++17 -o simmain simmain.cpp` | compiles with no warning from the EA |
 | core vs simulator | `python3 tests1.py`, `tests2.py`, `tests3.py`, `tests4.py` | 105 runs: 104 identical, 1 float tie (a target exactly on a candle low) |
 | shared hedge money | `python3 shared_chk2.py` | separate replay: 0 risk mismatches, 0 orders while halted or paused |
 | whole EA, 1 year | `python3 fulltests.py` | 11 settings: same trades, same money to the cent (pending); prices within 0.01 (touch) |
@@ -36,9 +36,12 @@ MetaEditor (the MQL5 compiler) only runs on Windows, so the EA is checked here i
 | v12.0 rule 3 | `python3 cctests.py py` | Python simulator = core in 26 of 26 settings (rule 3, near the broken level 1 / 3 / 8, pips / %, group 24 with rule 3 and rules 1 + 2, reverse, BOS stacks, partial, filters, Rule C; 12 with the fall back to rule 1 / 2: rules 1 + 2, 1, 2, none), 2021-2026; 54,348 entries at the close and 762 fall-back trades checked separately (next open, near the broken level, group 24, size, target; fall back at the broken pivot or the pullback level); fall back with rules 1 / 2 off = no fall back, identical |
 | v12.0 whole EA | `python3 cctests.py ea` | whole EA = core in 8 of 8 (touch, near the level pending, near the level + group 24, hedge, Rule C, fall back pending / touch / hedge + Rule C), 484 restarts = no restarts (3 settings) |
 | v12.1 OFF | `python3 rbtests.py off <folder with the v12.0 harness + simmain>` | cap choice / loss mark off: core 5 settings x 5.75 years and whole EA 2 settings x 1 year byte-identical to v12.0 |
-| v12.1 recovery | `python3 rbtests.py py` | Python simulator = core in 28 of 28 settings (cap 'start again from the base' with A / B / B+ / C / C+, split, base above the cap; loss mark and profit mark (won back from the deepest point) with A / B / C / C+, with the cap, the floor, 'stop for the day', your 10k account); every order's risk replayed separately from the closed trades in 20 of 20 |
+| v12.1 recovery | `python3 rbtests.py py` | (the profit-mark settings were taken out when v12.2 removed it) Python simulator = core in 28 of 28 settings (cap 'start again from the base' with A / B / B+ / C / C+, split, base above the cap; loss mark and profit mark (won back from the deepest point) with A / B / C / C+, with the cap, the floor, 'stop for the day', your 10k account); every order's risk replayed separately from the closed trades in 20 of 20 |
 | v12.1 Pine pre-news | `python3 rbtests.py pine` | the TradingView group 41 test written out from the Pine = calflags.py: 1m 0.5 / 1 / 2 / 24 h, 15m 1 / 2 h |
 | v12.1 whole EA | `python3 rbtests.py ea` | whole EA = core in 8 of 8 (pending, touch, hedge per side, hedge shared without the loss pause; cap reset, loss mark, profit mark), 484 restarts = no restarts (3 settings) |
+| v12.2 OFF | `python3 sptests.py off <folder with the v12.1 harness + simmain>` | split rules not chosen: core 7 settings (also the v12.1 cap reset + loss mark ON) x 5.75 years and whole EA 2 settings x 1 year byte-identical to v12.1 (whose profit mark is off) |
+| v12.2 split rules | `python3 sptests.py py` | Python simulator = core in 18 of 18 settings (A / B / C split: default and low steps, longs only, counts from 2025, cap clamp / start again / stop for the day / step base above the cap, loss mark, floor, your 10k account, 15m); every order's risk replayed separately from the closed trades in 12 of 12 (each with 121-611 orders on a profit step); steps with plain Rule C = Rule C, Rule C split with no steps = Rule C |
+| v12.2 whole EA | `python3 sptests.py ea` | whole EA = core in 5 of 5 (pending, touch, default steps, hedge per side, hedge shared without the loss pause), 484 restarts = no restarts (2 settings) |
 
 Notes
 - `porthp.py` = the simulator with TradingView's exact session test for bars longer than 1 minute (f_ovl);

@@ -10,7 +10,7 @@ def bars(cs):
     if cs not in _bars: _bars[cs] = pickle.load(open(SP + ('/fx.pkl' if cs == 60 else '/fx15.pkl'), 'rb'))
     return _bars[cs]
 SIG = {'CHOCH': 0, 'BOS': 1, 'Both': 2}
-SEQ = {'Off': 0, 'A10': 1, 'B': 2, 'C': 3, 'A+': 4, 'B+': 5, 'C+': 6}
+SEQ = {'Off': 0, 'A10': 1, 'B': 2, 'C': 3, 'A+': 4, 'B+': 5, 'C+': 6, 'As': 7, 'Bs': 8, 'Cs': 9}
 def cfg_of(P, cs):
     p = dict(porth.DEF); p.update(P)
     sig = SIG[p['sig']] + (3 if p['fav'] else 0) + (6 if p['agn'] else 0) + (9 if p['auto'] else 0)
@@ -26,7 +26,7 @@ def cfg_of(P, cs):
              eqOn=p['eqOn'], eqPct=p['eqPct'], seqMax=p['seqMax'], capAct={'Clamp': 0, 'Day': 1, 'Perm': 2, 'Base': 3}[p['capAct']],
              seqFrom=0 if p['liveT'] is None else 2, seqFromT=p['liveT'] or 0, htfSec=p['htfTf'], cs=cs,
              auOn=bool(p.get('news') is not None), sessMode=2 if p.get('sessOff') else 0, minLot=0.01,
-             pbSwp2=p['pbSwp2'], r3On=p['r3On'], r3BrkOn=p['r3BrkOn'], r3Brk=p['r3Brk'], r3Fb=p['r3Fb'], lmOn=p['lmOn'], lmAmt=p['lmAmt'], pmOn=p['pmOn'], pmAmt=p['pmAmt'])
+             pbSwp2=p['pbSwp2'], r3On=p['r3On'], r3BrkOn=p['r3BrkOn'], r3Brk=p['r3Brk'], r3Fb=p['r3Fb'], lmOn=p['lmOn'], lmAmt=p['lmAmt'], sp1=p['sp1'], spN1=p['spN1'], sp2=p['sp2'], spN2=p['spN2'], sp3=p['sp3'], spN3=p['spN3'], spInc=p['spInc'], spAdd=p['spAdd'])
     assert p['trailBuf'] is None and p['liqMaxR'] == 0 and p['sess2'] is None and not p['ldAll'] and p['seqMode'] != 'A91' and p['bosMode'] != 'Freeze'
     return c
 def run_py(P, cs):
