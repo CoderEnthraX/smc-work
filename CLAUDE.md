@@ -7,13 +7,15 @@
   receiver only uses the free "MetaApi API") and the MQL5 VPS guide (`SMC_Strategy_v8.3_MQL5_VPS_GUIDE.pdf`).
 - Owner: **Punit** (punit7870@gmail.com). Works from a phone. Wants **simple English, short examples with
   numbers, tables**. Times are **IST** (Asia/Kolkata).
-- **Latest version: v12.2** = `SMC_Structure_Strategy_v12.2.txt` + `SMC_Structure_EA_v12.2.mq5` ONLY (no notes / handbook for
-  v12.1 / v12.2, as the user asked - the v12.0 notes + handbook still describe everything else; see Versions). v12.1 files kept
-  (they hold the profit mark that v12.2 removed). Before them:
+- **Latest version: TradingView v12.2 + MT5 EA v12.3** = `SMC_Structure_Strategy_v12.2.txt` + `SMC_Structure_EA_v12.3.mq5`
+  (EA v12.3 = the v12.2 rules + a safe catch-up after sleep / no connection / restart; the user asked for the EA file ONLY).
+  No notes / handbook for v12.1 / v12.2 / v12.3, as the user asked - the v12.0 notes + handbook still describe everything
+  else; see Versions. EA v12.2 kept; v12.1 files kept (they hold the profit mark that v12.2 removed). Before them:
   **v12.0** = `SMC_Structure_Strategy_v12.0.txt` + `_NOTES.txt` + `_HANDBOOK.pdf` (v11.2 + group 39
   "RULE 3 - enter at the close of the signal candle", all OFF; option "only if the close is near the broken level",
   default 3; option "if the close is too far: fall back to RULE 1 / 2"; see Versions). v11.2 files kept.
-- **MT5 EA: `SMC_Structure_EA_v12.2.mq5`** (v12.1 without the profit mark + ESeq SEQ_AS / SEQ_BS / SEQ_CS = 7 / 8 / 9 + group
+- **MT5 EA: `SMC_Structure_EA_v12.3.mq5`** (v12.2 + safe catch-up after a gap, always on, no setting; MT5 part only, core
+  unchanged: CatchUp / DropReached / FilledReal; RestoreSides now restores the setup number) / `SMC_Structure_EA_v12.2.mq5` (v12.1 without the profit mark + ESeq SEQ_AS / SEQ_BS / SEQ_CS = 7 / 8 / 9 + group
   43 InSp1..InSpAdd at the very END; core StepBase(flPnl), money basNow) / `SMC_Structure_EA_v12.1.mq5` (v12.0 + ECap CAP_BASE
   = 3 + group 42 InLmOn / InLmAmt / InPmOn / InPmAmt at the very END; notes = the v12.0 EA notes) / `SMC_Structure_EA_v12.0.mq5` + `_NOTES.txt` (v11.1 / v11.2 files kept) = v12.0 rules in MQL5 (group 39 at the
   very END, after group 38; core r3Far / r3Fb / r3Use + side mktBar / cntR3 / cntR3Far / cntR3Fb; BkPlace(..., mkt): a rule 3 entry is a MARKET
@@ -170,6 +172,28 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   orders on profit steps each); steps with Rule C = C, C split with no steps = C; whole EA = core 5/5; restarts identical (2).
   Parser PARSED OK. Side number: user 1m settings, Rule C split, one 10k account from Jan 2021 = empty 3 Mar 2021 (profit
   never reached 200 - the steps never started).
+- v12.3 (MT5 EA ONLY, user asked after a real case: the laptop slept; at the wake-up MT5 opened a buy AND a sell at once, and a
+  CHOCH right after was not traded). Cause: up to v12.2 every missed candle was handled as live (ProcessBar + ExecuteAll each):
+  entries of old candles went out at today's price, and a trade opened during the catch-up was invisible to the next missed
+  candles (GatherIO(tEnd) ignores positions opened after tEnd) -> buy + sell; those open trades then blocked the new CHOCH.
+  v12.3 (always on, no setting, core unchanged = same harness binary): OnTick with 2+ missed candles -> CatchUp: the missed
+  candles are processed WITHOUT trading; before each, DropReached drops a side whose waiting entry was reached in that candle
+  (a rule 3 market entry always) unless the broker filled it (FilledReal: open position, or an IN deal with that comment in
+  the last 10 days); then the forming candle so far (iHigh / iLow(0); only when TimeCurrent() > t0 or high > low, so a wake at
+  a candle's first price fills like TradingView's open); then ONE ExecuteAll (exits, stop moves, setups still waiting) +
+  SaveState. One missed candle (the normal new bar) = the old path, unchanged. The TryInit restart tail uses the same CatchUp.
+  Live only: waits up to 60 s for SERIES_SYNCHRONIZED after a gap (missed candles still downloading). Old slip found and fixed:
+  RestoreSides did not restore g_side.seq when a restart kept a waiting setup (seq back to 0 -> comments reused; FilledReal
+  could match an old deal). Log lines: "SMC EA: setup L12 dropped - its entry 4105.00 was reached while the EA was offline
+  (candle ...)", "N candle(s) missed ... - read without opening trades". Entries reached while asleep are LOST (no late entry):
+  the EA cannot copy TradingView's fill then - so the EA and TradingView differ after every sleep; sleep Never / a VPS.
+  Tools: patches/ea123.py; mt5sim.h iHigh / iLow (forming candle so far), sim::onDrop hook, sim::printTo; mql2cpp.py array
+  parameters + the hook; simmain sleepEvery / sleepMin / sleepMax / sleepSeed / sleepRestart / wakeLog / dealsOut / dropLog /
+  verbose; ea/sleeptests.py. Checks: no sleep = v12.2 byte-identical (19 settings + 8 earlier; 484 restarts, 8 settings);
+  sleeps 1-600 candles in 19 settings (touch, pending, reverse, rule 3, fall back, hedge, shared Rule C split, 15m, restart at
+  the wake-up): v12.2 2-140 entries at the wake tick and buy + sell together up to 54 times; v12.3 0 / 0; every catch-up worked
+  out separately (candles, high / low, drops) - 0 differences; the 02:00 force close never skipped. Restarts (238, 3
+  settings): every deal incl. the setup number = no restarts (v12.2 only 227 of 453 numbers right). NOT compiled in MetaEditor.
 
 ## How the v11.1 code works (key points)
 - 118 inputs (v11.2: 122, + group 38 stop buffer unit). Groups: 20 strategy, 21 risk / loss recovery, 24 safety, 25 daily blocking windows,
@@ -323,7 +347,7 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
    SMC_calendar.csv -> test the REAL news list (CPI, FOMC ...) on 2021-2026. With group 29 releases only
    (1m, user settings): none -18,514 / windows -18,844 / +pre 1 h -18,708 / 2 h -18,302 / 4 h -18,070,
    all -0.13R per trade (tools/ea/preeffect.py) -> news blocking does not change the edge.
-0. **MT5 EA**: user compiles `SMC_Structure_EA_v12.2.mq5` in MetaEditor (F7) and sends any error lines; then
+0. **MT5 EA**: user compiles `SMC_Structure_EA_v12.3.mq5` in MetaEditor (F7) and sends any error lines; then
    Strategy Tester (Every tick based on real ticks) and a demo account. Fix compile errors with a patch, re-run
    `tools/ea` checks before delivering.
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,

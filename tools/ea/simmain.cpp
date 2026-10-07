@@ -72,6 +72,32 @@ int main(int argc, char **argv)
    sim::commPerLot = cd("comm", 0.3) * 100.0;
    sim::spread = cd("spread", 0.0);
    long restartEvery = cl("restartEvery", 0);
+   // the computer sleeps / the connection drops: every ~sleepEvery bars the EA gets no ticks for sleepMin..sleepMax bars
+   // (from a random tick to a random tick); the broker goes on (pending orders fill, stops and targets hit);
+   // sleepRestart 1 = the terminal is restarted at the wake-up instead (the EA is loaded again)
+   long sleepEvery = cl("sleepEvery", 0), sleepMin = cl("sleepMin", 2), sleepMax = cl("sleepMax", 2);
+   bool sleepRestart = cb("sleepRestart", false);
+   if (sleepEvery > 0 && (restartEvery > 0 || sleepMin < 1 || sleepMax < sleepMin)) { fprintf(stderr, "sleep: sleepMin >= 1, sleepMax >= sleepMin, no restartEvery\n"); return 1; }
+   FILE *wf = cfg.count("wakeLog") ? fopen(cfg["wakeLog"].c_str(), "w") : nullptr;   // one line per wake-up
+   if (wf) fprintf(wf, "time,bar,tick,ntick,slept_bar,slept_tick,deals_before,deals_after\n");
+   std::mt19937 srng((unsigned)cl("sleepSeed", 777));
+   sim::verbose = (int)cl("verbose", 0);   // 1 = the EA's Print lines to stderr
+   FILE *bk = cfg.count("dropLog") ? fopen(cfg["dropLog"].c_str(), "w") : nullptr;   // v12.3: the book at every catch-up check
+   if (bk)
+   {
+      sim::printTo = bk; sim::verbose = 1;   // the EA's Print lines (the drops) go in between, in order
+      fprintf(bk, "H,now,when,hi,lo,side,sdir,sseq,piece,on,dir,seq,ent,mkt\n");
+      sim::onDrop = [bk](double hi, double lo, datetime when) {
+         for (int k = 0; k < g_nSides; k++)
+            for (int p = 0; p < 2; p++)
+            {
+               int i = k * 2 + p;
+               fprintf(bk, "H,%ld,%ld,%.2f,%.2f,%d,%d,%d,%d,%d,%d,%d,%.5f,%d\n", (long)sim::now, (long)when, hi, lo, k, g_side[k].dir, g_side[k].seq, p,
+                       g_vb[i].on ? 1 : 0, g_vb[i].dir, g_vb[i].seq, g_vb[i].ent, g_vb[i].mkt ? 1 : 0);
+            }
+         fflush(bk);
+      };
+   }
    // bars: UTC in the file -> server time (UTC+2, UTC+3 in European summer time)
    FILE *bf = fopen(argv[2], "rb");
    fseek(bf, 0, SEEK_END); long nb = ftell(bf) / 40; fseek(bf, 0, SEEK_SET);
@@ -93,6 +119,8 @@ int main(int argc, char **argv)
    if (cb("initOnly", false)) { fprintf(stderr, "init only\n"); return 0; }
    long nTicks = 0, restarts = 0;
    long nextRestart = restartEvery > 0 ? from + 1 + (long)(rng() % restartEvery) : -1;
+   long slB = sleepEvery > 0 ? from + 1 + (long)(srng() % (2 * sleepEvery)) : -1, slT = -1, wkB = -1, wkT = -1, nSleeps = 0;
+   bool asleep = false; long sleptBar = -1, sleptTick = -1;
    for (long i = from; i < (long)sim::m1.size(); i++)
    {
       SimBar &b = sim::m1[i];
@@ -109,14 +137,40 @@ int main(int argc, char **argv)
       }
       bool restartHere = (i == nextRestart);
       long restartTick = restartHere ? (long)(rng() % ticks.size()) : -1;
+      if (i == slB && !asleep) slT = (long)(srng() % ticks.size());
+      if (i == wkB && asleep) wkT = (long)(srng() % ticks.size());
       for (size_t j = 0; j < ticks.size(); j++)
       {
          sim::now = b.t + (datetime)(j * 59 / ticks.size());
          sim::bid = ticks[j]; sim::ask = sim::bid + sim::spread;
          sim::firstTickOfBar = j == 0;
+         if (j == 0) { sim::curHi = ticks[j]; sim::curLo = ticks[j]; } else { sim::curHi = std::max(sim::curHi, ticks[j]); sim::curLo = std::min(sim::curLo, ticks[j]); }
+         if (!asleep && i == slB && (long)j == slT)
+         {   // the computer goes to sleep
+            asleep = true; sleptBar = i; sleptTick = (long)j; nSleeps++;
+            wkB = i + sleepMin + (long)(srng() % (sleepMax - sleepMin + 1)); wkT = -1;
+         }
+         bool waking = asleep && i == wkB && (long)j == wkT;
+         if (asleep && !waking)
+         {   // asleep: the broker works, the EA hears nothing
+            BrokerTick();
+            sim::pendingTx.clear();
+            sim::prevPx = sim::bid;
+            nTicks++;
+            continue;
+         }
+         if (waking) { asleep = false; slB = i + 1 + (long)(srng() % (2 * sleepEvery)); }
          BrokerTick();
+         if (waking && sleepRestart) sim::pendingTx.clear();   // a freshly loaded EA hears nothing of the past
          for (ulong d : sim::pendingTx) { MqlTradeTransaction tr; tr.type = TRADE_TRANSACTION_DEAL_ADD; tr.deal = d; MqlTradeRequest rq; MqlTradeResult rs; OnTradeTransaction(tr, rq, rs); }
          sim::pendingTx.clear();
+         long dealsBefore = (long)sim::deals.size();   // fills by the broker at this tick are not the EA's doing
+         if (waking && sleepRestart)
+         {   // the terminal was closed: the EA is loaded again at the wake-up
+            OnDeinit(REASON_CLOSE);
+            g_ready = false; g_lastBar = 0; g_curOpen = 0; g_mark = 0; g_lastErr = "";
+            if (OnInit() != INIT_SUCCEEDED) { fprintf(stderr, "re-init failed\n"); return 1; }
+         }
          if ((long)j == restartTick)
          {   // a terminal restart inside this bar: the EA is unloaded and loaded again (its memory is rebuilt from scratch)
             OnDeinit(REASON_CLOSE);
@@ -126,6 +180,7 @@ int main(int argc, char **argv)
             nextRestart = i + 1 + (long)(rng() % restartEvery);
          }
          OnTick();
+         if (waking && wf) fprintf(wf, "%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld\n", (long)sim::now, i, (long)j, (long)ticks.size(), sleptBar, sleptTick, dealsBefore, (long)sim::deals.size());
          if (nTicks % 997 == 0) OnTimer();
          if (nTicks % 100003 == 0) OnChartEvent(CHARTEVENT_CHART_CHANGE, 0, 0.0, "");
          sim::prevPx = sim::bid;
@@ -155,6 +210,16 @@ int main(int argc, char **argv)
       net += pnl; n++;
    }
    fclose(of);
+   if (wf) fclose(wf);
+   if (bk) fclose(bk);
+   if (cfg.count("dealsOut"))
+   {   // every deal with its exact time: time,dir(+1 buy -1 sell),entry(0 in 1 out),position,price,volume,comment
+      FILE *df = fopen(cfg["dealsOut"].c_str(), "w");
+      fprintf(df, "time,type,entry,pid,price,vol,cmt\n");
+      for (auto &d : sim::deals) fprintf(df, "%ld,%d,%d,%lu,%.5f,%.4f,%s\n", (long)d.time, d.type == DEAL_TYPE_BUY ? 1 : -1, d.entry == DEAL_ENTRY_IN ? 0 : 1, (unsigned long)d.pid, d.price, d.vol, d.cmt.c_str());
+      fclose(df);
+   }
+   if (sleepEvery > 0) fprintf(stderr, "sleeps %ld\n", nSleeps);
    fprintf(stderr, "ticks %ld restarts %ld trades %d net %.2f open %d calcalls %ld\n", nTicks, restarts, n, net, (int)sim::pos.size(), sim::calCalls);
    return 0;
 }

@@ -1,4 +1,4 @@
-# tools/ea - checks of the MT5 Expert Advisor (SMC_Structure_EA_v12.2.mq5)
+# tools/ea - checks of the MT5 Expert Advisor (SMC_Structure_EA_v12.3.mq5)
 
 MetaEditor (the MQL5 compiler) only runs on Windows, so the EA is checked here in two ways:
 
@@ -13,8 +13,8 @@ MetaEditor (the MQL5 compiler) only runs on Windows, so the EA is checked here i
 | Step | Command | Result when written (Oct 2026) |
 |---|---|---|
 | price files | `python3 mkdata.py` | fx.pkl, fx15.pkl, m1.bin, m15.bin from `../data/gold_m1_utc.npz` |
-| build | `python3 extract.py ../../SMC_Structure_EA_v12.2.mq5 core_x.inc && g++ -O2 -std=c++17 -o harness harness.cpp` | |
-| build | `python3 mql2cpp.py ../../SMC_Structure_EA_v12.2.mq5 ea_x.cpp && g++ -O2 -std=c++17 -o simmain simmain.cpp` | compiles with no warning from the EA |
+| build | `python3 extract.py ../../SMC_Structure_EA_v12.3.mq5 core_x.inc && g++ -O2 -std=c++17 -o harness harness.cpp` | (the v12.3 core = the v12.2 core: same binary) |
+| build | `python3 mql2cpp.py ../../SMC_Structure_EA_v12.3.mq5 ea_x.cpp && g++ -O2 -std=c++17 -o simmain simmain.cpp` | compiles with no warning from the EA |
 | core vs simulator | `python3 tests1.py`, `tests2.py`, `tests3.py`, `tests4.py` | 105 runs: 104 identical, 1 float tie (a target exactly on a candle low) |
 | shared hedge money | `python3 shared_chk2.py` | separate replay: 0 risk mismatches, 0 orders while halted or paused |
 | whole EA, 1 year | `python3 fulltests.py` | 11 settings: same trades, same money to the cent (pending); prices within 0.01 (touch) |
@@ -42,6 +42,8 @@ MetaEditor (the MQL5 compiler) only runs on Windows, so the EA is checked here i
 | v12.2 OFF | `python3 sptests.py off <folder with the v12.1 harness + simmain>` | split rules not chosen: core 7 settings (also the v12.1 cap reset + loss mark ON) x 5.75 years and whole EA 2 settings x 1 year byte-identical to v12.1 (whose profit mark is off) |
 | v12.2 split rules | `python3 sptests.py py` | Python simulator = core in 18 of 18 settings (A / B / C split: default and low steps, longs only, counts from 2025, cap clamp / start again / stop for the day / step base above the cap, loss mark, floor, your 10k account, 15m); every order's risk replayed separately from the closed trades in 12 of 12 (each with 121-611 orders on a profit step); steps with plain Rule C = Rule C, Rule C split with no steps = Rule C |
 | v12.2 whole EA | `python3 sptests.py ea` | whole EA = core in 5 of 5 (pending, touch, default steps, hedge per side, hedge shared without the loss pause), 484 restarts = no restarts (2 settings) |
+| v12.3 sleep / wake | `python3 sleeptests.py <simmain of v12.2> <simmain of v12.3>` (v12.2 built with this simmain.cpp) | 19 settings (sleeps of 1-600 candles every ~2-50 hours; touch, pending, reverse, rule 3, rule 3 fall back, hedge, hedge shared Rule C split, 15m, the terminal restarted at the wake-up - 595 times in 2 of them): no sleep = v12.2 byte-identical in all 19; v12.2 made 5-140 entries at the wake-up tick and had a buy and a sell open together up to 54 times, v12.3 0 and 0; every catch-up worked out separately (candles read = candles missed, each high / low, every drop) with 0 differences; the 02:00 force close never skipped |
+| v12.3 restarts | `python3 sleeptests.py <v12.2> <v12.3> restarts` | 238 restarts in 3 settings (touch, pending, hedge): every deal (time, price, lots, setup number) = no restarts in v12.3 (453 / 453, 453 / 453, 780 / 780); v12.2 had the same trades but only 227 / 453, 227 / 453, 391 / 780 setup numbers right (lost when a restart kept a waiting setup) |
 
 Notes
 - `porthp.py` = the simulator with TradingView's exact session test for bars longer than 1 minute (f_ovl);
@@ -53,5 +55,11 @@ Notes
   broker clock rule, `1` = with the broker offset of the moment) and files (`fileDir`); the harness option `simCal` puts
   the same list straight into the core. `porthp.py` takes `pre` flags (block new entries only).
 - `simmain` option `dump 1` prints the counter table as it is at the end of the run (e.g. `to` = a bar just after a release).
+- v12.3 sleeps in `simmain`: `sleepEvery N` (a sleep every 1..2N bars), `sleepMin` / `sleepMax` (its length in bars, from a
+  random tick to a random tick), `sleepSeed`, `sleepRestart 1` (the EA is loaded again at the wake-up); while asleep the
+  broker goes on (pending orders fill, stops / targets hit) and the EA hears nothing. `wakeLog` (one line per wake-up),
+  `dealsOut` (every deal with its exact time and comment), `dropLog` (the order book at every catch-up check, through the
+  test hook `sim::onDrop` that `mql2cpp.py` puts at the start of `DropReached`, and the EA's Print lines in between).
+  `mt5sim.h` has `iHigh` / `iLow` (shift 0 = the forming candle only up to this tick).
 - `htfSrv 1` makes the harness build 4h candles on the broker clock (17:00 New York), like TradingView and MT5.
   The earlier 15-minute search used 00:00 UTC 4h candles: +2,747 there, +1,069 with the real candles.

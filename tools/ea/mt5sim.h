@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <algorithm>
 #include <climits>
+#include <functional>
 typedef std::string string;
 typedef long datetime;
 typedef unsigned long ulong;
@@ -156,11 +157,11 @@ inline ushort StringGetCharacter(const string &s, int i) { return (i >= 0 && i <
 inline int    StringReplace(string &s, const string &a, const string &b) { int n = 0; size_t p = 0; while ((p = s.find(a, p)) != string::npos) { s.replace(p, a.size(), b); p += b.size(); n++; } return n; }
 inline int    StringSplit(const string &s, ushort sep, MqlArr<string> &out) { out.v.clear(); string cur; for (char ch : s) { if ((ushort)ch == sep) { out.v.push_back(cur); cur = ""; } else cur += ch; } out.v.push_back(cur); return (int)out.v.size(); }
 template <class E> string EnumToString(E e) { return "PERIOD_" + std::to_string((int)e); }
-namespace sim { int verbose = 0; }
+namespace sim { int verbose = 0; FILE *printTo = nullptr; }   // printTo: where Print writes (default stderr)
 inline void PutOne(std::string &o, const std::string &x) { o += x; }
 inline void PutOne(std::string &o, const char *x) { o += x; }
 template <class T> void PutOne(std::string &o, T x) { o += std::to_string(x); }
-template <class... A> void Print(A... a) { if (!sim::verbose) return; std::string o; (PutOne(o, a), ...); fprintf(stderr, "PRINT %s\n", o.c_str()); }
+template <class... A> void Print(A... a) { if (!sim::verbose) return; std::string o; (PutOne(o, a), ...); fprintf(sim::printTo ? sim::printTo : stderr, "PRINT %s\n", o.c_str()); }
 template <class... A> void PrintFormat(A... a) { }
 template <class... A> void Alert(A... a) { std::string o; (PutOne(o, a), ...); fprintf(stderr, "ALERT %s\n", o.c_str()); }
 inline void Comment(const string &) { }
@@ -196,6 +197,20 @@ inline double Floating() { double f = 0; for (auto &p : sim::pos) f += (p.dir ==
 inline double AccountInfoDouble(ENUM_ACCOUNT_INFO_DOUBLE p) { return p == ACCOUNT_BALANCE ? sim::balance : sim::balance + Floating(); }
 inline long   AccountInfoInteger(ENUM_ACCOUNT_INFO_INTEGER) { return ACCOUNT_MARGIN_MODE_RETAIL_HEDGING; }
 inline datetime iTime(const string &, ENUM_TIMEFRAMES tf, int shift) { int n = VisibleCount(tf); if (shift < 0 || shift >= n) return 0; return BarsOf(tf)[n - 1 - shift].t; }
+// the high / low of a bar; shift 0 = the bar forming now: only the part of it up to this tick (curHi / curLo = this minute so far)
+namespace sim { double curHi = 0, curLo = 0; std::function<void(double, double, datetime)> onDrop; }   // onDrop: a test hook (v12.3 catch-up)
+inline double iHiLo(ENUM_TIMEFRAMES tf, int shift, bool hi)
+{
+   int n = VisibleCount(tf);
+   if (shift < 0 || shift >= n) return 0;
+   SimBar b = BarsOf(tf)[n - 1 - shift];
+   if (shift > 0) return hi ? b.h : b.l;
+   double h = sim::curHi, l = sim::curLo;
+   for (size_t i = sim::curBar; i-- > 0 && sim::m1[i].t >= b.t; ) { h = std::max(h, sim::m1[i].h); l = std::min(l, sim::m1[i].l); }
+   return hi ? h : l;
+}
+inline double iHigh(const string &, ENUM_TIMEFRAMES tf, int shift) { return iHiLo(tf, shift, true); }
+inline double iLow(const string &, ENUM_TIMEFRAMES tf, int shift) { return iHiLo(tf, shift, false); }
 inline int iBarShift(const string &, ENUM_TIMEFRAMES tf, datetime t, bool exact = false)
 {
    std::vector<SimBar> &v = BarsOf(tf);
