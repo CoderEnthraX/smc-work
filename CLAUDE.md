@@ -361,6 +361,22 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   buffer 5 40, rule 2 only 40, min $8 21. Streaks 9-17 losses every year; split 3: 18 losses = 11,225 carried.
   Scripts: scratchpad pat/ (portf.py ARM signal log, features.py, explore.py, grid.py, grid2.py, rc.py, report.py).
 
+- **Rule C Ultra study (Oct 2026; user: "survive 5 more losses, small profit is enough")**, user 1m TV settings (u23 v_A
+  from 2021), 10k, lev 100; exact EA core copies with experiments (scratchpad ultra/: hu = + 'slow split' ukS, hu2 = + 'edge
+  gate' ugN / ugW, hu3 = + 'write off when the brake binds' ubReset; ulib.py, exp1-5). Entries 2021-26: 1,829 trades, 33.5%
+  win, -0.118R, only 9% reach 3R, break-even win rate 39%, longest losing run per year 14/13/12/17/12/9. Maths: split 3
+  empties after 18 losses in a row (x4/3 each), split 4 22, 6 29, 10 41; floor brake never. 58 start months, 12-month
+  windows: C3 32 empty / 24 profit; BIGGER SPLIT IS WORSE (4: 39 empty, 6: 42) - the killer is the long slide, not one run;
+  slow split k >= 0.5 = Off; loss mark 2,000 15 empty; write-off no better than the brake; edge gate 50 / 36% + brake looked
+  best (0 empty, 31/58 profit to the end) BUT inside each half a high recent win rate predicts nothing (2021-23 -0.26 vs
+  -0.23R, 2024-26 +0.004 vs -0.03R) = hindsight (2025). 40 noisy feeds (5 cents): from 2021 C3 40/40 empty (Off 39/40);
+  from 2023 C3 36 empty / 4 profit (best +10,407 = TV), Off avg -3,727; C3 on 42k (= 5 more losses) 20/40 empty, on 100k
+  11/40 empty (median +8,814). RECOMMENDED "Rule C Ultra" = Rule C split 3 + EXISTING group 35 'On - only cap the risk',
+  most to lose 3,000, lock 50, 10% of the cushion: 58 starts 0 empty, worst -2,984, 13 in profit; 40 feeds from 2023 0 empty
+  / 0 profit (about -2,866); from 2025 0 empty / 28 profit, median +4,337 (C3: 39 profit, +5,775, 1 empty; Off +648);
+  biggest risk 289. It parks at the floor after a disaster (from Jul 2024: -2,904 to the end). No new code needed; told the
+  user no money rule makes profit from losing entries.
+
 ## Open items / next steps
 00. **Group 41**: ask the user to attach the EA once with "save the calendar to a file" ON and send
    SMC_calendar.csv -> test the REAL news list (CPI, FOMC ...) on 2021-2026. With group 29 releases only
