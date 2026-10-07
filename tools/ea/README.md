@@ -44,6 +44,7 @@ MetaEditor (the MQL5 compiler) only runs on Windows, so the EA is checked here i
 | v12.2 whole EA | `python3 sptests.py ea` | whole EA = core in 5 of 5 (pending, touch, default steps, hedge per side, hedge shared without the loss pause), 484 restarts = no restarts (2 settings) |
 | v12.3 sleep / wake | `python3 sleeptests.py <simmain of v12.2> <simmain of v12.3>` (v12.2 built with this simmain.cpp) | 19 settings (sleeps of 1-600 candles every ~2-50 hours; touch, pending, reverse, rule 3, rule 3 fall back, hedge, hedge shared Rule C split, 15m, the terminal restarted at the wake-up - 595 times in 2 of them): no sleep = v12.2 byte-identical in all 19; v12.2 made 5-140 entries at the wake-up tick and had a buy and a sell open together up to 54 times, v12.3 0 and 0; every catch-up worked out separately (candles read = candles missed, each high / low, every drop) with 0 differences; the 02:00 force close never skipped |
 | v12.3 restarts | `python3 sleeptests.py <v12.2> <v12.3> restarts` | 238 restarts in 3 settings (touch, pending, hedge): every deal (time, price, lots, setup number) = no restarts in v12.3 (453 / 453, 453 / 453, 780 / 780); v12.2 had the same trades but only 227 / 453, 227 / 453, 391 / 780 setup numbers right (lost when a restart kept a waiting setup) |
+| v12.3 audit labels | `python3 audtests.py <simmain of v12.3>` | labels on = off for the trades (touch, pending, hedge); after 238 restarts the labels = no restarts; every label (place, chart text, tooltip steps, colour on a dark / light chart, size, the newest N kept) worked out separately from the EA's journal lines and the bars in 8 settings - 0 differences |
 
 Notes
 - `porthp.py` = the simulator with TradingView's exact session test for bars longer than 1 minute (f_ovl);
@@ -61,5 +62,9 @@ Notes
   `dealsOut` (every deal with its exact time and comment), `dropLog` (the order book at every catch-up check, through the
   test hook `sim::onDrop` that `mql2cpp.py` puts at the start of `DropReached`, and the EA's Print lines in between).
   `mt5sim.h` has `iHigh` / `iLow` (shift 0 = the forming candle only up to this tick).
+- v12.3 audit labels: `mt5sim.h` keeps the chart objects (name, time, price, text, tooltip, colour, anchor, size);
+  `simmain` options `audit 1`, `audSz 0-3`, `audMax N`, `chartBg` (the chart background colour, 0 = black), `printLog` (the
+  EA's Print lines to a file), `objDump` + `objPrefix` (the objects at the end of the run, tab separated). Labels are drawn
+  only in live mode (`tester 0`), like MT5 draws them only live or in the visual tester.
 - `htfSrv 1` makes the harness build 4h candles on the broker clock (17:00 New York), like TradingView and MT5.
   The earlier 15-minute search used 00:00 UTC 4h candles: +2,747 there, +1,069 with the real candles.

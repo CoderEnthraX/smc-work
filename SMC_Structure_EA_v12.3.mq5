@@ -162,6 +162,13 @@ enum ETblSize
    TS_NORMAL = 1,     // Normal
    TS_LARGE = 2       // Large
 };
+enum EAudSz
+{
+   AS_SMALL = 0,      // Small
+   AS_NORMAL = 1,     // Normal
+   AS_LARGE = 2,      // Large
+   AS_HUGE = 3        // Huge
+};
 enum ETblRows
 {
    TR_FULL = 0,       // Full - every row, like TradingView
@@ -216,7 +223,7 @@ input int      InHrOff     = 23;      // Stop taking entries at (hour)
 input int      InHrFlat    = 2;       // Force-close any open trade at (hour)
 input bool     InShow      = true;    // Draw entry / stop / target levels
 input bool     InStatOn    = true;    // Show the counter table (like TradingView)
-input bool     InAudit     = false;   // Signal audit - write what happened to every signal in the Experts journal
+input bool     InAudit     = false;   // Signal audit - a label on the chart for every signal (what happened to it) + the Experts journal
 input ETblPos  InStatPos   = TP_BR;   //   - table position
 input ETblSize InStatSize  = TS_NORMAL; //   - table text size
 input ETblRows InStatRows  = TR_FULL; //   - table rows
@@ -386,6 +393,9 @@ input double   InSp3       = 1000.0;  // Step 3 - total profit of at least
 input double   InSpN3      = 8.0;     //   - split it into this many parts
 input double   InSpInc     = 500.0;   // Then a new step every this much more profit  (0 = no more steps)
 input double   InSpAdd     = 1.0;     //   - each new step is split into this many more parts
+input group "44. Signal audit labels on the chart (v12.3)"
+input EAudSz   InAudSz     = AS_LARGE; // Audit label size (the labels show when 'Signal audit' in group 20 is ON)
+input int      InAudMax    = 200;     //   - how many audit labels to keep on the chart (0 = none, the journal only)
 
 //---------------------------------------------------------------- arrays used by the core (MQL5 version)
 class CArrD
@@ -1926,6 +1936,11 @@ datetime        g_lastBar = 0;      // open time (server) of the last processed 
 datetime        g_curOpen = 0;      // open time (server) of the bar in progress
 datetime        g_htfFed = 0;       // open time (server) of the last higher-timeframe candle fed to the engine
 string          g_P = "";           // prefix of this EA's global variables and chart objects
+string          g_AP = "";          // v12.3: prefix of the signal audit labels (they stay when the EA restarts)
+string          g_audCur[2];        // v12.3: the audit label of each side's setup (armed, waiting or filled)
+int             g_audSeq[2];        // v12.3: its setup number
+datetime        g_audT = 0;         // v12.3: the candle being read, its high and low (where a signal's label goes)
+double          g_audH = 0, g_audL = 0;
 ENUM_ORDER_TYPE_TIME g_otime = ORDER_TIME_GTC;
 long            g_srvBase = 7200;
 
@@ -2187,6 +2202,7 @@ string CheckInputs()
    if (InBuPips < 0 || InBuPct < 0 || InBuPct > 10 || InBuPip < 0) return "Stop buffer unit (group 38): pips and pip size 0 or more, % 0 - 10";
    if (InR3Brk < 0) return "Rule 3 (group 39): the distance from the broken level must be 0 or more";
    if (InLmAmt < 0.01) return "Loss mark (group 42): the losses carried must be 0.01 or more";
+   if (InAudMax < 0) return "Audit labels (group 44): how many to keep must be 0 or more";
    if (InSp1 < 0 || InSp2 < 0 || InSp3 < 0 || InSpInc < 0 || InSpAdd < 0 || InSpN1 < 1 || InSpN2 < 1 || InSpN3 < 1) return "Profit steps (group 43): amounts 0 or more, parts 1 or more";
    if (StringLen(InCmt) < 1 || StringLen(InCmt) > 16 || StringFind(InCmt, " ") >= 0) return "Order comment: 1 - 16 characters, no spaces";
    return "";
@@ -2257,10 +2273,105 @@ void BkSetStop(int side, long ticket, int dir, double sl, double tgt)
    g_stpSl[n] = sl;
    g_stpDir[n] = dir;
 }
+// v12.3: the signal audit labels on the chart (group 20 'Signal audit' + group 44)
+string AudTm(datetime t) { return TimeToString(t, TIME_DATE | TIME_MINUTES); }
+int    AudSize()        { return InAudSz == AS_SMALL ? 7 : (InAudSz == AS_NORMAL ? 9 : (InAudSz == AS_HUGE ? 14 : 11)); }
+bool   AudOn()          { return InAudit && InAudMax > 0 && !g_dry && (!g_tester || g_visual); }
+color  AudCol(string st)   // readable on a dark and on a light chart
+{
+   long bg = ChartGetInteger(0, CHART_COLOR_BACKGROUND);
+   bool dark = (bg & 0xFF) * 299 + ((bg >> 8) & 0xFF) * 587 + ((bg >> 16) & 0xFF) * 114 < 128000;
+   if (StringFind(st, "REFUSED") >= 0) return dark ? clrTomato : clrRed;
+   if (StringFind(st, "FILLED") >= 0) return dark ? clrLime : clrGreen;
+   if (StringFind(st, "CANCELLED") >= 0 || StringFind(st, "SKIPPED") >= 0) return dark ? clrOrange : clrDarkOrange;
+   if (StringFind(st, "ARMED") >= 0) return dark ? clrDodgerBlue : clrMediumBlue;
+   return dark ? clrSilver : clrDimGray;   // SKIP
+}
+// the tooltip holds the whole story: line 1 = the signal and the higher timeframe, then one line per step (time, 2 spaces, what)
+// the chart text (63 characters at most in MT5): signal | step > step > ..., shortened when too long
+void AudShow(string nm, string tip)
+{
+   string ln[];
+   int n = StringSplit(tip, '\n', ln);
+   if (n < 2) return;
+   string sg = ln[0], chain = "", last = "";
+   int h = StringFind(ln[0], "  HTF");
+   if (h > 0) sg = StringSubstr(ln[0], 0, h);
+   for (int i = 1; i < n; i++)
+   {
+      int q = StringFind(ln[i], "  ");
+      last = q >= 0 ? StringSubstr(ln[i], q + 2) : ln[i];
+      chain = chain + (i > 1 ? " > " : "") + last;
+   }
+   string v = ln[0] + " | " + chain;
+   if (StringLen(v) > 63) v = sg + " | " + chain;
+   if (StringLen(v) > 63) v = sg + " | " + last;
+   if (StringLen(v) > 63) v = StringSubstr(v, 0, 60) + "...";
+   ObjectSetString(0, nm, OBJPROP_TEXT, v);
+   ObjectSetString(0, nm, OBJPROP_TOOLTIP, tip);
+   ObjectSetInteger(0, nm, OBJPROP_COLOR, AudCol(last));
+}
+// keep the newest InAudMax labels (the name ends with the candle time)
+void AudTrim()
+{
+   int n = ObjectsTotal(0, 0, OBJ_TEXT), k = 0, L = StringLen(g_AP);
+   long tt[];
+   ArrayResize(tt, n);
+   for (int i = 0; i < n; i++)
+   {
+      string nm = ObjectName(0, i, 0, OBJ_TEXT);
+      if (StringFind(nm, g_AP) == 0) { tt[k] = StringToInteger(StringSubstr(nm, L + 2)); k++; }
+   }
+   if (k <= InAudMax) return;
+   ArrayResize(tt, k);
+   ArraySort(tt);
+   long cut = tt[k - InAudMax];
+   for (int i = n - 1; i >= 0; i--)
+   {
+      string nm = ObjectName(0, i, 0, OBJ_TEXT);
+      if (StringFind(nm, g_AP) == 0 && StringToInteger(StringSubstr(nm, L + 2)) < cut) ObjectDelete(0, nm);
+   }
+}
+// a signal: "CHOCH up: L12 R1 ARMED" or "BOS dn: SKIP - outside session hours" - a new label at the signal candle
+void AudNew(int side, string msg)
+{
+   int p = StringFind(msg, ": ");
+   if (p < 0) return;
+   string sg = StringSubstr(msg, 0, p), st = StringSubstr(msg, p + 2);
+   bool up = StringFind(sg, " up") >= 0;
+   if (S.dirMode == 3 && (side == 0) != up) return;   // hedge: the long side labels the buy signals, the short side the sell signals
+   string nm = g_AP + IntegerToString(side) + "_" + IntegerToString((long)g_audT);
+   double px = up ? g_audL : g_audH;
+   if (ObjectFind(0, nm) < 0)
+   {
+      ObjectCreate(0, nm, OBJ_TEXT, 0, g_audT, px);
+      ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, nm, OBJPROP_HIDDEN, true);
+   }
+   else ObjectMove(0, nm, 0, g_audT, px);
+   ObjectSetInteger(0, nm, OBJPROP_ANCHOR, up ? ANCHOR_LEFT_UPPER : ANCHOR_LEFT_LOWER);
+   ObjectSetInteger(0, nm, OBJPROP_FONTSIZE, AudSize());
+   ObjectSetString(0, nm, OBJPROP_FONT, "Arial Bold");
+   AudShow(nm, sg + "  HTF " + (!g_htfUse ? "off" : (g_T15 == 1 ? "up" : (g_T15 == -1 ? "dn" : "-"))) + "\n" + AudTm(g_audT) + "  " + st);
+   if (StringFind(st, "ARMED") >= 0) { g_audCur[side] = nm; g_audSeq[side] = g_side[side].seq; }
+   AudTrim();
+}
+// what happened next to the side's setup: FILLED, CANCELLED - ..., REFUSED ...
+void AudEnd(int side, string st, datetime t)
+{
+   string nm = g_audCur[side];
+   if (nm == "" || ObjectFind(0, nm) < 0) return;
+   AudShow(nm, ObjectGetString(0, nm, OBJPROP_TOOLTIP) + "\n" + AudTm(t) + "  " + st);
+}
+// the broker side (book entry i): only for the setup the label belongs to
+void AudRef(int i, string st) { if (AudOn() && g_vb[i].seq == g_audSeq[i / 2]) AudEnd(i / 2, st, TimeCurrent()); }
 void BkNote(int side, string msg)
 {
    g_note[side] = msg;
-   if (InAudit && !g_dry) Print("[", S.dirMode == 3 ? (side == 0 ? "long side" : "short side") : "strategy", "] ", TimeToString(UtcToSrv(g_t), TIME_DATE | TIME_MINUTES), " ", msg);
+   if (InAudit && !g_dry) Print("[", S.dirMode == 3 ? (side == 0 ? "long side" : "short side") : "strategy", "] ", TimeToString(g_audT, TIME_DATE | TIME_MINUTES), " ", msg);
+   if (!AudOn()) return;
+   if (StringFind(msg, "CHOCH ") == 0 || StringFind(msg, "BOS ") == 0) AudNew(side, msg);
+   else AudEnd(side, msg, g_audT);
 }
 
 //---------------------------------------------------------------- deals already reported
@@ -2561,6 +2672,7 @@ void SendMarket(int i)
    if ((dir == 1 && (sl >= ref - gap || tp <= ref + gap)) || (dir == -1 && (sl <= ref + gap || tp >= ref - gap)))
    {
       Log("Entry " + id + " skipped: the price is already past its stop or target (TradingView would open and close it at once)");
+      AudRef(i, "SKIPPED - the price was already past the stop or target");
       g_vb[i].on = false;
       return;
    }
@@ -2581,6 +2693,7 @@ void SendMarket(int i)
    }
    if (RetryCode(rc) && g_vb[i].fails < 50) { g_vb[i].fails++; return; }
    Log("Entry " + id + " REFUSED by the broker: " + g_trade.ResultRetcodeDescription());
+   AudRef(i, "REFUSED BY THE BROKER - " + g_trade.ResultRetcodeDescription());
    g_refused++;
    g_vb[i].on = false;
 }
@@ -2671,7 +2784,7 @@ void SyncPending()
          if (st != ORDER_STATE_CANCELED && st != ORDER_STATE_EXPIRED && st != ORDER_STATE_REJECTED) continue;
          if (st == ORDER_STATE_REJECTED) g_vb[i].fails++;
          g_vb[i].ticket = 0;
-         if (g_vb[i].fails > 5) { Log("Order " + cmt + " REFUSED by the broker 5 times - setup dropped"); g_refused++; g_vb[i].on = false; continue; }
+         if (g_vb[i].fails > 5) { Log("Order " + cmt + " REFUSED by the broker 5 times - setup dropped"); AudRef(i, "REFUSED BY THE BROKER (5 times)"); g_refused++; g_vb[i].on = false; continue; }
       }
       if ((dir == 1 && px >= ask) || (dir == -1 && px <= bid)) { SendMarket(i); continue; }
       if ((dir == 1 && ask - px < gap) || (dir == -1 && px - bid < gap)) continue;   // too close for a pending order now - wait
@@ -2682,7 +2795,7 @@ void SyncPending()
       else if (!RetryCode(rc))
       {
          g_vb[i].fails++;
-         if (g_vb[i].fails > 5) { Log("Order " + cmt + " REFUSED by the broker: " + g_trade.ResultRetcodeDescription()); g_refused++; g_vb[i].on = false; }
+         if (g_vb[i].fails > 5) { Log("Order " + cmt + " REFUSED by the broker: " + g_trade.ResultRetcodeDescription()); AudRef(i, "REFUSED BY THE BROKER - " + g_trade.ResultRetcodeDescription()); g_refused++; g_vb[i].on = false; }
       }
    }
 }
@@ -2731,7 +2844,8 @@ int DropReached(double hi, double lo, datetime when)
       if (!hit) continue;
       Print("SMC EA: setup ", TradeId(g_side[k].dir, g_side[k].seq, 0), " dropped - its entry ", hitMkt ? "(market, rule 3)" : DoubleToString(hitPx, g_digits),
             " was reached while the EA was offline (candle ", TimeToString(when), "), no late entry");
-      g_side[k].Cancel("CANCELLED - the entry was reached while the EA was offline");
+      g_audT = when;   // the candle where it was reached (for the audit)
+      g_side[k].Cancel("CANCELLED - entry reached while the EA was offline");
       d++;
    }
    return d;
@@ -2856,6 +2970,7 @@ void ProcessBar(MqlRates &r, bool dry, datetime tEnd)
    S.uv  = UnitValue();
    g_now = SrvToUtc(TimeCurrent());
    g_dry = dry;
+   g_audT = r.time; g_audH = r.high; g_audL = r.low;   // v12.3: where a signal's audit label goes
    PushBarTime(r.time);
    int    ht = 0, he = 0;
    double ho = NAD, hx = NAD;
@@ -3023,6 +3138,8 @@ void RestoreSides()
       g_side[k].openTgt = GvGet(GvSide(k, "ot"), NAD);      g_side[k].planTgt = GvGet(GvSide(k, "pt"), NAD);
       double mb = GvGet(GvSide(k, "mb"), -1);
       g_side[k].mktBar = mb < 0 ? NAI : BarOfTime((datetime)mb);
+      // v12.3: the audit label of the kept setup (named by its signal candle) goes on
+      if (g_side[k].dir != 0 && g_side[k].armBar != NAI) { g_audCur[k] = g_AP + IntegerToString(k) + "_" + IntegerToString((long)TimeOfBar(g_side[k].armBar)); g_audSeq[k] = g_side[k].seq; }
    }
    for (int i = 0; i < 4; i++)
    {
@@ -4257,6 +4374,9 @@ int OnInit()
    S.Derive();
    g_htfUse = S.htfOk;
    g_P = "SMC" + IntegerToString(InMagic) + "_" + g_sym + "_";
+   g_AP = "SMCA" + IntegerToString(InMagic) + "_" + g_sym + "_";   // v12.3: the audit labels
+   for (int k = 0; k < 2; k++) { g_audCur[k] = ""; g_audSeq[k] = 0; }
+   if (!InAudit || InAudMax <= 0) ObjectsDeleteAll(0, g_AP);
    g_trade.SetExpertMagicNumber((ulong)InMagic);
    g_trade.SetDeviationInPoints((ulong)InSlip);
    g_trade.SetTypeFillingBySymbol(g_sym);
@@ -4294,6 +4414,7 @@ void OnDeinit(const int reason)
       if (!g_tester) GlobalVariableDel(g_P + "T");
    }
    ObjectsDeleteAll(0, g_P);
+   if (reason == REASON_REMOVE || reason == REASON_ACCOUNT || reason == REASON_CHARTCHANGE) ObjectsDeleteAll(0, g_AP);   // v12.3: the audit labels
    Comment("");
 }
 void OnTradeTransaction(const MqlTradeTransaction &trans, const MqlTradeRequest &request, const MqlTradeResult &result)

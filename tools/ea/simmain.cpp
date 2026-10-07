@@ -82,6 +82,12 @@ int main(int argc, char **argv)
    if (wf) fprintf(wf, "time,bar,tick,ntick,slept_bar,slept_tick,deals_before,deals_after\n");
    std::mt19937 srng((unsigned)cl("sleepSeed", 777));
    sim::verbose = (int)cl("verbose", 0);   // 1 = the EA's Print lines to stderr
+   if (cfg.count("printLog")) { sim::printTo = fopen(cfg["printLog"].c_str(), "w"); sim::verbose = 1; }   // the EA's Print lines to a file
+   sim::chartBg = cl("chartBg", 0);   // the chart background colour (0 = black)
+   InAudit = cb("audit", false);
+#ifdef HAS_AUDLB
+   InAudSz = (EAudSz)cl("audSz", 2); InAudMax = (int)cl("audMax", 200);   // v12.3: the audit labels on the chart
+#endif
    FILE *bk = cfg.count("dropLog") ? fopen(cfg["dropLog"].c_str(), "w") : nullptr;   // v12.3: the book at every catch-up check
    if (bk)
    {
@@ -211,6 +217,19 @@ int main(int argc, char **argv)
    }
    fclose(of);
    if (wf) fclose(wf);
+   if (cfg.count("objDump"))
+   {   // the chart objects whose name starts with objPrefix: name, time, price, colour, anchor, size, text, tooltip - tab separated (new lines as \n)
+      FILE *of2 = fopen(cfg["objDump"].c_str(), "w");
+      string pre = cfg.count("objPrefix") ? cfg["objPrefix"] : string("");
+      for (auto &o : sim::objs)
+      {
+         if (o.first.compare(0, pre.size(), pre) != 0) continue;
+         string tip = o.second.tip; size_t q; while ((q = tip.find('\n')) != string::npos) tip.replace(q, 1, "\\n");
+         fprintf(of2, "%s\t%ld\t%.2f\t%ld\t%ld\t%ld\t%s\t%s\n", o.first.c_str(), (long)o.second.t, o.second.p, o.second.col, o.second.anchor, o.second.fsize, o.second.text.c_str(), tip.c_str());
+      }
+      fclose(of2);
+   }
+   if (sim::printTo && sim::printTo != bk) fclose(sim::printTo);
    if (bk) fclose(bk);
    if (cfg.count("dealsOut"))
    {   // every deal with its exact time: time,dir(+1 buy -1 sell),entry(0 in 1 out),position,price,volume,comment

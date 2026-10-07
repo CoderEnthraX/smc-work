@@ -22,4 +22,5 @@ for line in src.split('\n'):
 for i, l in enumerate(out):
     if l.startswith('int DropReached(double hi, double lo, datetime when)') and out[i + 1] == '{':
         out[i + 1] = '{ if (sim::onDrop) sim::onDrop(hi, lo, when);'
+if 'InAudSz' in src: out.insert(0, '#define HAS_AUDLB 1')   # v12.3: the EA draws the audit labels (group 44)
 open(sys.argv[2], 'w').write('\n'.join(out))

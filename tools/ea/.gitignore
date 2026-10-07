@@ -12,3 +12,4 @@ __pycache__/
 *.cfg
 piptest
 sleep_out/
+aud_out/

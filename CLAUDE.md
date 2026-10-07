@@ -8,14 +8,16 @@
 - Owner: **Punit** (punit7870@gmail.com). Works from a phone. Wants **simple English, short examples with
   numbers, tables**. Times are **IST** (Asia/Kolkata).
 - **Latest version: TradingView v12.2 + MT5 EA v12.3** = `SMC_Structure_Strategy_v12.2.txt` + `SMC_Structure_EA_v12.3.mq5`
-  (EA v12.3 = the v12.2 rules + a safe catch-up after sleep / no connection / restart; the user asked for the EA file ONLY).
+  (EA v12.3 = the v12.2 rules + a safe catch-up after sleep / no connection / restart + the signal audit LABELS on the chart;
+  the user asked for the EA file ONLY).
   No notes / handbook for v12.1 / v12.2 / v12.3, as the user asked - the v12.0 notes + handbook still describe everything
   else; see Versions. EA v12.2 kept; v12.1 files kept (they hold the profit mark that v12.2 removed). Before them:
   **v12.0** = `SMC_Structure_Strategy_v12.0.txt` + `_NOTES.txt` + `_HANDBOOK.pdf` (v11.2 + group 39
   "RULE 3 - enter at the close of the signal candle", all OFF; option "only if the close is near the broken level",
   default 3; option "if the close is too far: fall back to RULE 1 / 2"; see Versions). v11.2 files kept.
 - **MT5 EA: `SMC_Structure_EA_v12.3.mq5`** (v12.2 + safe catch-up after a gap, always on, no setting; MT5 part only, core
-  unchanged: CatchUp / DropReached / FilledReal; RestoreSides now restores the setup number) / `SMC_Structure_EA_v12.2.mq5` (v12.1 without the profit mark + ESeq SEQ_AS / SEQ_BS / SEQ_CS = 7 / 8 / 9 + group
+  unchanged: CatchUp / DropReached / FilledReal; RestoreSides now restores the setup number; audit labels on the chart, group
+  44 InAudSz / InAudMax at the very END, 155 inputs) / `SMC_Structure_EA_v12.2.mq5` (v12.1 without the profit mark + ESeq SEQ_AS / SEQ_BS / SEQ_CS = 7 / 8 / 9 + group
   43 InSp1..InSpAdd at the very END; core StepBase(flPnl), money basNow) / `SMC_Structure_EA_v12.1.mq5` (v12.0 + ECap CAP_BASE
   = 3 + group 42 InLmOn / InLmAmt / InPmOn / InPmAmt at the very END; notes = the v12.0 EA notes) / `SMC_Structure_EA_v12.0.mq5` + `_NOTES.txt` (v11.1 / v11.2 files kept) = v12.0 rules in MQL5 (group 39 at the
   very END, after group 38; core r3Far / r3Fb / r3Use + side mktBar / cntR3 / cntR3Far / cntR3Fb; BkPlace(..., mkt): a rule 3 entry is a MARKET
@@ -194,6 +196,23 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   the wake-up): v12.2 2-140 entries at the wake tick and buy + sell together up to 54 times; v12.3 0 / 0; every catch-up worked
   out separately (candles, high / low, drops) - 0 differences; the 02:00 force close never skipped. Restarts (238, 3
   settings): every deal incl. the setup number = no restarts (v12.2 only 227 of 453 numbers right). NOT compiled in MetaEditor.
+  v12.3 also (user: "audit label ON in MT5 shows no labels"): up to v12.2 'Signal audit' (InAudit, group 20) only wrote the
+  Experts journal - by design then, never drawn. Now (MT5 part, display only): BkNote -> AudNew (a CHOCH / BOS note "sg: ...")
+  = an OBJ_TEXT at the signal candle (buy: its low, ANCHOR_LEFT_UPPER; sell: its high, ANCHOR_LEFT_LOWER), named g_AP + side
+  + "_" + candle time (g_AP = "SMCA" + magic + "_" + symbol + "_", NOT deleted by a restart / parameter change, deleted on
+  remove / account / chart change or when the audit is off); AudEnd adds FILLED / CANCELLED ... to the side's last ARMED label
+  (g_audCur / g_audSeq; RestoreSides gives a kept setup its label back); AudRef = the broker side (SKIPPED - price past the
+  stop or target, REFUSED BY THE BROKER). Tooltip = "sg  HTF up/dn/-/off" + one line per step (time, 2 spaces, text); chart
+  text <= 63 characters (the MT5 limit): sg HTF | step > step, else sg | steps, else sg | last, else cut "...". Colours by the
+  last step, dark / light chart (CHART_COLOR_BACKGROUND): armed DodgerBlue / MediumBlue, filled Lime / Green, cancelled or
+  skipped Orange / DarkOrange, SKIP Silver / DimGray, refused Tomato / Red. Hedge: the long side labels buy signals, the short
+  side sell signals. Group 44: InAudSz (Small 7 / Normal 9 / Large 11 default / Huge 14 pt), InAudMax 200 (newest kept, 0 = none).
+  Live (and visual tester) only; history before the EA start has no labels (it is read dry). The journal line time is now the
+  candle's (g_audT); a drop after a sleep says "CANCELLED - entry reached while the EA was offline" at the reached candle.
+  Tools: mt5sim.h object store (ObjectGetString / ObjectsTotal / ObjectName, chartBg), simmain audit / audSz / audMax /
+  chartBg / printLog / objDump / objPrefix (HAS_AUDLB from mql2cpp), ea/audtests.py. Checks: trades labels on = off (touch,
+  pending, hedge); labels after 238 restarts = none; every label rebuilt separately from the journal + bars in 8 settings
+  (dark / light, Small 50 kept, Huge rule 3, longs only, hedge, sleeps) - 0 differences.
 
 ## How the v11.1 code works (key points)
 - 118 inputs (v11.2: 122, + group 38 stop buffer unit). Groups: 20 strategy, 21 risk / loss recovery, 24 safety, 25 daily blocking windows,
