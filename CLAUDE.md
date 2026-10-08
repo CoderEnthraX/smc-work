@@ -376,6 +376,14 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   / 0 profit (about -2,866); from 2025 0 empty / 28 profit, median +4,337 (C3: 39 profit, +5,775, 1 empty; Off +648);
   biggest risk 289. It parks at the floor after a disaster (from Jul 2024: -2,904 to the end). No new code needed; told the
   user no money rule makes profit from losing entries.
+  Follow-up (user uses TARGET 1R + Rule C SPLIT 1, "win rate 40-45%"): 1R entries 2021-26 = 2,467 trades, 43% win (38-50%
+  by year) but break-even needs 49.9% (avg win +0.84R / loss -0.84R after costs) -> -0.114R, negative EVERY year (2025
+  -0.001R); longest losing runs 10/10/11/9/9/8. Split 1 + 1R = doubling: 10k empty after 9 losses in a row. 58 start months:
+  Off 1R 0 profitable 12-month windows; C1 1R 49/58 empty; every floor setting 0 empty AND 0 profit. 40 feeds from Jan
+  2025 (best period): C1 1R 25 profit (median +8,482) but 15 EMPTY; Ultra on 1R (3k / 10% / lock 50) 1 profit, median
+  -2,738; looser 3k / 50% 12 profit, median -1,576; 5k / 50% 14, median -3,167 - vs Ultra on 3R split 3: 28 profit, median
+  +4,337 (Off 3R 37/40 profit, Off 1R 0/40). From 2021 / 2023 nothing profitable. Told the user: Ultra cannot fix 1:1
+  (higher win rate but further below its break-even); 3R + Ultra is the better shape. Scripts: scratchpad ultra/exp6-8.
 
 ## Open items / next steps
 00. **Group 41**: ask the user to attach the EA once with "save the calendar to a file" ON and send
