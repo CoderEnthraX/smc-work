@@ -393,6 +393,17 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   split 2 + floor 5k 25-50%: 0 empty, 2-4 profit (2021 / 2023), 16-19 (2025), median about -4,500. Feeds are fair (flat
   -0.033..-0.073R vs real -0.048R; real Off beats 25-30 of 40) but real split 2 beats 37 of 40 = a lucky order. Scripts:
   scratchpad ultra/exp9-10.
+  Follow-up 3 (user: min stop 8, NO max, targets 1 / 1.3 / 1.5 / 2R + combinations): flat entries 2021-26 almost the same
+  for every target: 1R 1,295 tr 47.7% win (need 49.4%) -0.025R; 1.3R -0.032; 1.5R -0.023; 2R -0.028; 2.5R -0.037; 3R -0.022;
+  all about -0.12R in 2021-23 and +0.004..+0.025R in 2024-26 (t 0.1-0.56 = break-even, not proven). No max helped 1R
+  (-0.025 vs -0.048 with max 15). Min-stop neighbours 6-12 similar shape. 40 feeds (min 8, no max): from 2021 every Rule C
+  split 1/2/3 at every R empties 30-40/40; from 2023 19-32/40; from 2025 split 2/3 1 empty / 39 profit at 1 / 1.5 / 2R (1.5R
+  C2 40/40, median +3,750; 2R C2 median +5,371); split 1 at 1.3-2R empties 25-34 even from 2025. Floors: 2R C2 + floor 5k /
+  50% / lock 50 = from 2025 0 empty / 35 profit, median +5,269 (worst -4,506); from 2021 / 2023 median -4,849 / -4,961; real
+  58 starts: 12-month windows 0 empty / 37 profit (Jul 2023+ starts 28/28, median +2,420), to the end from 2021-23 about
+  -4,700..-4,960, from 2024+ +4,234..+7,121. 1R C2 + floor 3k / 50%: from 2025 31/40 profit, median +2,868; worst -3,000.
+  Told the user: the target does not change the edge; results depend on whether the future looks like 2025-26 or 2021-23;
+  a floor sets the worst case. Scripts: scratchpad ultra/qual.json, exp11-14 (v11.json, v13.json, v14.json).
 
 ## Open items / next steps
 00. **Group 41**: ask the user to attach the EA once with "save the calendar to a file" ON and send
