@@ -384,6 +384,15 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   -2,738; looser 3k / 50% 12 profit, median -1,576; 5k / 50% 14, median -3,167 - vs Ultra on 3R split 3: 28 profit, median
   +4,337 (Off 3R 37/40 profit, Off 1R 0/40). From 2021 / 2023 nothing profitable. Told the user: Ultra cannot fix 1:1
   (higher win rate but further below its break-even); 3R + Ultra is the better shape. Scripts: scratchpad ultra/exp6-8.
+  Follow-up 2 (user: "stop not less than 8, not more than 15" = group 24 min / max stop 8 / 15, with 1R + split 1): 1R
+  entries 894 trades, 45.5% win, break-even 48.5%, -0.048R (2024 +0.014, 2026 +0.055, others negative; runs 5-9); 3R + 8-15
+  -0.082R. Neighbour grid (1R flat): a bigger MIN stop helps smoothly in both halves (min 0 / 8 / 10: 2021-23 -0.18 / -0.12 /
+  -0.09R; 2024-26 -0.08 / -0.01 / 0.00) - real (commission per oz is a bigger share of small stops); the MAX 15 adds nothing.
+  Real FxPro path, 58 starts: split 1 57/58 empty to the end; SPLIT 2 0 empty, 58/58 profit (median +2,676) - BUT 40 feeds:
+  split 2 from 2021 34 empty / 6 profit, 2023 29 / 11, 2025 13 / 27 (median +1,809); split 1 30-38 empty; Off 0-2 profit;
+  split 2 + floor 5k 25-50%: 0 empty, 2-4 profit (2021 / 2023), 16-19 (2025), median about -4,500. Feeds are fair (flat
+  -0.033..-0.073R vs real -0.048R; real Off beats 25-30 of 40) but real split 2 beats 37 of 40 = a lucky order. Scripts:
+  scratchpad ultra/exp9-10.
 
 ## Open items / next steps
 00. **Group 41**: ask the user to attach the EA once with "save the calendar to a file" ON and send
