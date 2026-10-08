@@ -404,6 +404,18 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   -4,700..-4,960, from 2024+ +4,234..+7,121. 1R C2 + floor 3k / 50%: from 2025 31/40 profit, median +2,868; worst -3,000.
   Told the user: the target does not change the edge; results depend on whether the future looks like 2025-26 or 2021-23;
   a floor sets the worst case. Scripts: scratchpad ultra/qual.json, exp11-14 (v11.json, v13.json, v14.json).
+  Follow-up 4 (user: "gold went from ~2,000 to 4,000-5,000 - optimise the stop to the price"): gold avg 1,793 / 1,799 /
+  1,940 / 2,408 / 3,409 / 4,529 (2021..2026); median stop $5.25 -> $18.78 = 0.29% -> 0.43% of price; $8 = 0.45% of price in
+  2021, 0.18% in 2026 -> $8 kept 22-25% of setups in 2021-23, 94% in 2026. Existing group 38 '% of price' (buffer = buPct % of
+  the CHOCH level; group 24 min stop = % of the entry; LimAt / BufAt) tested, buffer 0.025%: EVERY min % still loses in
+  2021-23 (-0.07..-0.24R) -> the price level is not the cause; buys and sells both lost 2021-23 (gold +8% sideways) and both
+  ~0 in 2024-26 (+101% trend). Bigger min % better in both halves (smooth). Flat 0.4-0.7% min: -0.03..+0.01R, all 95% ranges
+  include 0 (0.5%: 1R 105 trades/yr +0.009R, 2R 97/yr +0.008R). With C2 + floor (2R 5k / 1R 3k, 50%, lock 50), 40 feeds
+  profit from 2021 / 2023 / 2025: $8 3/6/35, 0.3% 1/3/39, 0.35% 0/1/40, 0.4% 5/25/26, 0.45% 3/38/40, 0.5% 10/40/40 (1R:
+  18/39/39), 0.6% 27/40/40 (median +1,732 2R / +850 1R from 2021), 0.7% 39/40/40 (+960 / +533; worst -4,909 / -2,931). Real
+  58 starts, 0.5%: 0 empty, 58/58 profit to the end (2R +1,582..+2,616, 1R +1,179..+2,122); Off 0.5% from 2021 +235 / +303.
+  Told the user: use % of price (consistent filter); 0.5-0.6% zone; entries still break-even, Rule C shape = many small wins,
+  rare loss up to the floor. Scripts: scratchpad ultra/pct.json, exp15-18 (v15-v18.json).
 
 ## Open items / next steps
 00. **Group 41**: ask the user to attach the EA once with "save the calendar to a file" ON and send
