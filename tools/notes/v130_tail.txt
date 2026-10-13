@@ -1,0 +1,148 @@
+
+
+--------------------------------------------------------------------------
+4. SECTION 1 - ONE UNIT FOR EVERY PRICE DISTANCE
+--------------------------------------------------------------------------
+   Unit for every price distance            Price  (Price / Pips / % of price)
+     - pip size                               0      (0 = automatic)
+
+The unit is read by FOUR boxes:
+   section 5   Stop buffer beyond the CHOCH* level
+   section 4   Skip the setup if the stop is CLOSER than
+   section 4   Skip the setup if the stop is FURTHER than
+   section 3   RULE 3 - the most the close may be beyond the broken level
+   section 11  Broker spread for SIZING
+Money boxes (risk, caps, floor, daily loss) stay in account currency - they
+mean the same on every market.
+
+PRICE (default) - exactly as before: 1.0 = 1.00 of price.
+PIPS - the strategy knows the pip of the market: gold 0.10, silver 0.01,
+  Bitcoin 1, Ethereum 0.10, forex 0.0001, JPY pairs 0.01, anything else
+  10 x the smallest price step (or type your own pip size).
+% OF PRICE - worked out again for every setup:
+  the stop buffer = % of the CHOCH* level,
+  closer / further = % of the entry price,
+  rule 3 distance  = % of the signal candle's close,
+  spread           = % of the price.
+
+Example - "% of price", buffer 0.025, closer 0.5, further 1.0:
+   market            buffer      skip if the stop is closer / further
+   gold at 4,000     1.00        20.00 / 40.00
+   gold at 2,000     0.50        10.00 / 20.00
+   silver at 50      0.0125      0.25 / 0.50
+   EURUSD at 1.10    0.000275    0.0055 / 0.011
+   Bitcoin 100,000   25          500 / 1,000
+One set of numbers works on every market and at every price level.
+
+ONE STOP BUFFER BOX. Up to v12.3 there were three boxes: "stop buffer in
+price" (group 20), "in pips" and "in %" (group 38). Now there is one box
+in section 5, read in the section 1 unit. When you change the unit, TYPE
+THE NUMBERS AGAIN - 1.0 in price is not 1.0 pips and not 1.0 %:
+   your v12 setting                       v13.0
+   Price, buffer 1.0                      Price, buffer 1.0  (nothing to do)
+   Pips, "stop buffer in pips" 10         Pips, buffer 10
+   % of price, "stop buffer in %" 0.02    % of price, buffer 0.02
+The table row "UNIT + STOP BUFFER (sections 1, 5)" shows every distance in
+price, for example "0.025% of the level = 1.00 now | skip closer 0.5 %".
+TradingView stops with a message, and the EA refuses to start, if the
+unit is % and the stop buffer or the spread is above 10 (a typing slip).
+
+THE SPREAD FOR SIZING (section 11) now follows the unit too. Up to v12.3 it
+was always price. With the unit on Price nothing changes.
+
+
+--------------------------------------------------------------------------
+5. EA - HEDGE + SHARED: "A TRADE OPENED WHILE THE OTHER SIDE CHASES THE
+   LOSS RISKS ONLY THE BASE" (section 3, OFF)
+--------------------------------------------------------------------------
+   Trade direction                            Hedge
+     - hedge: loss recovery, floor ...         Shared by both sides
+     - hedge + shared: ... risks only the base OFF
+
+Only with Hedge + Shared money + a loss-recovery rule (A / B / C, the +
+and split versions). OFF = exactly as v12.3.
+
+The problem: with one shared memory, a buy and a sell open at the same
+time are BOTH sized to win back the same carried loss.
+The rule: while one side "chases" the loss (its waiting order or open
+trade was sized for it), a new trade on the OTHER side risks only the
+base. The side that was set up first keeps the chase; on the same candle,
+the buy side. When the chasing trade closes, the next trade gets the full
+Rule A / B / C amount again.
+
+Example - Rule C split 1, base 50, target 1:1, 100 carried.
+A buy opens risking 100, then a sell signal comes while it is open.
+   buy    sell   v12.3: result / carried    v13.0 ON: result / carried
+   win    win    +200 / 0                   +150 / 0
+   win    loss      0 / 100                  +50 / 50
+   loss   win       0 / 100                  -50 / 150
+   loss   loss   -200 / 300                 -150 / 250
+At risk at once: 200 before, 150 now. The average is the same - it only
+makes the swings smaller. It does not make the entries profitable.
+
+Table: the "Trade direction (section 3)" row shows how many trades were
+sized at the base ("2nd trade at the base: N"). The journal / audit label
+says "L7 at the BASE risk - the other side is chasing the loss".
+Restarts keep it: the flags are saved with the waiting setup in MT5's
+global variables (an open trade's flag always).
+"Send once" entry handling keeps the size the order was sent with.
+
+
+--------------------------------------------------------------------------
+6. EA - FASTER TABLE AND DRAWINGS
+--------------------------------------------------------------------------
+The trading logic was already fast. On a live chart (and in the VISUAL
+Strategy Tester) most of the EA's time went into the table and the
+drawings, redrawn at every candle. Now:
+  - every table cell remembers what it shows - the EA sends a text, colour
+    or position to the chart only when it CHANGED;
+  - lines and texts set their fixed look (style, width, size, anchor)
+    once, when they are made, not at every candle.
+The NON-visual Strategy Tester never drew anything (unchanged).
+Measured in my MT5 test copy, one year of 1-minute bars, table + drawings
+ON:    v12.3   32.9 s of computer time   (hedge: 35.5 s)
+   v13.0   22.0 s                    (hedge: 24.8 s)  - about 1/3 less
+   (the trading part alone: 4.1 s - the rest is the table and drawings)
+On a live chart the table is drawn once a minute, so you will not feel
+it there; it matters most in the VISUAL Strategy Tester.
+Nothing else changed: the trades with the table / drawings ON are still
+the same as with them OFF.
+
+
+--------------------------------------------------------------------------
+7. EA - BUGS FIXED
+--------------------------------------------------------------------------
+All four are settings that were not checked; the EA now refuses to start
+with a clear message (MT5 shows it in a pop-up and in the Experts tab):
+  a. A news window time that could not be read (for example 17:25-18:35
+     instead of 1725-1835, or 2500-2600) was IGNORED without a word - the
+     window never blocked anything. Now: "Window 1 time (section 10) must
+     look like 1725-1835".
+  b. A NEGATIVE max slippage became an unlimited slippage (MT5 reads it
+     as an unsigned number). Now 0 - 100000 points.
+  c. A negative magic number. Now 0 or more.
+  d. Negative "keep a waiting setup after a restart" bars or marks to
+     keep. Now 0 or more.
+TradingView: the time picker of the windows never allowed a bad time, so
+nothing to fix there.
+
+
+--------------------------------------------------------------------------
+8. CHECKS DONE
+--------------------------------------------------------------------------
+{CHECKS}
+Honest limits:
+  - TradingView: my parser is NOT TradingView's compiler. If TradingView
+    shows an error, send me the line.
+  - MetaEditor runs only on Windows - compile the EA (F7) and send me any
+    error line.
+  - The trading results are the same as v12.2 / v12.3: v13.0 does not
+    make the strategy more profitable. All earlier test results stand.
+
+
+==========================================================================
+EVERYTHING BELOW IS FROM THE v12.0 NOTES (TradingView, then the MT5 EA).
+The group numbers there are the OLD ones - part 3 above shows where each
+setting is now.
+==========================================================================
+

@@ -1,0 +1,30 @@
+EA - v12.3 against v13.0 with the same settings (an old "stop buffer in
+pips / in %" typed into the one box):
+  - every saved test setting of tools/ea: {SAME}
+    They cover touch / pending entries, hedge (own + shared money), rule 3
+    and its fall back, Rule A / B / C / C+ / split, the floor, both
+    pauses, news windows, the US news, the MT5 calendar, sleeps, restart
+    runs (an EA restarted about 250 times), 1 year to 5.75 years, 1m and
+    15m charts.
+The new hedge option:
+  - OFF = v12.3, byte-identical, 9 settings (Rule A / B / C / C+ /
+    C split, 1:1 and 3R, the pause, rule 3, 1 year and 5.75 years).
+  - ON: a separate Python replay works out again, from the order log,
+    which side chases the loss and the size every order should have:
+    39,417 orders checked, 3,590 of them at the base - 0 wrong (2 sizes
+    that were exactly half a lot, rounded apart by the two programs).
+  - the whole EA in my MT5 test copy = the core, 4 settings, same trades.
+  - 484 restarts = no restarts (touch and pending entries).
+  - what it did (hedge + shared money, 1-year tests on a 1,000,000 test
+    account): the deepest drop got SMALLER in 5 of 7 settings (Rule C
+    1:1: 21,946 -> 12,218; Rule A: 43,873 -> 24,678) but BIGGER in 2
+    (rule 3: 5,247 -> 8,744; Rule C+: 9,061 -> 9,357); the profit was a
+    little lower in 6 of 7. It is a brake, not an edge.
+Table + drawings ON = OFF: the same trades (v12.3 and v13.0).
+TradingView:
+  - parser: PARSED OK (v12.2: PARSED OK too).
+  - 136 settings in 13 sections, each section in one block; every
+    setting declared before it is used; no name used twice.
+  - the code below the settings compared line by line with v12.2: the
+    only differences are the ones in this file (unit, spread, the 10 %
+    stop message, table texts, version number).

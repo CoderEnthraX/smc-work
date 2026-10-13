@@ -7,7 +7,11 @@
   receiver only uses the free "MetaApi API") and the MQL5 VPS guide (`SMC_Strategy_v8.3_MQL5_VPS_GUIDE.pdf`).
 - Owner: **Punit** (punit7870@gmail.com). Works from a phone. Wants **simple English, short examples with
   numbers, tables**. Times are **IST** (Asia/Kolkata).
-- **Latest version: TradingView v12.2 + MT5 EA v12.3** = `SMC_Structure_Strategy_v12.2.txt` + `SMC_Structure_EA_v12.3.mq5`
+- **Latest version: v13.0 for BOTH** = `SMC_Structure_Strategy_v13.0.txt` + `SMC_Structure_EA_v13.0.mq5` +
+  `SMC_Structure_v13.0_NOTES.txt` (one notes file: what is new + the old -> new settings map + the v12.0 notes). v13.0 = the
+  v12.2 / v12.3 rules with the settings in 13 SECTIONS, the same order in both files (see Versions). From v13.0 the
+  TradingView and EA version numbers are the same. Before it:
+  TradingView v12.2 + MT5 EA v12.3 = `SMC_Structure_Strategy_v12.2.txt` + `SMC_Structure_EA_v12.3.mq5`
   (EA v12.3 = the v12.2 rules + a safe catch-up after sleep / no connection / restart + the signal audit LABELS on the chart;
   the user asked for the EA file ONLY).
   No notes / handbook for v12.1 / v12.2 / v12.3, as the user asked - the v12.0 notes + handbook still describe everything
@@ -213,6 +217,36 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   chartBg / printLog / objDump / objPrefix (HAS_AUDLB from mql2cpp), ea/audtests.py. Checks: trades labels on = off (touch,
   pending, hedge); labels after 238 restarts = none; every label rebuilt separately from the journal + bars in 8 settings
   (dark / light, Small 50 kept, Huge rule 3, longs only, hedge, sleeps) - 0 differences.
+
+- v13.0 (user asked: "reorganize both files, settings of a section together, better section names, % settings for every
+  market, optimize, fix bugs"; answers: yes to all my suggestions = one box per distance, today's defaults + a settings
+  map, the hedge option OFF, EA + TV + one notes file, no handbook). Rules that trade did NOT change.
+  13 sections, same order in both files: 1 MARKET & UNITS (unit + pip size), 2 SIGNALS (take trades on, HTF, engine rules),
+  3 ENTRIES (rules 1 / 2 / 3, entry handling, direction + hedge, reverse, max open, cancels), 4 SETUP FILTERS (closer /
+  further, HTF filter, premium / discount, equilibrium), 5 STOP & TARGET (buffer, R, liquidity, partial, step / BE, trail),
+  6 POSITION SIZE (+ stacked BOS risk), 7 LOSS RECOVERY (+ loss mark, profit steps), 8 ACCOUNT PROTECTION (daily loss,
+  trades / day, drawdown, floor, profit target, day pause, days pause), 9 TRADING HOURS & WEEKEND, 10 NEWS (all of it; EA
+  calendar), 11 COSTS (commission, spread), 12 BROKER (TV webhook + TheConnector / EA magic, exec, slippage, clock, history),
+  13 DISPLAY. Pine group names gx01..gx13; inputs moved to the TOP of the script (after strategy()), nothing else moved.
+  ONE stop buffer box (stSlBuf / InSlBuf) read in the section 1 unit (stBuPips / stBuPct, InBuPips / InBuPct gone): pips =
+  RoundTick(slBuf x pip), % = RoundTick(level x slBuf / 100); the spread for sizing also in the unit (f_stSprd / SprdAt).
+  TV 136 inputs, EA 154 (EA names unchanged -> .set files load; TradingView keys saved settings by POSITION -> add v13.0 as a
+  NEW script or Defaults -> Reset settings). Pine runtime.error if unit % and buffer or spread > 10. Ideas a-g lost letters.
+  EA only: InHgBase (section 3, OFF) "hedge + shared: a trade opened while the other side chases the loss risks only the base"
+  (CSide chaseOrd / chasePos / hbSeen / cntHgB; SideChasing(); chaseOrd = !hb && riskNow > basNow; a fill makes chasePos;
+  cleared when the side has no open trade; same candle: long side first; saved in GVs co / cp / hs). EA faster drawing: table
+  cells cache (TblMem g_tm, slots) + lines / texts set style / width / ray / size / anchor once (display ON 32.9 -> 22.0 s CPU
+  per year in the fake MT5; trades identical). Bugs fixed (EA CheckInputs): unreadable window time was ignored silently
+  (WinOk), negative slippage = unlimited, negative magic, negative resume / marks. All 'group N' texts -> 'section N'.
+  Tools: patches/pine130.py, ea130.py + ea130_inputs.txt; ea/v13tests.py (same <v12.3 folder> = every saved tools/ea setting
+  v12.3 vs v13.0 byte-identical; hgb = OFF identical + separate replay of the order log, harness option ordLog; rs = restarts);
+  extract.py / mql2cpp.py define CORE_V13 / EA_V13 (harness / simmain map old buPips / buPct keys into the one box);
+  notes/build_notes130.py (+ v130_head / tail / checks). Checks: parser PARSED OK; TV structure + body diff = only intended;
+  hgb 9 settings OFF = v12.3, replay 39,417 orders / 3,590 at base 0 wrong (2 half-lot ties), EA = core 4/4, 484 restarts =
+  none; effect (1M test account, 1 y): deepest drop smaller in 5 of 7 (C 1:1 21,946 -> 12,218), bigger in 2 (rule 3, C+),
+  profit a bit lower in 6 of 7. Same-test result: see the notes (part 8).
+  Open question for the next versions: new settings at the END of their section (keeps sections together; TradingView users
+  must add each version as a new script anyway) vs at the very end (rule 3) - ask the user.
 
 ## How the v11.1 code works (key points)
 - 118 inputs (v11.2: 122, + group 38 stop buffer unit). Groups: 20 strategy, 21 risk / loss recovery, 24 safety, 25 daily blocking windows,
@@ -422,7 +456,7 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
    SMC_calendar.csv -> test the REAL news list (CPI, FOMC ...) on 2021-2026. With group 29 releases only
    (1m, user settings): none -18,514 / windows -18,844 / +pre 1 h -18,708 / 2 h -18,302 / 4 h -18,070,
    all -0.13R per trade (tools/ea/preeffect.py) -> news blocking does not change the edge.
-0. **MT5 EA**: user compiles `SMC_Structure_EA_v12.3.mq5` in MetaEditor (F7) and sends any error lines; then
+0. **MT5 EA**: user compiles `SMC_Structure_EA_v13.0.mq5` in MetaEditor (F7) and sends any error lines; then
    Strategy Tester (Every tick based on real ticks) and a demo account. Fix compile errors with a patch, re-run
    `tools/ea` checks before delivering.
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,
