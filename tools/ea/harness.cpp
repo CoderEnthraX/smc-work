@@ -38,14 +38,18 @@ int curBar = 0;
 long curT = 0;
 long nextId = 1, nextX = 1;
 bool verbose = false, fixTies = false, grid = false;
+// v13.0: option ordLog - every order placed / cancelled, filled and closed, in time order (for the separate replay check
+// of the hedge 'base' option; nothing else changes)
+FILE *olog = nullptr;
 double GDn(double p) { return grid ? std::floor(p / 0.01 + 1e-7) / 100.0 : p; }
 double GUp(double p) { return grid ? std::ceil(p / 0.01 - 1e-7) / 100.0 : p; }
 
-void BkCancel(int side) { for (int i = (int)pend.size() - 1; i >= 0; i--) if (pend[i].side == side) pend.erase(pend.begin() + i); }
-void BkCancelPiece(int side, int piece) { for (int i = (int)pend.size() - 1; i >= 0; i--) if (pend[i].side == side && pend[i].piece == piece) pend.erase(pend.begin() + i); }
+void BkCancel(int side) { if (olog) fprintf(olog, "C %d %d\n", curBar, side); for (int i = (int)pend.size() - 1; i >= 0; i--) if (pend[i].side == side) pend.erase(pend.begin() + i); }
+void BkCancelPiece(int side, int piece) { if (olog) fprintf(olog, "c %d %d %d\n", curBar, side, piece); for (int i = (int)pend.size() - 1; i >= 0; i--) if (pend[i].side == side && pend[i].piece == piece) pend.erase(pend.begin() + i); }
 void BkPlace(int side, int seq, int piece, int dir, double ent, double sl, double tgt, double q, bool mkt)
 {
    double rk = g_money[g_sideMi[side]].riskNow * g_side[side].addRk;
+   if (olog) fprintf(olog, "P %d %d %d %d %d %.6f %.6f %.6f %.6f %d %.6f\n", curBar, side, seq, piece, dir, ent, sl, tgt, q, mkt ? 1 : 0, g_side[side].addRk);
    if (dir == 1) { ent = GDn(ent); sl = GDn(sl); tgt = GUp(tgt); } else { ent = GUp(ent); sl = GUp(sl); tgt = GDn(tgt); }
    if (mkt) ent = dir == 1 ? 1e300 : -1e300;   // v12.0: a market order = filled at the next open
    for (auto &p : pend) if (p.side == side && p.seq == seq && p.piece == piece) { p.dir = dir; p.lim = ent; p.sl = sl; p.tgt = tgt; p.q = q; p.pbar = curBar; p.prisk = rk; return; }
@@ -61,6 +65,7 @@ void fillClose(int ix, double px, const char *why)
    t.xp = px; t.xbar = curBar; t.xt = curT; t.why = why; t.open = false; t.xseq = nextX++;
    t.pnl = (px - t.ep) * t.dir * t.q - 2 * comm * t.q;
    eqClosed += t.pnl;
+   if (olog) fprintf(olog, "X %d %d %d %d %ld %.6f\n", curBar, t.side, t.seq, t.piece, t.id, t.pnl);
    opn.erase(std::find(opn.begin(), opn.end(), ix));
 }
 void doFill(int pi, double price)
@@ -72,6 +77,7 @@ void doFill(int pi, double price)
    t.ep = price; t.q = o.q; t.sl = o.sl; t.tgt = o.tgt; t.xp = 0; t.pnl = 0; t.why = ""; t.open = true; t.pbar = o.pbar; t.prisk = o.prisk; t.gap = price != o.lim;
    trades.push_back(t);
    opn.push_back((int)trades.size() - 1);
+   if (olog) fprintf(olog, "F %d %d %d %d %ld %.6f\n", curBar, t.side, t.seq, t.piece, t.id, t.q);
 }
 bool trigAt(double price)
 {
@@ -157,6 +163,7 @@ int main(int argc, char **argv)
    for (long i = 0; i < nb; i++) { long t; double p[4]; fread(&t, 8, 1, bf); fread(p, 8, 4, bf); T[i] = t; O[i] = p[0]; H[i] = p[1]; L[i] = p[2]; C[i] = p[3]; }
    fclose(bf);
    verbose = cb("verbose", false); fixTies = cb("fixTies", false); grid = cb("grid", false);
+   if (cfg.count("ordLog")) olog = fopen(cfg["ordLog"].c_str(), "w");
    // settings
    S.altMode = cb("altMode", false); S.pbBodyOn = cb("pbBodyOn", false); S.pbBodyRef = cb("pbBodyRef", false); S.pbSwp2 = cb("pbSwp2", false);
    S.on = true; S.r1 = cb("r1", true); S.r2 = cb("r2", true); S.sig = (int)cl("sig", 0);
@@ -202,7 +209,14 @@ int main(int argc, char **argv)
          else if (g_calT.Size() == 0 || (long)g_calT.At(g_calT.Size() - 1) != r.first) g_calT.Add((double)r.first);
       }
    }
+#ifdef CORE_V13
+   // v13.0: ONE stop buffer box read in the unit - the old config keys buPips / buPct give its value in pips / % mode
+   S.buMode = (int)cl("buMode", 0); S.pipSz = cd("buPip", 0.1);
+   if (S.buMode == 1) S.slBuf = cd("buPips", 10.0); else if (S.buMode == 2) S.slBuf = cd("buPct", 0.02);
+   S.hgBase = cb("hgBase", false);
+#else
    S.buMode = (int)cl("buMode", 0); S.buPips = cd("buPips", 10.0); S.buPct = cd("buPct", 0.02); S.pipSz = cd("buPip", 0.1);
+#endif
    S.r3On = cb("r3On", false); S.r3BrkOn = cb("r3BrkOn", false); S.r3Brk = cd("r3Brk", 3.0); S.r3Fb = cb("r3Fb", false); S.lmOn = cb("lmOn", false); S.lmAmt = cd("lmAmt", 300.0); S.sp1 = cd("sp1", 200.0); S.spN1 = cd("spN1", 3.0); S.sp2 = cd("sp2", 500.0); S.spN2 = cd("spN2", 5.0); S.sp3 = cd("sp3", 1000.0); S.spN3 = cd("spN3", 8.0); S.spInc = cd("spInc", 500.0); S.spAdd = cd("spAdd", 1.0);
    S.ldOn = cb("ldOn", false); S.ldN = (int)cl("ldN", 3); S.ldD = (int)cl("ldD", 2); S.eqOn = cb("eqOn", false); S.eqPct = cd("eqPct", 50);
    S.cs = (int)cl("cs", 60); S.cmLots = 100; S.uv = 1.0; S.minLot = cd("minLot", 0.01); S.tick = 0.01;
@@ -269,6 +283,7 @@ int main(int argc, char **argv)
       g_dry = i < from;
       CoreBar(T[i], O[i], H[i], L[i], C[i], eq, hT[i], hO[i], hX[i], hE[i]);
    }
+   if (olog) fclose(olog);
    FILE *of = argc > 3 ? fopen(argv[3], "w") : stdout;
    fprintf(of, "side,dir,ebar,ep,q,xbar,xp,why,pnl,pbar,prisk,sl0\n");
    for (auto &t : trades) if (!t.open) fprintf(of, "%d,%d,%d,%.5f,%.4f,%d,%.5f,%s,%.6f,%d,%.6f,%.5f\n", t.side, t.dir, t.ebar, t.ep, t.q, t.xbar, t.xp, t.why.c_str(), t.pnl, t.pbar, t.prisk, t.sl);

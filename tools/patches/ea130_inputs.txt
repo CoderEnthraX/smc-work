@@ -1,0 +1,184 @@
+//---------------------------------------------------------------- settings
+// v13.0: 13 sections in the same order as TradingView v13.0. The setting NAMES did not change, so a saved .set file
+// still loads (except the old 'stop buffer in pips / in %' boxes - now the one stop buffer box, read in the section 1
+// unit). Every price DISTANCE below (stop buffer, skip closer / further, rule 3 distance, spread for sizing) is read in
+// the unit chosen in section 1: price, pips, or % of price.
+input group "1. MARKET & UNITS - price, pips or % for every distance below"
+input EBuMode  InBuMode    = BU_PRICE; // Unit for every price distance (stop buffer, skip closer / further, rule 3, spread)
+input double   InBuPip     = 0.0;     //   - pip size (0 = automatic: gold 0.10, silver 0.01, forex 0.0001, JPY 0.01)
+
+input group "2. SIGNALS - market structure (CHOCH / BOS)"
+input ESig     InSig       = SIG_CHOCH; // Take trades on
+input EHtf     InHtf       = HTF_AUTO; // Higher timeframe (RULE 2, higher-timeframe choices and filters)
+input bool     InAltMode   = false;   // ALTERNATE rule: BOS is valid only AFTER IDM
+input bool     InPbBodyOn  = false;   // PULLBACK RULE 1 - each of the 3 candles: body bigger than its longest wick
+input bool     InPbBodyRef = false;   // PULLBACK RULE 2 - close beyond the previous candle's BODY (carries rule 1)
+input bool     InPbSwp2    = false;   // PULLBACK RULE 3 - two candles are enough once the opposite live level is taken
+
+input group "3. ENTRIES - entry rules, direction, order handling"
+input bool     InOn        = true;    // Enable trading
+input bool     InR1        = true;    // RULE 1 - pullback % entry
+input double   InPb        = 50.0;    //   - RULE 1 pullback % (1 - 99)
+input bool     InR2        = true;    // RULE 2 - entry at the broken pivot, higher timeframe must AGREE
+input bool     InR3On      = false;   // RULE 3 - enter at the close of the signal candle
+input bool     InR3BrkOn   = false;   //   - RULE 3: only if the close is near the broken level
+input double   InR3Brk     = 3.0;     //   - the most the close may be beyond the broken level (unit: section 1)
+input bool     InR3Fb      = false;   //   - if the close is too far: fall back to RULE 1 / 2
+input EEntMode InEntMode   = ENT_CONT; // Entry order handling
+input EDir     InDirMode   = DIR_BOTH; // Trade direction
+input EHedgeMoney InHedgeMoney = HM_OWN; //   - hedge: loss recovery, floor, pause and daily limits
+input bool     InHgBase    = false;   //   - hedge + shared: a trade opened while the other side chases the loss risks only the base
+input bool     InRev       = true;    // Opposite signal while in a trade: close and reverse
+input int      InMaxOpen   = 0;       // Max trades open at the same time (0 = no limit; stacked BOS trades)
+input bool     InCancelSig = true;    // Cancel an unfilled order on ANY new signal
+input bool     InBosCnl    = true;    // Cancel a waiting order when a new BOS prints before it fills
+input int      InExpBars   = 0;       // Cancel an unfilled order after N bars (0 = never)
+
+input group "4. SETUP FILTERS - which setups are taken"
+input double   InMinStop   = 0.0;     // Skip the setup if the stop is CLOSER than this (unit: section 1; 0 = off)
+input double   InMaxStop   = 0.0;     // Skip the setup if the stop is FURTHER than this (unit: section 1; 0 = off)
+input bool     InHfOn      = false;   // Higher-timeframe filter - take a signal only in the higher timeframe direction
+input bool     InPdOn      = false;   // Premium / discount filter - buy only at a discount, sell only at a premium
+input double   InPdPct     = 50.0;    //   - the line, % of the leg (50 = the middle)
+input bool     InEqOn      = false;   // Trade only after the higher timeframe pulled back to its equilibrium
+input double   InEqPct     = 50.0;    //   - the equilibrium, % pullback of the higher timeframe leg
+
+input group "5. STOP & TARGET - stop buffer, target, managing open trades"
+input double   InSlBuf     = 0.0;     // Stop buffer beyond the CHOCH* level (unit: section 1)
+input double   InRR        = 1.0;     // Target - R multiple of the entry-to-stop distance
+input bool     InLqOn      = false;   // Target at the next liquidity (the nearest untaken swing high / low)
+input double   InLqMin     = 1.5;     //   - only a swing at least this far from the entry, in R
+input bool     InPpOn      = false;   // Partial profit - a smaller part of every setup takes profit early
+input double   InPpPct     = 50.0;    //   - size of the early part, % of the setup
+input double   InPpR       = 1.0;     //   - early target, in R
+input bool     InPpBe      = true;    //   - then move the rest to break-even
+input bool     InMvStep    = false;   // Step stop - at every 1R, move the stop up one step
+input bool     InMvBe      = false;   // Break-even only - once a candle CLOSES beyond 1R
+input bool     InTrOn      = false;   // Structure trailing stop
+input ETrMode  InTrMode    = TR_LEVEL; //   - the stop follows
+
+input group "6. POSITION SIZE"
+input ESize    InSize      = SIZE_RISK; // Position size
+input double   InRisk      = 50.0;    //   - BASE risk per trade, in account currency
+input double   InQty       = 1.0;     //   - fixed quantity (units: 1 = one ounce of gold)
+input double   InCash      = 1000.0;  //   - fixed cash per trade
+input double   InLotStep   = 0.01;    // Round the size to the broker's lot step (0 = off)
+input double   InRndMax    = 25.0;    //   - but never let rounding raise the risk by more than (%)
+input double   InLev       = 30.0;    // Max leverage (position value / equity)
+input bool     InBkOn      = false;   // Smaller risk for stacked BOS trades
+input double   InBkPct     = 50.0;    //   - risk of each stacked BOS trade, % of the normal risk
+
+input group "7. LOSS RECOVERY - Rule A / B / C, cap, split, profit steps"
+input ESeq     InSeqMode   = SEQ_OFF; // Loss-recovery sizing
+input double   InSeqMax    = 500.0;   //   - HARD CAP on risk per trade
+input ECap     InCapAct    = CAP_PERM; //   - when the cap is reached
+input double   InSeqAdd    = 50.0;    //   - Rule A: amount added on top of the losses carried
+input double   InSplit     = 1.0;     //   - split the loss over this many trades (1 - 20)
+input ESeqFrom InSeqFrom   = SF_ALL;  //   - loss recovery counts from
+input datetime InSeqFromT  = D'2026.01.01 00:00'; //   - the date (only for 'A date I choose'), UTC
+input bool     InLmOn      = false;   // Start again from the base risk when the losses carried reach
+input double   InLmAmt     = 300.0;   //   - losses carried, in account currency
+input double   InSp1       = 200.0;   // Rule A / B / C split - step 1: total profit of at least
+input double   InSpN1      = 3.0;     //   - split it into this many parts
+input double   InSp2       = 500.0;   // Rule A / B / C split - step 2: total profit of at least
+input double   InSpN2      = 5.0;     //   - split it into this many parts
+input double   InSp3       = 1000.0;  // Rule A / B / C split - step 3: total profit of at least
+input double   InSpN3      = 8.0;     //   - split it into this many parts
+input double   InSpInc     = 500.0;   // Rule A / B / C split - then a new step every this much more profit (0 = no more)
+input double   InSpAdd     = 1.0;     //   - each new step is split into this many more parts
+
+input group "8. ACCOUNT PROTECTION - daily limits, floor, profit target, pauses"
+input double   InDayLoss   = 0.0;     // Stop for the day after losing this much (0 = off)
+input int      InMaxTrades = 0;       // Max trades per day (0 = no limit)
+input double   InDD        = 0.0;     // Stop after an equity drawdown of this % (0 = off)
+input EFl      InFlMode    = FL_OFF;  // Account floor - never lose more than the amount below, keep part of every new high
+input double   InFlAmt     = 2000.0;  //   - the most the account may lose (below the start)
+input double   InFlLock    = 50.0;    //   - lock this % of every new profit high
+input double   InFlPct     = 2.5;     //   - risk per trade, % of the cushion above the floor
+input bool     InPtOn      = false;   // Stop taking new trades once the profit target is reached
+input double   InPtAmt     = 500.0;   //   - profit target, in account currency
+input EPtPer   InPtPer     = PT_TOTAL; //   - count the profit
+input datetime InPtFrom    = D'2000.01.01 00:00'; //   - start date (only for Total), UTC
+input bool     InLsOn      = false;   // Pause for the rest of the day after losses in a row
+input int      InLsN       = 3;       //   - losses in a row
+input bool     InLdOn      = false;   // Pause for some days after losses in a row
+input int      InLdN       = 3;       //   - losses in a row
+input int      InLdD       = 2;       //   - days to pause (after the rest of that day)
+
+input group "9. TRADING HOURS & WEEKEND"
+input ESess    InSessMode  = SESS_AUTO; // Time-of-day filters (hours, force close, weekend)
+input double   InTzHours   = 5.5;     // Session timezone - hours from UTC (India 5.5, London 0, New York -5)
+input EDst     InTzDst     = DST_NONE; // Session timezone - summer time (India: none, London: European, New York: US)
+input int      InHrOn      = 6;       // Take entries from (hour)
+input int      InHrOff     = 23;      // Stop taking entries at (hour)
+input int      InHrFlat    = 2;       // Force-close any open trade at (hour)
+input bool     InWkFlat    = true;    // Flatten and stop before the weekend
+input EWkDay   InWkDay     = WK_FRI;  //   - cutoff day
+input int      InWkHr      = 21;      //   - cutoff hour
+input bool     InWk247     = false;   // Trade 24/7 - allow weekends (crypto)
+
+input group "10. NEWS - windows, US news, holidays, MT5 calendar"
+input bool     InNewsOn    = true;    // News windows ON (OFF = no news and no US-holiday blocks at all)
+input ENwExit  InNwExit    = NW_CLOSE; // When a window starts
+input bool     InNw1On     = false;   // Window 1 - block trading
+input string   InNw1       = "1725-1835"; //   - window 1 time (HHMM-HHMM, session timezone)
+input bool     InNw2On     = false;   // Window 2 - block trading
+input string   InNw2       = "1800-1900"; //   - window 2 time
+input bool     InNw3On     = false;   // Window 3 - block trading
+input string   InNw3       = "2330-0030"; //   - window 3 time
+input bool     InNwNy      = false;   // Read the window 1 / 2 / 3 times in New York time
+input bool     InNdOn      = false;   // Windows 1 / 2 / 3 work ONLY on the dates below
+input string   InNdList    = "";      //   - dates (day of the month), e.g. 3, 12-14, 28
+input ENdScope InNdScope   = ND_MONTH; //   - these dates are for
+input bool     InAuOn      = false;   // Automatic US news windows (dates worked out by rule)
+input bool     InAuNfp     = true;    //   - NFP jobs report - 08:30 New York
+input bool     InAuJc      = true;    //   - Weekly jobless claims - every Thursday 08:30 New York
+input bool     InAuIsmM    = true;    //   - ISM Manufacturing PMI - 1st working day 10:00 New York
+input bool     InAuIsmS    = true;    //   - ISM Services PMI - 3rd working day 10:00 New York
+input int      InAuPre     = 10;      //   - block from this many minutes BEFORE the release
+input int      InAuPost    = 20;      //   - until this many minutes AFTER the release
+input EUsClk   InUsClk     = US_AUTO; // US clock (summer / winter time)
+input bool     InHolTrade  = true;    // Trade on US market holidays
+input bool     InCalOn     = false;   // Economic calendar news windows (from MT5; needs 'News windows ON' above)
+input string   InCalCur    = "USD";   //   - currencies (comma list, e.g. USD or USD,EUR)
+input ECalImp  InCalImp    = CI_HIGH; //   - which news
+input int      InCalPre    = 10;      //   - block from this many minutes BEFORE the release
+input int      InCalPost   = 20;      //   - until this many minutes AFTER the release
+input bool     InCalHol    = true;    //   - calendar holidays too (only when 'Trade on US market holidays' is OFF)
+input bool     InCalSave   = false;   //   - save the calendar to a file for the Strategy Tester (live chart only)
+input bool     InPreOn     = false;   // No NEW trades in the hours before news (calendar news and the automatic US news)
+input double   InPreHrs    = 1.0;     //   - hours before the release (e.g. 1, 2 or 0.5)
+input ECalToday InCalToday = CT_HIGHMED; // Show today's news in the table (time, impact, forecast / actual) - display only
+
+input group "11. COSTS - commission and spread (used to SIZE trades; real costs come from the broker)"
+input ECm      InCmMode    = CM_AUTO; // Commission model
+input double   InCmLot     = 0.0;     //   - charge per LOT, ONE side (FxPro Raw+: 3.5)
+input double   InCmUnit    = 100.0;   //   - units per lot (manual mode only)
+input double   InCmPct     = 0.05;    //   - percent of trade value, ONE side
+input double   InCmFix     = 3.50;    //   - fixed cash per order
+input bool     InCmTgt     = true;    // Push the target out to cover the commission
+input double   InSprd      = 0.0;     // Broker spread for SIZING (unit: section 1; 0 = not modelled)
+
+input group "12. BROKER - orders, magic number, server clock, history"
+input long     InMagic     = 111001;  // Magic number (a different one on every chart that runs this EA)
+input string   InCmt       = "SMC";   // Order comment (text before the trade id)
+input EExec    InExec      = EX_TOUCH; // How entries are executed
+input int      InSlip      = 30;      // Max slippage for market orders, in points (the broker's smallest price step)
+input double   InSrvHours  = 2.0;     // Broker server time - hours from UTC in winter (FxPro: 2)
+input EDst     InSrvDst    = DST_EU;  // Broker server time - summer time rule (FxPro: European)
+input int      InWarm      = 20000;   // Bars of history used to build the structure before trading
+input int      InResume    = 5;       // After a restart, keep a waiting setup if at most this many bars were missed
+
+input group "13. DISPLAY - levels, table, structure, audit labels"
+input bool     InShow      = true;    // Draw entry / stop / target levels
+input bool     InStatOn    = true;    // Show the counter table (like TradingView)
+input ETblPos  InStatPos   = TP_BR;   //   - table position
+input ETblSize InStatSize  = TS_NORMAL; //   - table text size
+input ETblRows InStatRows  = TR_FULL; //   - table rows
+input bool     InDraw      = true;    // Draw the main structure (BOS* / CHOCH* lines, CHOCH / BOS marks)
+input int      InDrawMax   = 200;     //   - how many past CHOCH / BOS marks to keep
+input bool     InHtfDraw   = true;    // Draw the higher timeframe on this chart (its BOS* / CHOCH* levels, equilibrium)
+input int      InHtfMarks  = 50;      //   - how many past higher-timeframe CHOCH / BOS marks to keep (0 = none)
+input bool     InAudit     = false;   // Signal audit - a label on the chart for every signal (what happened to it) + the Experts journal
+input EAudSz   InAudSz     = AS_LARGE; //   - audit label size
+input int      InAudMax    = 200;     //   - how many audit labels to keep on the chart (0 = none, the journal only)
