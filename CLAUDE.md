@@ -452,6 +452,24 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   Told the user: use % of price (consistent filter); 0.5-0.6% zone; entries still break-even, Rule C shape = many small wins,
   rare loss up to the floor. Scripts: scratchpad ultra/pct.json, exp15-18 (v15-v18.json).
 
+- **Improvement study + high-win-rate strategies (Oct 2026, after v13.0; page https://claude.ai/artifact/2e5YMZQ6rBrPXdKN8b2fK9;
+  scratchpad imp/ + hw2/)**. REAL FxPro costs from now on: spread at entry (npz sp, mean 0.19) + 0.07 commission per oz = about
+  13 per lot per side (user's TV uses 30 -> TV looks worse than real; at 0.60/oz user settings -11,253, real -6,731).
+  SMC, user settings 3R, real costs: 2021-23 -0.206R, 2024-26 +0.033R. Test copy of the EA core with filters (imp/mkcore.py:
+  xFirst skip the first setup of the IST day, xYday no buy below yesterday's low / sell above yesterday's high (NY day),
+  xLegMin CHOCH leg >= N bars, xToday with today's move in daily ATR, xMinPct min stop % of entry, hours). One at a time:
+  min stop 0.5% -13 (feeds 21/40), 0.35% -573; others -1,777..-4,522; none positive in 2021-23. C5 = first + yday + leg12 +
+  min 0.5%: 333 trades +847 (3R) / +933 (1R), A +0.027 B +0.060, 40/40 noisy feeds positive (median +773, worst +266),
+  random entries beat it 6%. C4 (today 0.15 + hours 13-21 + first) +1,595, A +0.002, 40/40. C6 34/40. Rule 1+2 beats rule 3
+  with filters (C5 1R +933 vs +207). No time rules (swap est.): real +1,746 but 5/40 feeds -> luck. Suggested now: TV
+  commission ~13/side, rule 1+2, min stop 0.5% (unit %); possible v13.1 (NOT asked yet): first / yday / leg / today filters.
+  High win rate (hw2/hw2.py, vectorised sim = old loop to the cent; swap est. long 4%/yr, short 1%/yr of price): textbook 5
+  + 204-variant grid (RSI(2), buy the N-bar low, IBS; 15m/1h/4h/1D; pick on 2021-23). Wins 55-67% common, profit not: trend
+  pullback 0.5R 67% win -6,122; London -1,878; soup -2,953; Bollinger -10,714. 1h dip-buyers: IBS +1,576, Double-10 longs
+  +857, RSI(2) +530 (+0.007..+0.02R/trade); all 3 together +2,963 (2021 -443), 57% weeks up, worst week -270, drop -1,172;
+  random same-exposure entries beat them 0.2-11%. Grid: 0 of 151 positive all 6 years; 15m 0/36; 1h 38/56. EURUSD: no data
+  (Dukascopy blocked by the proxy) - needs the user's MT5 M1 export.
+
 ## Open items / next steps
 00. **Group 41**: ask the user to attach the EA once with "save the calendar to a file" ON and send
    SMC_calendar.csv -> test the REAL news list (CPI, FOMC ...) on 2021-2026. With group 29 releases only
