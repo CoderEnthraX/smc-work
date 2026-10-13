@@ -470,6 +470,15 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   random same-exposure entries beat them 0.2-11%. Grid: 0 of 151 positive all 6 years; 15m 0/36; 1h 38/56. EURUSD: no data
   (Dukascopy blocked by the proxy) - needs the user's MT5 M1 export.
 
+- **SMC + the high-win-rate strategies combined (Oct 2026, same page v2; scratchpad mix/)**. Side by side (one account,
+  each $50; mix/combine.py): yours -6,731 -> -3,768; C5 +933 -> +3,896 (drop 444 -> 1,132); C6 +1,035 -> +3,999; weekly
+  correlation SMC vs dips about 0; up to 4 trades open. As a filter (test core hj = core_i + per-minute flag file, last
+  CLOSED 1h candle; flags all-buys / all-sells = the direction setting exactly; mix/flags.py T / R / RX / I / TR): yours best
+  TR -2,273 (0/40 feeds); C5 none better; C6 + 1h RSI(2) < 50 buys / > 50 sells = +2,001 (399 tr, +0.105R, A +0.080 B +0.125,
+  5/6 years, 40/40 feeds median +1,610, random 0/1,000). Best mix C6 + RSI filter + 3 dips +4,965 (-680 / +820 / +1,229 /
+  +975 / +1,250 / +1,371), drop 1,264. 15 filter versions tried = some luck possible. Not built; needs written permission
+  (v13.1 filters + a separate dip-buyer strategy / EA).
+
 ## Open items / next steps
 00. **Group 41**: ask the user to attach the EA once with "save the calendar to a file" ON and send
    SMC_calendar.csv -> test the REAL news list (CPI, FOMC ...) on 2021-2026. With group 29 releases only
