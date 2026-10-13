@@ -244,7 +244,7 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   notes/build_notes130.py (+ v130_head / tail / checks). Checks: parser PARSED OK; TV structure + body diff = only intended;
   hgb 9 settings OFF = v12.3, replay 39,417 orders / 3,590 at base 0 wrong (2 half-lot ties), EA = core 4/4, 484 restarts =
   none; effect (1M test account, 1 y): deepest drop smaller in 5 of 7 (C 1:1 21,946 -> 12,218), bigger in 2 (rule 3, C+),
-  profit a bit lower in 6 of 7. Same-test result: see the notes (part 8).
+  profit a bit lower in 6 of 7. Same test: 222 of 222 saved tools/ea settings byte-identical v12.3 vs v13.0.
   Open question for the next versions: new settings at the END of their section (keeps sections together; TradingView users
   must add each version as a new script anyway) vs at the very end (rule 3) - ask the user.
 
