@@ -21,7 +21,7 @@ All paths inside the scripts point at `/home/user/smc-work/tools/...`.
 ## Checks every new version must pass
 
 1. Parser: `PARSED OK`.
-2. Settings: old settings in the same order and places; new ones appended at the END; ASCII only; no tabs; no `strategy.close_all(`.
+2. Settings: old settings in the same order; new ones at the END OF THEIR SECTION (the user's choice from v13.0); ASCII only; no tabs; no `strategy.close_all(`.
    (v13.0 is the one exception the user asked for: everything moved into 13 sections - TradingView must be added as a NEW
    script or reset to defaults; the EA kept every setting NAME, so .set files still load.)
 3. Every new name declared before use and not clashing with an old name (also in the simulator - a clash with the simulator's `fav` variable once broke a test).

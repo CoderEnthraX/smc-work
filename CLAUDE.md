@@ -65,8 +65,10 @@
    confirmed feature and **ask for WRITTEN permission** before building.
 3. Every version:
    - ASCII only; the version comment on **line 2**;
-   - new settings appended at the **END** (saved settings keep their places); new features **OFF by
-     default** so the old behaviour is unchanged; extra dropdown choices go at the end of the list;
+   - new settings go at the **END OF THEIR SECTION** (user's choice after v13.0 - keeps the 13 sections together;
+     TradingView users add each version as a NEW script or reset the settings, the EA keeps names so .set files
+     load); new features **OFF by default** so the old behaviour is unchanged; extra dropdown choices go at the
+     end of the list;
    - a **notes file** (plain English, one heading per feature, new part first with lines <= 78
      chars, then "EVERYTHING BELOW IS FROM THE vX NOTES" + the previous notes);
    - a **handbook PDF** (part 1 = what is new, part 2 = the v8.3 handbook pages 2..end);
@@ -245,8 +247,7 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   hgb 9 settings OFF = v12.3, replay 39,417 orders / 3,590 at base 0 wrong (2 half-lot ties), EA = core 4/4, 484 restarts =
   none; effect (1M test account, 1 y): deepest drop smaller in 5 of 7 (C 1:1 21,946 -> 12,218), bigger in 2 (rule 3, C+),
   profit a bit lower in 6 of 7. Same test: 222 of 222 saved tools/ea settings byte-identical v12.3 vs v13.0.
-  Open question for the next versions: new settings at the END of their section (keeps sections together; TradingView users
-  must add each version as a new script anyway) vs at the very end (rule 3) - ask the user.
+  Next versions: the user chose 'new settings at the END OF THEIR SECTION' (rule 3 updated).
 
 ## How the v11.1 code works (key points)
 - 118 inputs (v11.2: 122, + group 38 stop buffer unit). Groups: 20 strategy, 21 risk / loss recovery, 24 safety, 25 daily blocking windows,
