@@ -100,10 +100,11 @@ def replay(olog, P):
     mode, base, split, cmU = int(P['seqMode']), float(P['risk']), float(P['split']), 2 * float(P['cmLot']) / 100.0
     car = tot = flp = 0.0
     live = {0: None, 1: None}      # the live order of a side: its 'full' flag (sized to win back the loss)
+    live_key = {0: None, 1: None}  # ... and which order it is (side, setup, piece)
     full_of = {}                   # (side, seq, piece) -> flag of its last placement
     nopen = {0: 0, 1: 0}
     chase_pos = {0: False, 1: False}
-    checks = bad = based = 0
+    checks = bad = based = ties = 0
     first_bad = None
 
     def risk_now():
@@ -120,7 +121,7 @@ def replay(olog, P):
         raw = amt / per if per > 0 else 0.0
         q = math.floor(raw + 0.5)
         if q * per > amt * 1.25: q = math.floor(raw)
-        return float(q)
+        return float(q), abs(raw - math.floor(raw) - 0.5) < 1e-6   # (size, an exact half: C++ and Python may round it apart)
 
     def chasing(j):
         return (live[j] is not None and live[j]) or (chase_pos[j] and nopen[j] > 0)
@@ -148,18 +149,20 @@ def replay(olog, P):
                 elif f[0] == 'P':
                     seq, piece, ent, sl, q, add = int(f[3]), int(f[4]), float(f[6]), float(f[7]), float(f[9]), float(f[11])
                     hb = bool(P['hgBase']) and mode != 0 and chasing(1 - k) and rn > bas + 0.005
-                    want = qty(ent, sl, (bas if hb else rn) * add)
+                    want, tie = qty(ent, sl, (bas if hb else rn) * add)
                     checks += 1; based += hb
-                    if abs(want - q) > 1e-6:
+                    if abs(want - q) > 1e-6 and tie and abs(want - q) <= 1.0 + 1e-9: ties += 1
+                    elif abs(want - q) > 1e-6:
                         bad += 1
                         if first_bad is None: first_bad = (b, k, seq, q, want, hb, rn, bas)
                     fl = (not hb) and rn > bas + 0.005
-                    live[k] = fl; full_of[(k, seq, piece)] = fl; placed = True
+                    live[k] = fl; live_key[k] = (k, seq, piece); full_of[(k, seq, piece)] = fl; placed = True
             if not placed and live[k] is not None and nopen[k] == 0:
                 # the core sizes a waiting order again at every close (no new order when the size is the same)
                 hb = bool(P['hgBase']) and mode != 0 and chasing(1 - k) and rn > bas + 0.005
                 live[k] = (not hb) and rn > bas + 0.005
-    return checks, bad, based, first_bad
+                full_of[live_key[k]] = live[k]   # the order keeps its new flag when it fills later
+    return checks, bad, based, first_bad, ties
 
 
 HGB = dict(sig=0, r1=1, r2=1, pb=25.0, rr=1.0, slBuf=1.0, rev=0, once=0, hrOn=6, hrOff=23, hrFlat=2, wkFlat=1, wkDay=6, wkHr=23,
@@ -178,7 +181,7 @@ HGB_SETS = {
     'Csplit_steps':   dict(seqMode=9, sp1=50.0, spN1=1.0, sp2=150.0, spN2=2.0, sp3=300.0, spN3=3.0, spInc=100.0),
     'A1':             dict(seqMode=1),
     'B2':             dict(seqMode=2, split=2.0),
-    'C1_1R_6y':       {'from': 20000, 'to': 2037534},
+    'C1_1R_6y':       {'from': 20000, 'to': 2037534, 'eq0': 1e9},   # a huge account: Rule C 1:1 reaches risks the leverage cap would cut
     'C1_1R_touch':    dict(exec=0),
 }
 
@@ -222,11 +225,11 @@ def hgb(old):
     print('option ON - every order size worked out again from the order log (separate replay):')
     for nm in HGB_SETS:
         P = res[(nm, 'on')][2]
-        c, bad, based, fb = replay(os.path.join(wd, nm + '_on.olog'), P)
-        c0, bad0, based0, fb0 = replay(os.path.join(wd, nm + '_off.olog'), res[(nm, 'off')][2])
+        c, bad, based, fb, ti = replay(os.path.join(wd, nm + '_on.olog'), P)
+        c0, bad0, based0, fb0, ti0 = replay(os.path.join(wd, nm + '_off.olog'), res[(nm, 'off')][2])
         on, off = trades(os.path.join(wd, nm + '_on.csv')), trades(os.path.join(wd, nm + '_off.csv'))
-        print('   %-14s ON: %6d orders checked, %4d at the base, %d wrong%s | OFF: %6d checked, %d wrong | trades %d / %d, net %+10.2f / %+10.2f' % (
-            nm, c, based, bad, '' if not fb else ' first ' + str(fb), c0, bad0, len(on), len(off), sum(r[7] for r in on), sum(r[7] for r in off)))
+        print('   %-14s ON: %6d orders checked, %4d at the base, %d wrong (+%d exact-half ties)%s | OFF: %6d checked, %d wrong (+%d ties) | trades %d / %d, net %+10.2f / %+10.2f' % (
+            nm, c, based, bad, ti, '' if not fb else ' first ' + str(fb), c0, bad0, ti0, len(on), len(off), sum(r[7] for r in on), sum(r[7] for r in off)))
         probs += bad + bad0 + (based == 0)
     print('whole EA in the fake MT5 = the core, option ON:')
     for nm in ('C1_1R', 'C3_3R_pause', 'C1_1R_touch', 'C1_1R_rule3'):
