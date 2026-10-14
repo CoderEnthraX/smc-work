@@ -526,6 +526,14 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   Ultra floor (flMode 2, 3,000 / 50 / 10%): C6+RSI split 1.5 +3,161 from 2021 (40/40 feeds, median +2,240 vs split 3 +1,675,
   Off +1,380; worst drop median 2,376 vs 2,157); C5 split 1.5 31/40 (split 3 40/40, better); yours 0/40 from 2021 either split.
   Told the user: OK only with the floor ON and the C6 + RSI entries.
+- **"Can Rule C carry less loss / survive longer streaks?" (Oct 2026; scratchpad rcmath/: R.json = real trade R lists, mc.py =
+  4,000 reshuffled paths, 10k, base 50)**. Losses in a row to empty 10k (base 50 / 25 / 10): split 1 9/10/11, 1.5 11/13/15, 3
+  18/20/24, 6 29/33/39, 10 41/49/58. Your entries 3R (-0.074R real costs), 3 years: Off 0.1% empty avg -3,518; split 3 75% empty
+  avg -5,667; split 10 63% avg -6,247; base 25 57%; cap 300 81%; loss mark 1,000 16% avg -5,075; 'chase only after a win' (idea,
+  not in code) 63%; Ultra floor 0% avg -2,243 worst5% -2,949. C6+RSI 1.5R (+0.092R) 3 y: Off avg +955; split 3 +1,222 (0.5% empty);
+  split 1.5 +1,627 (3.8% empty); split 1.5 + floor +1,583 (0%, worst5% -863). Longest losing run in a year (shuffled): yours 3R
+  median 11, P(>=12) 48%, P(>=18) 5%; C6+RSI 1.5R median 5, P(>=10) 2.6%, P(>=12) 0.7% (real 2024 had 11). Told the user: no money
+  rule changes the average; levers = better entries (shorter streaks), floor (hard limit), split = target; nothing to build.
 
 ## Open items / next steps
 00. **Group 41**: ask the user to attach the EA once with "save the calendar to a file" ON and send
