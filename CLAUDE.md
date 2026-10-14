@@ -505,6 +505,28 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   +975 / +1,250 / +1,371), drop 1,264. 15 filter versions tried = some luck possible. Not built; needs written permission
   (v13.1 filters + a separate dip-buyer strategy / EA).
 
+- **v13.1 RSI / EMA settings search (Oct 2026, after v13.1; scratchpad rsem/: lib.py, grid.py, stage2.py, an.py, an2.py,
+  feeds.py, final.json; v13.1 core h131, real costs, $50, recovery off, 2021 - Oct 2026)**. 8,328 single runs: charts 1m / 15m
+  x HTF off / favourable (sig 3) x bases yours / C5 / C6 x every RSI (tf 1m..1M, len 2/3/5/9/14/21, pullback / momentum, level
+  20..80) and EMA (price vs 9/20/50/100/200, all 10 crosses); + 440 pairs of the A-picked tops; 16 finalists x 40 noisy feeds.
+  'HTF favourable' (sig 3) and 'HTF filter' (hfOn) gave IDENTICAL trades in 9 of 9 settings -> reported as one.
+  HTF fav alone, 1m yours: -6,731 -> -1,948 (0/40 feeds). Lower-tf RSI / EMA (1m / 5m / 15m) almost never help (yours fav: RSI-L
+  3/252 + in both halves, EMA-L 0/45) -> leave the LOWER filter OFF. Picks on 2021-23 that held on 2024-26:
+  1m yours + HTF fav + EMA 1M price vs EMA 20 +1,720 (941 tr, 74% buys, sells +662 too; 36/40 feeds, median +685; stable: 1W
+  50/100/200 and 1M 20..200 all + in both halves) ; + RSI 4h(3) momentum 70 = +2,004 (448 tr, drop 692, 39/40, median +1,238)
+  but RSI 4h(3) m70 is an ISLAND (neighbours mixed) -> trust the EMA part more. C5 + RSI 1h(3) pullback 80 +1,199 (drop 314,
+  40/40 median +1,071; RSI 1h pullback zone all + in both halves). C6 + RSI 1h(2) pullback 50 (the recipe) +2,006 = the hindsight
+  best, NOT the strict A-pick (RSI 1W(14) p50 A +1,166 B +192), but a stable zone (RSI 1h len 2-9, level 40-70 all +), 40/40
+  median +1,514. C6 + HTF fav (no RSI / EMA) +1,252 (40/40, median +1,105); RSI / EMA add little on top (7/792 better both
+  halves). 15m: yours plain +821 (331 tr, 40/40) is the best simple; filters beat its 2024-26 in 12/594 only; RSI 15m(14) p70 +
+  RSI 1M(2) p20 +1,032 but 80 trades; HTF fav 15m +461, + RSI 1D(5) momentum 50 +764 (90 tr). 5-cent noise barely changes 15m.
+- **1.5R + Rule C split 1.5 (Oct 2026; scratchpad ultra/exp19.py, v13.1 core h131, comm 0.13 = real, 10k, lev 100)**: split 1.5
+  at 1.5R = one win pays all back, risk x5/3 per loss: 10k gone after 11 losses in a row (split 3: 18). Longest runs at 1.5R:
+  yours 9-14 / yr, C5 up to 9, C6+RSI 11 (2024). No floor: yours EMPTY May 2021 / Jun 2023, C6+RSI EMPTY Jul 2024. With the
+  Ultra floor (flMode 2, 3,000 / 50 / 10%): C6+RSI split 1.5 +3,161 from 2021 (40/40 feeds, median +2,240 vs split 3 +1,675,
+  Off +1,380; worst drop median 2,376 vs 2,157); C5 split 1.5 31/40 (split 3 40/40, better); yours 0/40 from 2021 either split.
+  Told the user: OK only with the floor ON and the C6 + RSI entries.
+
 ## Open items / next steps
 00. **Group 41**: ask the user to attach the EA once with "save the calendar to a file" ON and send
    SMC_calendar.csv -> test the REAL news list (CPI, FOMC ...) on 2021-2026. With group 29 releases only
