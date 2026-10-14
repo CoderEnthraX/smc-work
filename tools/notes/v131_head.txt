@@ -7,15 +7,19 @@ Plain English. Files:
   SMC_Structure_v13.1_NOTES.txt      this file (one notes file for both)
 The v13.0 files stay in the folder.
 
-FIX (14 Oct 2026) - TradingView error CE10295 "The main body of the script
-is too long. Try wrapping code in functions". The first v13.1 TradingView
-file was refused by the compiler: the new settings and filters made the
-top level of the script too big. In the fixed file three DISPLAY-only
-blocks now run inside functions: the statistics table, the last-candle
-structure / equilibrium lines, and the structure alert queue. Nothing that
-trades changed; the EA was not affected. The top level is now about 10%
-smaller than v13.0's. If you pasted the first v13.1 file, paste this one
-again (Pine Editor -> select all -> paste -> save).
+FIX (15 Oct 2026) - two TradingView compiler limits. The first v13.1 file
+gave CE10295 "The main body of the script is too long. Try wrapping code in
+functions": the new settings and filters made the top level too big. The
+first fix moved three DISPLAY-only blocks into functions (the statistics
+table, the last-candle structure / equilibrium lines, the structure alert
+queue) - then TradingView said "The f_stTable function uses 357 external
+elements. The limit is 254": a function may use at most 254 outside values
+(every setting and global value it reads; whole numbers, prices and on/off
+values count twice). The table is now written by FOUR functions
+(f_stTab1..4, at most 164 each); the largest function in the script uses
+180. Nothing that trades changed; the EA was not affected. If you pasted an
+earlier v13.1 file, paste this one again (Pine Editor -> select all ->
+paste -> save).
 EA: MetaEditor gave 0 errors and 2 warnings "declaration of 'k' hides
 member" (the new RSI / EMA filter check counted with a 'k' that has the
 same name as the side number). The counter is now 'j'; the program

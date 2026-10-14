@@ -3956,10 +3956,7 @@ f_tfName(string tf) =>
     tf == "15" ? "15m" : tf == "60" ? "1h" : tf == "240" ? "4h" : tf
 
 // v13.1 fix: drawn inside a function - TradingView limits the size of the main body of a script (CE10295)
-f_stTable(table t0) =>
-    table _t = t0
-    if na(_t)
-        _t := table.new(f_stPos(stStatPos), 2, 54, bgcolor = color.new(color.black, 15), border_color = color.new(color.gray, 60), border_width = 1)
+f_stTab1(table _t) =>
     int _wait = stDir != 0 ? 1 : 0
     int _open = strategy.opentrades
     table.cell(_t, 0, 0, "STRATEGY v13.1", text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 55), text_halign = text.align_left)
@@ -3981,6 +3978,10 @@ f_stTable(table t0) =>
     f_stCell(_t, 15, "Exit - 02:00 flat / weekend", str.tostring(stCntFlat), color.silver)
     f_stCell(_t, 16, "Exit - news window / holiday", not stNewsOn ? "master OFF" : (stNw1On or stNw2On or stNw3On or stAuOn or not stHolTrade) ? str.tostring(stCntNews) : "off", stCntNews > 0 ? color.fuchsia : color.gray)
     f_stCell(_t, 17, "Margin calls (Properties)",  str.tostring(stCntMc), stCntMc > 0 ? color.red : color.gray)
+    true
+
+// v13.1 fix: drawn inside a function - TradingView limits the size of the main body of a script (CE10295)
+f_stTab2(table _t) =>
     f_stCell(_t, 18, "Trades cut by leverage cap", str.tostring(stCntCap), stCntCap > 0 ? color.orange : color.gray)
     f_stCell(_t, 19, "Skipped - stop distance / min lot", str.tostring(stCntSkip), stCntSkip > 0 ? color.orange : color.gray)
     f_stCell(_t, 20, "Cancelled - expired unfilled", str.tostring(stCntExp), stCntExp > 0 ? color.orange : color.gray)
@@ -4001,6 +4002,10 @@ f_stTable(table t0) =>
     f_stCell(_t, 32, "Time filters",               stTimeOn ? "on" : (_stIntra ? "off" : "off (daily+)"), stTimeOn ? color.aqua : color.gray)
     f_stCell(_t, 33, "Profit target (made / target)", not stPtOn ? "off" : (str.tostring(math.round(stPtPnl * 100) / 100) + " / " + str.tostring(stPtAmt) + (_ptDay ? " today" : _ptWk ? " this week" : " total") + (stPtHalt ? "  REACHED" : "")), not stPtOn ? color.gray : stPtHalt ? color.lime : color.white)
     f_stCell(_t, 34, "News windows active on",     not stNewsOn ? "MASTER SWITCH OFF - no news blocks" : not (stNw1On or stNw2On or stNw3On) ? "off (no window on)" : not stNdOn ? "every day" : stNdTxt == "" ? "NO VALID DATES" : (stNdTxt + (stNdScope == "Every month" ? " of every month" : " of " + str.format_time(timenow, "MMM yyyy", stTz))), not (stNw1On or stNw2On or stNw3On) ? color.gray : stNdOn and stNdTxt == "" ? color.red : color.aqua)
+    true
+
+// v13.1 fix: drawn inside a function - TradingView limits the size of the main body of a script (CE10295)
+f_stTab3(table _t) =>
     int ny0 = year(timenow, _nyTz)
     int nm0 = month(timenow, _nyTz)
     int nd0 = dayofmonth(timenow, _nyTz)
@@ -4048,6 +4053,10 @@ f_stTable(table t0) =>
     f_stCell(_t, 41, "Extra options switched ON", _v9 == "" ? "none" : str.substring(_v9, 2), _v9 == "" ? color.gray : color.aqua)
     f_stCell(_t, 42, "  - skipped: HTF filter / premium-discount / paused days", str.tostring(stCntHf) + " / " + str.tostring(stCntPd) + " / " + str.tostring(stCntLs), stCntHf + stCntPd + stCntLs > 0 ? color.orange : color.gray)
     f_stCell(_t, 43, "Cancelled - new BOS before the fill", stBosCnl ? str.tostring(stCntBosCnl) : "off", stBosCnl ? (stCntBosCnl > 0 ? color.orange : color.gray) : color.gray)
+    true
+
+// v13.1 fix: drawn inside a function - TradingView limits the size of the main body of a script (CE10295)
+f_stTab4(table _t) =>
     // v10.4: the account floor - where it is, the cushion above it and the risk it allows
     string _flT = stFlMode == "Off" ? "off" : (stFlCush <= 0.005 ? "AT THE FLOOR - no risk left  |  " : "") + "P&L " + str.tostring(math.round(stFlPnl * 100) / 100) + "  |  floor " + str.tostring(math.round(stFlFloor * 100) / 100) + "  |  cushion " + str.tostring(math.round(stFlCush * 100) / 100) + "  |  risk " + str.tostring(math.round(stFlRisk * 100) / 100) + (stFlMode == "On - only cap the risk (base / loss recovery, never above the cushion %)" ? " (cap)" : "")
     f_stCell(_t, 44, "ACCOUNT FLOOR (section 8)", _flT, stFlMode == "Off" ? color.gray : stFlCush < 0.25 * stFlAmt ? color.red : color.aqua)
@@ -4081,8 +4090,13 @@ f_stTable(table t0) =>
     f_stCell(_t, 52, "  - skipped: section 4 filters (v13.1)", _xT == "" ? "off" : str.substring(_xT, 2), _xT == "" ? color.gray : color.orange)
     string _xN = (stYdOn ? "  |  yesterday " + (na(stYdH) ? "-" : str.tostring(stYdL, format.mintick) + " - " + str.tostring(stYdH, format.mintick)) : "") + (stTdOn ? "  |  today's open " + (na(stDyO) ? "-" : str.tostring(stDyO, format.mintick)) + ", average day " + (stDyAvg > 0 ? str.tostring(stDyAvg, format.mintick) : "not ready") : "") + (stRsLOn ? "  |  RSI(" + str.tostring(stRsLLen) + ") " + f_xTfTxt(stRsLTfS) + " " + (na(stRsLv) ? "-" : str.tostring(stRsLv, "#.#")) : "") + (stRsHOn ? "  |  RSI(" + str.tostring(stRsHLen) + ") " + f_xTfTxt(stRsHTfS) + " " + (na(stRsHv) ? "-" : str.tostring(stRsHv, "#.#")) : "") + (stEmLOn ? "  |  EMA " + (_emL2 ? str.tostring(stEmLFast) + " / " : "") + str.tostring(stEmLLen) + " " + f_xTfTxt(stEmLTfS) + " " + (na(stEmLs) ? "-" : (_emL2 ? str.tostring(stEmLf, format.mintick) + " / " : "") + str.tostring(stEmLs, format.mintick)) : "") + (stEmHOn ? "  |  EMA " + (_emH2 ? str.tostring(stEmHFast) + " / " : "") + str.tostring(stEmHLen) + " " + f_xTfTxt(stEmHTfS) + " " + (na(stEmHs) ? "-" : (_emH2 ? str.tostring(stEmHf, format.mintick) + " / " : "") + str.tostring(stEmHs, format.mintick)) : "")
     f_stCell(_t, 53, "  - section 4 filters now", _xN == "" ? "off" : str.substring(_xN, 5), _xN == "" ? color.gray : color.aqua)
-    _t
+    true
 
 var table stTbl = na
 if stStatOn and bar_index == last_bar_index
-    stTbl := f_stTable(stTbl)
+    if na(stTbl)
+        stTbl := table.new(f_stPos(stStatPos), 2, 54, bgcolor = color.new(color.black, 15), border_color = color.new(color.gray, 60), border_width = 1)
+    f_stTab1(stTbl)
+    f_stTab2(stTbl)
+    f_stTab3(stTbl)
+    f_stTab4(stTbl)

@@ -261,12 +261,21 @@ rep('''    f_stCell(stTbl, 51, "PROFIT STEPS - A / B / C split (section 7)", _sp
 # (A) the statistics table, (B) the last-candle structure / equilibrium lines, (C) the structure alert queue.
 s = s.replace('main-tier CHOCH/BOS,', 'main-tier CHOCH/BOS (v13.1 fix: table, last-candle lines and alert queue drawn in functions),', 1)
 FX = '// v13.1 fix: drawn inside a function - TradingView limits the size of the main body of a script (CE10295)\n'
-# (A) the table: the whole block (to the end of the script) becomes f_stTable(); the table itself is its local _t
+# (A) the table: the table is still made in the old block, its 54 rows are written by 4 functions f_stTab1..4 (one
+# function for all rows used 357 'external elements' - TradingView allows 254 per function: every global value a function
+# reads counts, int / float / bool twice). Each part keeps its own local values; the table is passed in as _t.
 ha = 'var table stTbl = na\nif stStatOn and bar_index == last_bar_index\n'
 i = s.index(ha); body = s[i + len(ha):]
 assert body.startswith('    if na(stTbl)\n        stTbl := table.new(') and s.endswith('\n')
-body = re.sub(r'\bstTbl\b', '_t', body).rstrip('\n')
-s = s[:i] + FX + 'f_stTable(table t0) =>\n    table _t = t0\n' + body + '\n    _t\n\n' + ha + '    stTbl := f_stTable(stTbl)\n'
+bl = body.rstrip('\n').split('\n'); mk = bl[:2]; rest = bl[2:]
+cuts = [next(k for k, l in enumerate(rest) if l.startswith(c)) for c in
+        ('    f_stCell(stTbl, 18,', '    int ny0 = year(timenow', '    // v10.4: the account floor')]
+parts = [rest[a:b] for a, b in zip([0] + cuts, cuts + [len(rest)])]
+assert sum(len(x) for x in parts) == len(rest) and all(x[0].startswith('    ') and not x[0].startswith('     ') for x in parts)
+fn = ''
+for n, pt in enumerate(parts, 1):
+    fn += FX + 'f_stTab%d(table _t) =>\n' % n + re.sub(r'\bstTbl\b', '_t', '\n'.join(pt)) + '\n    true\n\n'
+s = s[:i] + fn + ha + '\n'.join(mk) + '\n' + ''.join('    f_stTab%d(stTbl)\n' % n for n in range(1, len(parts) + 1))
 # (B) the last-candle lines: the block's work goes into f_lastDraw(); the 14 lines / labels it keeps come back as a tuple
 hb = 'if bar_index == last_bar_index\n    [_icLc, _icTc,'
 i = s.index(hb); j = s.index('\nint _capMain', i)
