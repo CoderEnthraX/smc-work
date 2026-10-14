@@ -3,7 +3,7 @@
 # CHOCH / BOS move must take at least N candles, only with today's move, an RSI filter and an EMA filter for a LOWER and for
 # a HIGHER timeframe (each: timeframe, length(s), rule).
 # usage: python3 pine131.py SMC_Structure_Strategy_v13.0.txt SMC_Structure_Strategy_v13.1.txt
-import sys
+import sys, re
 src, dst = sys.argv[1], sys.argv[2]
 s = open(src).read()
 
@@ -255,6 +255,37 @@ rep('''    f_stCell(stTbl, 51, "PROFIT STEPS - A / B / C split (section 7)", _sp
     string _xN = (stYdOn ? "  |  yesterday " + (na(stYdH) ? "-" : str.tostring(stYdL, format.mintick) + " - " + str.tostring(stYdH, format.mintick)) : "") + (stTdOn ? "  |  today's open " + (na(stDyO) ? "-" : str.tostring(stDyO, format.mintick)) + ", average day " + (stDyAvg > 0 ? str.tostring(stDyAvg, format.mintick) : "not ready") : "") + (stRsLOn ? "  |  RSI(" + str.tostring(stRsLLen) + ") " + f_xTfTxt(stRsLTfS) + " " + (na(stRsLv) ? "-" : str.tostring(stRsLv, "#.#")) : "") + (stRsHOn ? "  |  RSI(" + str.tostring(stRsHLen) + ") " + f_xTfTxt(stRsHTfS) + " " + (na(stRsHv) ? "-" : str.tostring(stRsHv, "#.#")) : "") + (stEmLOn ? "  |  EMA " + (_emL2 ? str.tostring(stEmLFast) + " / " : "") + str.tostring(stEmLLen) + " " + f_xTfTxt(stEmLTfS) + " " + (na(stEmLs) ? "-" : (_emL2 ? str.tostring(stEmLf, format.mintick) + " / " : "") + str.tostring(stEmLs, format.mintick)) : "") + (stEmHOn ? "  |  EMA " + (_emH2 ? str.tostring(stEmHFast) + " / " : "") + str.tostring(stEmHLen) + " " + f_xTfTxt(stEmHTfS) + " " + (na(stEmHs) ? "-" : (_emH2 ? str.tostring(stEmHf, format.mintick) + " / " : "") + str.tostring(stEmHs, format.mintick)) : "")
     f_stCell(stTbl, 53, "  - section 4 filters now", _xN == "" ? "off" : str.substring(_xN, 5), _xN == "" ? color.gray : color.aqua)
 ''')
+
+# ---- v13.1 fix (14 Oct 2026): TradingView refused v13.1 with CE10295 "The main body of the script is too long. Try
+# wrapping code in functions". Three display-only blocks move into functions - nothing that trades changes:
+# (A) the statistics table, (B) the last-candle structure / equilibrium lines, (C) the structure alert queue.
+s = s.replace('main-tier CHOCH/BOS,', 'main-tier CHOCH/BOS (v13.1 fix: table, last-candle lines and alert queue drawn in functions),', 1)
+FX = '// v13.1 fix: drawn inside a function - TradingView limits the size of the main body of a script (CE10295)\n'
+# (A) the table: the whole block (to the end of the script) becomes f_stTable(); the table itself is its local _t
+ha = 'var table stTbl = na\nif stStatOn and bar_index == last_bar_index\n'
+i = s.index(ha); body = s[i + len(ha):]
+assert body.startswith('    if na(stTbl)\n        stTbl := table.new(') and s.endswith('\n')
+body = re.sub(r'\bstTbl\b', '_t', body).rstrip('\n')
+s = s[:i] + FX + 'f_stTable(table t0) =>\n    table _t = t0\n' + body + '\n    _t\n\n' + ha + '    stTbl := f_stTable(stTbl)\n'
+# (B) the last-candle lines: the block's work goes into f_lastDraw(); the 14 lines / labels it keeps come back as a tuple
+hb = 'if bar_index == last_bar_index\n    [_icLc, _icTc,'
+i = s.index(hb); j = s.index('\nint _capMain', i)
+blk = s[i:j].rstrip('\n').split('\n')[1:]
+keep, back = [], []
+for l in blk:
+    m = re.match(r'^    (ipCeilLn|ipCeilLb|ipFlorLn|ipFlorLb|npCeilLn|npCeilLb|npFlorLn|npFlorLb|eqMLn|eqMLb|eqILn|eqILb|eqNLn|eqNLb) := (_\w+)$', l)
+    if m: back.append((m.group(1), m.group(2)))
+    else: keep.append(l)
+assert len(back) == 14
+tup = '[' + ', '.join(b for a, b in back) + ']'
+s = s[:i] + FX + 'f_lastDraw() =>\n' + '\n'.join(keep) + '\n    ' + tup + '\n\n' + 'if bar_index == last_bar_index\n    ' + tup + ' = f_lastDraw()\n' + \
+    ''.join('    %s := %s\n' % (a, b) for a, b in back) + s[j:]
+# (C) the structure alert queue: both 'if almOk and ...' blocks go into f_almQueue(), called once on every bar
+hc = 'if almOk and (evBosUp or evBosDn or evChoUp or evChoDn'
+i = s.index(hc); j = s.index('\nf_armTag(', i)
+blk = s[i:j].rstrip('\n')
+assert blk.count('\nif almOk and ((rtMainRet and aMainRet)') == 1
+s = s[:i] + FX + 'f_almQueue() =>\n' + '\n'.join(('    ' + l) if l.strip() else l for l in blk.split('\n')) + '\n    true\n\nf_almQueue()\n' + s[j:]
 
 open(dst, 'w').write(s)
 print('written', dst)

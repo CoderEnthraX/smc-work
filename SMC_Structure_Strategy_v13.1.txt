@@ -1,5 +1,5 @@
 //@version=6
-// SMC Structure Strategy  -  v13.1  -  main-tier CHOCH/BOS, rule 1 + rule 2, confirmed HTF, on-time session/news/weekend rules, news windows on chosen dates, automatic US news schedule + US market holidays on the New York clock, frozen broker bracket, commission + spread model, lot-step sizing, exact trade counters, profit-target stop, TheConnector message format, commission and spread set by you per ticker, master news switch, rule 2 bracket fixed at arming, signal audit labels, one extra trade for every same-side BOS (each with its own bracket and tag), opposite CHOCH closes every trade, a limit on trades open at once, larger dark audit labels, optional step stop and break-even stop, no compiler warnings, day reset of the recovery halt before sizing, a table row for orders TradingView refused, v7.1's order handling (order ids, fill check, close rule) with a TheConnector tag from the signal candle's time, each stacked trade closed only by its own stop, target or close (close rule ANY), a safety net for any stop, target or close TradingView misses, cancels sent only for an order that is really waiting and every close sent last in the candle (v8.2's closes and brackets were wiped out on TradingView), trade direction (both / longs only / shorts only) so two copies can hedge, spaces taken out of the symbol and the tag, price settings take up to 8 decimals, v9.0 ideas as switches that are all OFF by default (smaller risk for stacked BOS trades, higher-timeframe filter, structure trailing stop, target at the next liquidity, partial profit, premium / discount filter, pause after losses in a row), v9.1: a waiting order is cancelled when a new BOS prints before it fills (it never moves to the new leg), Rule A = losses carried + your Rule A amount, the hard cap stops trading until you raise it, v10.0: loss recovery Rule A / B / C never below the base risk, Rule C = carry the losses, v10.1: every trade on the chart counts for loss recovery again, Rule A+ / B+ / C+ recover only the loss of the total P&L below zero, v10.2: loss recovery counts from the whole chart history (default), the moment the strategy goes live, or a date, v10.3: split the loss over this many trades (the rule's amount divided, never below the base risk), v10.4: account floor with profit lock (risk = % of the cushion above the floor), v11.0: pause for days after losses in a row, higher-timeframe-favourable modes, higher timeframe equilibrium first, v11.1: against-the-higher-timeframe modes and auto modes, v11.2: stop buffer in price, pips (automatic per market) or % of price, v12.0: rule 3 enters at the close of the signal candle, optionally only when the close is at most N beyond the broken level (or fall back to rule 1 / 2), v12.1: hard cap 'start again from the base risk', a loss mark that starts again from the base, no new trades in the hours before the US releases, v12.2: Rule A / B / C split - the base risk grows in steps with the profit, v13.0: 13 sections, v13.1: new setup filters (min stop % of price, first setup of the day, yesterday's high / low, candles of the CHOCH / BOS move, today's move, RSI and EMA filters for a lower and a higher timeframe)  -  ASCII only
+// SMC Structure Strategy  -  v13.1  -  main-tier CHOCH/BOS (v13.1 fix: table, last-candle lines and alert queue drawn in functions), rule 1 + rule 2, confirmed HTF, on-time session/news/weekend rules, news windows on chosen dates, automatic US news schedule + US market holidays on the New York clock, frozen broker bracket, commission + spread model, lot-step sizing, exact trade counters, profit-target stop, TheConnector message format, commission and spread set by you per ticker, master news switch, rule 2 bracket fixed at arming, signal audit labels, one extra trade for every same-side BOS (each with its own bracket and tag), opposite CHOCH closes every trade, a limit on trades open at once, larger dark audit labels, optional step stop and break-even stop, no compiler warnings, day reset of the recovery halt before sizing, a table row for orders TradingView refused, v7.1's order handling (order ids, fill check, close rule) with a TheConnector tag from the signal candle's time, each stacked trade closed only by its own stop, target or close (close rule ANY), a safety net for any stop, target or close TradingView misses, cancels sent only for an order that is really waiting and every close sent last in the candle (v8.2's closes and brackets were wiped out on TradingView), trade direction (both / longs only / shorts only) so two copies can hedge, spaces taken out of the symbol and the tag, price settings take up to 8 decimals, v9.0 ideas as switches that are all OFF by default (smaller risk for stacked BOS trades, higher-timeframe filter, structure trailing stop, target at the next liquidity, partial profit, premium / discount filter, pause after losses in a row), v9.1: a waiting order is cancelled when a new BOS prints before it fills (it never moves to the new leg), Rule A = losses carried + your Rule A amount, the hard cap stops trading until you raise it, v10.0: loss recovery Rule A / B / C never below the base risk, Rule C = carry the losses, v10.1: every trade on the chart counts for loss recovery again, Rule A+ / B+ / C+ recover only the loss of the total P&L below zero, v10.2: loss recovery counts from the whole chart history (default), the moment the strategy goes live, or a date, v10.3: split the loss over this many trades (the rule's amount divided, never below the base risk), v10.4: account floor with profit lock (risk = % of the cushion above the floor), v11.0: pause for days after losses in a row, higher-timeframe-favourable modes, higher timeframe equilibrium first, v11.1: against-the-higher-timeframe modes and auto modes, v11.2: stop buffer in price, pips (automatic per market) or % of price, v12.0: rule 3 enters at the close of the signal candle, optionally only when the close is at most N beyond the broken level (or fall back to rule 1 / 2), v12.1: hard cap 'start again from the base risk', a loss mark that starts again from the base, no new trades in the hours before the US releases, v12.2: Rule A / B / C split - the base risk grows in steps with the profit, v13.0: 13 sections, v13.1: new setup filters (min stop % of price, first setup of the day, yesterday's high / low, candles of the CHOCH / BOS move, today's move, RSI and EMA filters for a lower and a higher timeframe)  -  ASCII only
 strategy("SMC Structure Strategy", "SMC STRAT", overlay = true,
      max_bars_back = 2000, max_lines_count = 500, max_labels_count = 500, dynamic_requests = true,
      initial_capital = 10000, currency = currency.USD, default_qty_type = strategy.fixed, default_qty_value = 1,
@@ -2028,51 +2028,56 @@ if almOk and barstate.isrealtime
 
 var array<string> almQC = array.new<string>()
 var array<string> almQB = array.new<string>()
-if almOk and (evBosUp or evBosDn or evChoUp or evChoDn or evSwpHi or evSwpLo or evIBosUp or evIBosDn or evIChoUp or evIChoDn or evNBosUp or evNBosDn or evNChoUp or evNChoDn)
-    string tfTxt = syminfo.ticker + " - " + timeframe.period + " - " + str.tostring(close, format.mintick)
-    if evBosUp and aBB
-        array.push(almQC, "Bullish BOS - "   + tfTxt)
-    if evBosDn and aSB
-        array.push(almQC, "Bearish BOS - "   + tfTxt)
-    if evChoUp and aBC
-        array.push(almQC, "Bullish CHOCH - " + tfTxt)
-    if evChoDn and aSC
-        array.push(almQC, "Bearish CHOCH - " + tfTxt)
-    if (evSwpHi or evSwpLo) and aSW
-        array.push(almQC, "Liquidity sweep - " + tfTxt)
-    if evIBosUp and aIBB
-        array.push(almQC, "Bullish iBOS - "   + tfTxt)
-    if evIBosDn and aISB
-        array.push(almQC, "Bearish iBOS - "   + tfTxt)
-    if evIChoUp and aIBC
-        array.push(almQC, "Bullish iCHOCH - " + tfTxt)
-    if evIChoDn and aISC
-        array.push(almQC, "Bearish iCHOCH - " + tfTxt)
-    if (evIBosUp or evIBosDn) and aAIB
-        array.push(almQC, "iBOS - " + tfTxt)
-    if (evIChoUp or evIChoDn) and aAIC
-        array.push(almQC, "iCHOCH - " + tfTxt)
-    if (evIBosUp or evIBosDn or evIChoUp or evIChoDn) and aAIE
-        array.push(almQC, "Internal structure event - " + tfTxt)
-    if evNBosUp and aNBB
-        array.push(almQC, "Bullish nBOS - "   + tfTxt)
-    if evNBosDn and aNSB
-        array.push(almQC, "Bearish nBOS - "   + tfTxt)
-    if evNChoUp and aNBC
-        array.push(almQC, "Bullish nCHOCH - " + tfTxt)
-    if evNChoDn and aNSC
-        array.push(almQC, "Bearish nCHOCH - " + tfTxt)
-    if (evNBosUp or evNBosDn or evNChoUp or evNChoDn) and aANE
-        array.push(almQC, "Inner structure event - " + tfTxt)
+// v13.1 fix: drawn inside a function - TradingView limits the size of the main body of a script (CE10295)
+f_almQueue() =>
+    if almOk and (evBosUp or evBosDn or evChoUp or evChoDn or evSwpHi or evSwpLo or evIBosUp or evIBosDn or evIChoUp or evIChoDn or evNBosUp or evNBosDn or evNChoUp or evNChoDn)
+        string tfTxt = syminfo.ticker + " - " + timeframe.period + " - " + str.tostring(close, format.mintick)
+        if evBosUp and aBB
+            array.push(almQC, "Bullish BOS - "   + tfTxt)
+        if evBosDn and aSB
+            array.push(almQC, "Bearish BOS - "   + tfTxt)
+        if evChoUp and aBC
+            array.push(almQC, "Bullish CHOCH - " + tfTxt)
+        if evChoDn and aSC
+            array.push(almQC, "Bearish CHOCH - " + tfTxt)
+        if (evSwpHi or evSwpLo) and aSW
+            array.push(almQC, "Liquidity sweep - " + tfTxt)
+        if evIBosUp and aIBB
+            array.push(almQC, "Bullish iBOS - "   + tfTxt)
+        if evIBosDn and aISB
+            array.push(almQC, "Bearish iBOS - "   + tfTxt)
+        if evIChoUp and aIBC
+            array.push(almQC, "Bullish iCHOCH - " + tfTxt)
+        if evIChoDn and aISC
+            array.push(almQC, "Bearish iCHOCH - " + tfTxt)
+        if (evIBosUp or evIBosDn) and aAIB
+            array.push(almQC, "iBOS - " + tfTxt)
+        if (evIChoUp or evIChoDn) and aAIC
+            array.push(almQC, "iCHOCH - " + tfTxt)
+        if (evIBosUp or evIBosDn or evIChoUp or evIChoDn) and aAIE
+            array.push(almQC, "Internal structure event - " + tfTxt)
+        if evNBosUp and aNBB
+            array.push(almQC, "Bullish nBOS - "   + tfTxt)
+        if evNBosDn and aNSB
+            array.push(almQC, "Bearish nBOS - "   + tfTxt)
+        if evNChoUp and aNBC
+            array.push(almQC, "Bullish nCHOCH - " + tfTxt)
+        if evNChoDn and aNSC
+            array.push(almQC, "Bearish nCHOCH - " + tfTxt)
+        if (evNBosUp or evNBosDn or evNChoUp or evNChoDn) and aANE
+            array.push(almQC, "Inner structure event - " + tfTxt)
 
-if almOk and ((rtMainRet and aMainRet) or (rtIntRet and aIntRet) or (rtNnRet and aNnRet))
-    string rtTfTxt = syminfo.ticker + " - " + timeframe.period + " - " + str.tostring(close, format.mintick)
-    if rtMainRet and aMainRet
-        array.push(almQB, "Price at " + str.tostring(aRetPct, "#.#") + "% retracement of the BOS*/CHOCH* leg - level " + str.tostring(mLvl, format.mintick) + " - " + rtTfTxt)
-    if rtIntRet and aIntRet
-        array.push(almQB, "Price at " + str.tostring(aRetPct, "#.#") + "% retracement of the iBOS/iCHOCH leg - level " + str.tostring(iLvl, format.mintick) + " - " + rtTfTxt)
-    if rtNnRet and aNnRet
-        array.push(almQB, "Price at " + str.tostring(aRetPct, "#.#") + "% retracement of the nBOS/nCHOCH leg - level " + str.tostring(nLvl, format.mintick) + " - " + rtTfTxt)
+    if almOk and ((rtMainRet and aMainRet) or (rtIntRet and aIntRet) or (rtNnRet and aNnRet))
+        string rtTfTxt = syminfo.ticker + " - " + timeframe.period + " - " + str.tostring(close, format.mintick)
+        if rtMainRet and aMainRet
+            array.push(almQB, "Price at " + str.tostring(aRetPct, "#.#") + "% retracement of the BOS*/CHOCH* leg - level " + str.tostring(mLvl, format.mintick) + " - " + rtTfTxt)
+        if rtIntRet and aIntRet
+            array.push(almQB, "Price at " + str.tostring(aRetPct, "#.#") + "% retracement of the iBOS/iCHOCH leg - level " + str.tostring(iLvl, format.mintick) + " - " + rtTfTxt)
+        if rtNnRet and aNnRet
+            array.push(almQB, "Price at " + str.tostring(aRetPct, "#.#") + "% retracement of the nBOS/nCHOCH leg - level " + str.tostring(nLvl, format.mintick) + " - " + rtTfTxt)
+    true
+
+f_almQueue()
 
 f_armTag(bool on, int trig, float lvl) =>
     string t = ""
@@ -2327,26 +2332,19 @@ f_eqTxt(string t, bool app, float pct) =>
         s := t == "" ? _p : t + " " + _p
     s
 
-if bar_index == last_bar_index
+// v13.1 fix: drawn inside a function - TradingView limits the size of the main body of a script (CE10295)
+f_lastDraw() =>
     [_icLc, _icTc, _icLs, _icW, _icTx, _icTs, _icSh, _icTv, _icTh] = f_ipStyle(iTrend == 1)
     [_icL, _icB] = f_hLine(ipCeilLn, ipCeilLb, ipOn and intUse, iCeilP, iCeilB, _icTx, _icLc, _icTc, _icLs, _icW, _icTs, _icSh, _icTv, _icTh)
-    ipCeilLn := _icL
-    ipCeilLb := _icB
 
     [_ifLc, _ifTc, _ifLs, _ifW, _ifTx, _ifTs, _ifSh, _ifTv, _ifTh] = f_ipStyle(iTrend == -1)
     [_ifL, _ifB] = f_hLine(ipFlorLn, ipFlorLb, ipOn and intUse, iFlorP, iFlorB, _ifTx, _ifLc, _ifTc, _ifLs, _ifW, _ifTs, _ifSh, _ifTv, _ifTh)
-    ipFlorLn := _ifL
-    ipFlorLb := _ifB
 
     [_ncLc, _ncTc, _ncLs, _ncW, _ncTx, _ncTs, _ncSh, _ncTv, _ncTh] = f_npStyle(nTrend == 1)
     [_ncL, _ncB] = f_hLine(npCeilLn, npCeilLb, npOn and nnOn, nCeilP, nCeilB, _ncTx, _ncLc, _ncTc, _ncLs, _ncW, _ncTs, _ncSh, _ncTv, _ncTh)
-    npCeilLn := _ncL
-    npCeilLb := _ncB
 
     [_nfLc, _nfTc, _nfLs, _nfW, _nfTx, _nfTs, _nfSh, _nfTv, _nfTh] = f_npStyle(nTrend == -1)
     [_nfL, _nfB] = f_hLine(npFlorLn, npFlorLb, npOn and nnOn, nFlorP, nFlorB, _nfTx, _nfLc, _nfTc, _nfLs, _nfW, _nfTs, _nfSh, _nfTv, _nfTh)
-    npFlorLn := _nfL
-    npFlorLb := _nfB
 
     float _eqMp = na
     int   _eqMb = na
@@ -2365,8 +2363,6 @@ if bar_index == last_bar_index
         _eqMp := f_eqLvl(ceilS.price, florS.price, eqMPct)
         _eqMb := f_eqBar(ceilS.x1, florS.x1, eqAnch)
     [_eqML, _eqMB] = f_hLine(eqMLn, eqMLb, eqMOn, _eqMp, _eqMb, f_eqTxt(eqM_txt, eqM_pc, eqMPct), eqM_lc, eqM_tc, eqM_ls, eqM_w, eqM_ts, eqM_show, eqM_tv, eqM_th)
-    eqMLn := _eqML
-    eqMLb := _eqMB
 
     float _eqIp = na
     int   _eqIb = na
@@ -2385,8 +2381,6 @@ if bar_index == last_bar_index
         _eqIp := f_eqLvl(iCeilP, iFlorP, eqIPct)
         _eqIb := f_eqBar(iCeilB, iFlorB, eqAnch)
     [_eqIL, _eqIB] = f_hLine(eqILn, eqILb, eqIOn and intUse, _eqIp, _eqIb, f_eqTxt(eqI_txt, eqI_pc, eqIPct), eqI_lc, eqI_tc, eqI_ls, eqI_w, eqI_ts, eqI_show, eqI_tv, eqI_th)
-    eqILn := _eqIL
-    eqILb := _eqIB
 
     float _eqNp = na
     int   _eqNb = na
@@ -2405,6 +2399,22 @@ if bar_index == last_bar_index
         _eqNp := f_eqLvl(nCeilP, nFlorP, eqNPct)
         _eqNb := f_eqBar(nCeilB, nFlorB, eqAnch)
     [_eqNL, _eqNB] = f_hLine(eqNLn, eqNLb, eqNOn and nnOn, _eqNp, _eqNb, f_eqTxt(eqN_txt, eqN_pc, eqNPct), eqN_lc, eqN_tc, eqN_ls, eqN_w, eqN_ts, eqN_show, eqN_tv, eqN_th)
+    [_icL, _icB, _ifL, _ifB, _ncL, _ncB, _nfL, _nfB, _eqML, _eqMB, _eqIL, _eqIB, _eqNL, _eqNB]
+
+if bar_index == last_bar_index
+    [_icL, _icB, _ifL, _ifB, _ncL, _ncB, _nfL, _nfB, _eqML, _eqMB, _eqIL, _eqIB, _eqNL, _eqNB] = f_lastDraw()
+    ipCeilLn := _icL
+    ipCeilLb := _icB
+    ipFlorLn := _ifL
+    ipFlorLb := _ifB
+    npCeilLn := _ncL
+    npCeilLb := _ncB
+    npFlorLn := _nfL
+    npFlorLb := _nfB
+    eqMLn := _eqML
+    eqMLb := _eqMB
+    eqILn := _eqIL
+    eqILb := _eqIB
     eqNLn := _eqNL
     eqNLb := _eqNB
 
@@ -3945,51 +3955,52 @@ f_stCell(table t, int r, string a, string b, color c) =>
 f_tfName(string tf) =>
     tf == "15" ? "15m" : tf == "60" ? "1h" : tf == "240" ? "4h" : tf
 
-var table stTbl = na
-if stStatOn and bar_index == last_bar_index
-    if na(stTbl)
-        stTbl := table.new(f_stPos(stStatPos), 2, 54, bgcolor = color.new(color.black, 15), border_color = color.new(color.gray, 60), border_width = 1)
+// v13.1 fix: drawn inside a function - TradingView limits the size of the main body of a script (CE10295)
+f_stTable(table t0) =>
+    table _t = t0
+    if na(_t)
+        _t := table.new(f_stPos(stStatPos), 2, 54, bgcolor = color.new(color.black, 15), border_color = color.new(color.gray, 60), border_width = 1)
     int _wait = stDir != 0 ? 1 : 0
     int _open = strategy.opentrades
-    table.cell(stTbl, 0, 0, "STRATEGY v13.1", text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 55), text_halign = text.align_left)
-    table.cell(stTbl, 1, 0, "value",    text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 55), text_halign = text.align_right)
-    f_stCell(stTbl, 1,  "CHOCH signals on the chart", stUseCho ? str.tostring(stCntCho) : "off", stUseCho ? color.white : color.gray)
-    f_stCell(stTbl, 2,  "BOS signals on the chart",   stUseBos ? str.tostring(stCntBos) : "off", stUseBos ? color.white : color.gray)
-    f_stCell(stTbl, 3,  "Setups armed",               str.tostring(stCntArm), color.yellow)
-    f_stCell(stTbl, 4,  "Trades entered",             str.tostring(stCntFill) + (_open > 0 ? "  (" + str.tostring(_open) + " still open)" : ""), color.lime)
-    f_stCell(stTbl, 5,  "  - TradingView List of Trades", str.tostring(strategy.closedtrades) + " closed + " + str.tostring(_open) + " open", strategy.closedtrades + _open == stCntFill ? color.gray : color.orange)
-    f_stCell(stTbl, 6,  "  - REFUSED by TradingView", stCntRef == 0 ? "0" : str.tostring(stCntRef) + "  - check Properties leverage / pyramiding", stCntRef > 0 ? color.red : color.gray)
-    f_stCell(stTbl, 7,  "  - Stops / closes TradingView missed", stCntMiss == 0 ? "0" : str.tostring(stCntMiss) + "  - closed by the strategy, tell me", stCntMiss > 0 ? color.red : color.gray)
-    f_stCell(stTbl, 8,  "  - by ENTRY RULE 1 (pullback %)", str.tostring(stCntR1), color.lime)
-    f_stCell(stTbl, 9,  "  - by ENTRY RULE 2 (broken pivot)", str.tostring(stCntR2), color.lime)
-    f_stCell(stTbl, 10, "Setups cancelled, never filled", str.tostring(stCntCanc) + (_wait == 1 ? "  (+1 waiting)" : ""), color.orange)
-    f_stCell(stTbl, 11, "Exit - target",              str.tostring(stCntTgt),  color.teal)
-    f_stCell(stTbl, 12, "Exit - stop",                str.tostring(stCntStop), color.red)
-    f_stCell(stTbl, 13, "Exit - moved stop (BE / step / trail)", not stMgOn ? "off" : (str.tostring(stCntMvx) + "  (" + str.tostring(stCntMoves) + " moves" + (stMvStepOn ? ", step stop" : stMvBeOn ? ", break-even only" : "") + (stTrOn ? ", trailing" : "") + (stPpOn and stPpBe ? ", BE after early profit" : "") + ")"), not stMgOn ? color.gray : color.aqua)
-    f_stCell(stTbl, 14, "Exit - opposite signal",     str.tostring(stCntOpp),  color.fuchsia)
-    f_stCell(stTbl, 15, "Exit - 02:00 flat / weekend", str.tostring(stCntFlat), color.silver)
-    f_stCell(stTbl, 16, "Exit - news window / holiday", not stNewsOn ? "master OFF" : (stNw1On or stNw2On or stNw3On or stAuOn or not stHolTrade) ? str.tostring(stCntNews) : "off", stCntNews > 0 ? color.fuchsia : color.gray)
-    f_stCell(stTbl, 17, "Margin calls (Properties)",  str.tostring(stCntMc), stCntMc > 0 ? color.red : color.gray)
-    f_stCell(stTbl, 18, "Trades cut by leverage cap", str.tostring(stCntCap), stCntCap > 0 ? color.orange : color.gray)
-    f_stCell(stTbl, 19, "Skipped - stop distance / min lot", str.tostring(stCntSkip), stCntSkip > 0 ? color.orange : color.gray)
-    f_stCell(stTbl, 20, "Cancelled - expired unfilled", str.tostring(stCntExp), stCntExp > 0 ? color.orange : color.gray)
-    f_stCell(stTbl, 21, "ENTRY rules in use (1 / 2)", (stR1On and stR2On ? "1 + 2 (dynamic)" : stR1On ? "1 only (pullback %)" : stR2On ? "2 only (HTF must agree)" : "NONE - both off") + (stFav ? "  |  HTF favourable only" : stAgn ? (stR1On ? "  |  against the HTF only (rule 1)" : "  |  against the HTF needs rule 1 - NO TRADES") : stAutoM ? (stR1On ? "  |  auto: against the HTF, then with it" : "  |  auto: no trades before the equilibrium (rule 1 off)") : ""), (stR1On or stR2On) and not (stAgn and not stR1On) ? color.aqua : color.red)
-    f_stCell(stTbl, 22, "RULE 2 / filter higher timeframe", stR2On or stHfEff or stEqOn or stAgn or stAutoM ? (stHtfOk ? f_tfName(stHtfTf) : "off (not above chart)") : "off (rule 2 off)", (stR2On or stHfEff or stEqOn or stAgn or stAutoM) and stHtfOk ? color.aqua : color.gray)
+    table.cell(_t, 0, 0, "STRATEGY v13.1", text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 55), text_halign = text.align_left)
+    table.cell(_t, 1, 0, "value",    text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 55), text_halign = text.align_right)
+    f_stCell(_t, 1,  "CHOCH signals on the chart", stUseCho ? str.tostring(stCntCho) : "off", stUseCho ? color.white : color.gray)
+    f_stCell(_t, 2,  "BOS signals on the chart",   stUseBos ? str.tostring(stCntBos) : "off", stUseBos ? color.white : color.gray)
+    f_stCell(_t, 3,  "Setups armed",               str.tostring(stCntArm), color.yellow)
+    f_stCell(_t, 4,  "Trades entered",             str.tostring(stCntFill) + (_open > 0 ? "  (" + str.tostring(_open) + " still open)" : ""), color.lime)
+    f_stCell(_t, 5,  "  - TradingView List of Trades", str.tostring(strategy.closedtrades) + " closed + " + str.tostring(_open) + " open", strategy.closedtrades + _open == stCntFill ? color.gray : color.orange)
+    f_stCell(_t, 6,  "  - REFUSED by TradingView", stCntRef == 0 ? "0" : str.tostring(stCntRef) + "  - check Properties leverage / pyramiding", stCntRef > 0 ? color.red : color.gray)
+    f_stCell(_t, 7,  "  - Stops / closes TradingView missed", stCntMiss == 0 ? "0" : str.tostring(stCntMiss) + "  - closed by the strategy, tell me", stCntMiss > 0 ? color.red : color.gray)
+    f_stCell(_t, 8,  "  - by ENTRY RULE 1 (pullback %)", str.tostring(stCntR1), color.lime)
+    f_stCell(_t, 9,  "  - by ENTRY RULE 2 (broken pivot)", str.tostring(stCntR2), color.lime)
+    f_stCell(_t, 10, "Setups cancelled, never filled", str.tostring(stCntCanc) + (_wait == 1 ? "  (+1 waiting)" : ""), color.orange)
+    f_stCell(_t, 11, "Exit - target",              str.tostring(stCntTgt),  color.teal)
+    f_stCell(_t, 12, "Exit - stop",                str.tostring(stCntStop), color.red)
+    f_stCell(_t, 13, "Exit - moved stop (BE / step / trail)", not stMgOn ? "off" : (str.tostring(stCntMvx) + "  (" + str.tostring(stCntMoves) + " moves" + (stMvStepOn ? ", step stop" : stMvBeOn ? ", break-even only" : "") + (stTrOn ? ", trailing" : "") + (stPpOn and stPpBe ? ", BE after early profit" : "") + ")"), not stMgOn ? color.gray : color.aqua)
+    f_stCell(_t, 14, "Exit - opposite signal",     str.tostring(stCntOpp),  color.fuchsia)
+    f_stCell(_t, 15, "Exit - 02:00 flat / weekend", str.tostring(stCntFlat), color.silver)
+    f_stCell(_t, 16, "Exit - news window / holiday", not stNewsOn ? "master OFF" : (stNw1On or stNw2On or stNw3On or stAuOn or not stHolTrade) ? str.tostring(stCntNews) : "off", stCntNews > 0 ? color.fuchsia : color.gray)
+    f_stCell(_t, 17, "Margin calls (Properties)",  str.tostring(stCntMc), stCntMc > 0 ? color.red : color.gray)
+    f_stCell(_t, 18, "Trades cut by leverage cap", str.tostring(stCntCap), stCntCap > 0 ? color.orange : color.gray)
+    f_stCell(_t, 19, "Skipped - stop distance / min lot", str.tostring(stCntSkip), stCntSkip > 0 ? color.orange : color.gray)
+    f_stCell(_t, 20, "Cancelled - expired unfilled", str.tostring(stCntExp), stCntExp > 0 ? color.orange : color.gray)
+    f_stCell(_t, 21, "ENTRY rules in use (1 / 2)", (stR1On and stR2On ? "1 + 2 (dynamic)" : stR1On ? "1 only (pullback %)" : stR2On ? "2 only (HTF must agree)" : "NONE - both off") + (stFav ? "  |  HTF favourable only" : stAgn ? (stR1On ? "  |  against the HTF only (rule 1)" : "  |  against the HTF needs rule 1 - NO TRADES") : stAutoM ? (stR1On ? "  |  auto: against the HTF, then with it" : "  |  auto: no trades before the equilibrium (rule 1 off)") : ""), (stR1On or stR2On) and not (stAgn and not stR1On) ? color.aqua : color.red)
+    f_stCell(_t, 22, "RULE 2 / filter higher timeframe", stR2On or stHfEff or stEqOn or stAgn or stAutoM ? (stHtfOk ? f_tfName(stHtfTf) : "off (not above chart)") : "off (rule 2 off)", (stR2On or stHfEff or stEqOn or stAgn or stAutoM) and stHtfOk ? color.aqua : color.gray)
     string _sqM = stSeqMode == "Rule A - recover losses + base profit" ? ("A - loss since the high + " + str.tostring(stSeqAdd)) : stSeqMode == "Rule B - double the losses" ? "B - 2 x loss since the high" : stSeqMode == "Rule C - carry the losses" ? "C - loss since the high" : stSeqMode == "Rule A+ (only when total P&L is below 0: that loss + amount)" ? ("A+ - total below 0 + " + str.tostring(stSeqAdd)) : stSeqMode == "Rule B+ (only when total P&L is below 0: 2 x that loss)" ? "B+ - 2 x total below 0" : stSeqMode == "Rule C+ (only when total P&L is below 0: that loss)" ? "C+ - total below 0" : stSeqMode == "Rule A split (A, the base grows with the profit - section 7)" ? ("A split - loss since the high + " + str.tostring(stSeqAdd) + ", base from the profit steps") : stSeqMode == "Rule B split (B, the base grows with the profit - section 7)" ? "B split - 2 x loss since the high, base from the profit steps" : "C split - loss since the high, base from the profit steps"
     string _sqF = stSeqFrom == "The whole chart history" ? "whole history" : stSeqFrom == "A date I choose" ? ("from " + str.format_time(stSeqFromT, "dd MMM yyyy", stTz)) : na(stLiveT) ? "from live (not live yet)" : ("from live " + str.format_time(stLiveT, "dd MMM HH:mm", stTz))
     string _sqS = stSeqSplit > 1.0 ? ("  |  split over " + str.tostring(stSeqSplit) + " trades") : ""
-    f_stCell(stTbl, 23, "LOSS RECOVERY (A / B / C, A+ / B+ / C+)", stSeqMode == "Off" ? "off" : stFlMode == "On - size every trade from the cushion (risk grows with profit)" ? "not used - the account floor sizes every trade" : (_sqM + _sqS + "  |  " + _sqF), stSeqMode == "Off" or stFlMode == "On - size every trade from the cushion (risk grows with profit)" ? color.gray : color.orange)
-    f_stCell(stTbl, 24, "Losses carried",             stSeqMode == "Off" ? "off" : str.tostring(math.round(f_stCar() * 100) / 100), f_stCar() > 0 ? color.red : color.gray)
-    f_stCell(stTbl, 25, "Risk NEXT trade",            str.tostring(math.round(stRiskNow * 100) / 100), stRiskNow > stRisk ? color.orange : color.white)
-    f_stCell(stTbl, 26, "Risk cap hit / HALT",        stSeqMode == "Off" ? "off" : (str.tostring(stCntSeqCap) + (stSeqCapAct == "Start again from the base risk (forget the losses)" ? " x back to the base" : "") + (stSeqHalt ? "  HALTED" : "")), stSeqHalt ? color.red : color.gray)
-    f_stCell(stTbl, 27, "Last trade risk",            na(stLastRisk) ? "-" : (str.tostring(math.round(stLastRisk * 100) / 100) + (na(stLastQty) or stCmLots <= 0 ? "" : "  /  " + str.tostring(stLastQty / stCmLots, "#.#####") + " lots")), color.aqua)
-    f_stCell(stTbl, 28, "Costs last trade",           (stCmMode == "Off" and stSprd <= 0) or na(stCmLast) ? "-" : (str.tostring(math.round(stCmLast * 100) / 100) + (na(stLastRisk) or stLastRisk <= 0 ? "" : "  = " + str.tostring(math.round(stCmLast / stLastRisk * 1000) / 10) + "% of risk")), (stCmMode == "Off" and stSprd <= 0) or na(stCmLast) ? color.gray : (not na(stLastRisk) and stLastRisk > 0 and stCmLast / stLastRisk > 0.25 ? color.red : color.orange))
-    f_stCell(stTbl, 29, "Costs paid total (comm + spread)", (stCmMode == "Off" and stSprd <= 0) ? "off" : str.tostring(math.round(stCmPaid * 100) / 100), stCmPaid > 0 ? color.orange : color.gray)
-    f_stCell(stTbl, 30, "Commission model",           stCmMode == "Off" ? "off" : stCmMode == "Percent of trade value" ? (str.tostring(stCmPct) + "% x2") : stCmMode == "Fixed cash per order" ? (str.tostring(stCmFix) + " x2 / order") : stCmLot <= 0 ? ("0 - type yours in section 11, lot=" + str.tostring(stCmLots)) : (str.tostring(stCmLot) + "/lot x2, lot=" + str.tostring(stCmLots)), stCmMode == "Off" ? color.gray : (stCmMode != "Percent of trade value" and stCmMode != "Fixed cash per order" and stCmLot <= 0) ? color.orange : color.aqua)
-    f_stCell(stTbl, 31, "Paste into Properties cash/contract", stCmU <= 0 ? "-" : str.tostring(math.round(stCmU / 2.0 * 100000) / 100000), stCmU > 0 ? color.yellow : color.gray)
-    f_stCell(stTbl, 32, "Time filters",               stTimeOn ? "on" : (_stIntra ? "off" : "off (daily+)"), stTimeOn ? color.aqua : color.gray)
-    f_stCell(stTbl, 33, "Profit target (made / target)", not stPtOn ? "off" : (str.tostring(math.round(stPtPnl * 100) / 100) + " / " + str.tostring(stPtAmt) + (_ptDay ? " today" : _ptWk ? " this week" : " total") + (stPtHalt ? "  REACHED" : "")), not stPtOn ? color.gray : stPtHalt ? color.lime : color.white)
-    f_stCell(stTbl, 34, "News windows active on",     not stNewsOn ? "MASTER SWITCH OFF - no news blocks" : not (stNw1On or stNw2On or stNw3On) ? "off (no window on)" : not stNdOn ? "every day" : stNdTxt == "" ? "NO VALID DATES" : (stNdTxt + (stNdScope == "Every month" ? " of every month" : " of " + str.format_time(timenow, "MMM yyyy", stTz))), not (stNw1On or stNw2On or stNw3On) ? color.gray : stNdOn and stNdTxt == "" ? color.red : color.aqua)
+    f_stCell(_t, 23, "LOSS RECOVERY (A / B / C, A+ / B+ / C+)", stSeqMode == "Off" ? "off" : stFlMode == "On - size every trade from the cushion (risk grows with profit)" ? "not used - the account floor sizes every trade" : (_sqM + _sqS + "  |  " + _sqF), stSeqMode == "Off" or stFlMode == "On - size every trade from the cushion (risk grows with profit)" ? color.gray : color.orange)
+    f_stCell(_t, 24, "Losses carried",             stSeqMode == "Off" ? "off" : str.tostring(math.round(f_stCar() * 100) / 100), f_stCar() > 0 ? color.red : color.gray)
+    f_stCell(_t, 25, "Risk NEXT trade",            str.tostring(math.round(stRiskNow * 100) / 100), stRiskNow > stRisk ? color.orange : color.white)
+    f_stCell(_t, 26, "Risk cap hit / HALT",        stSeqMode == "Off" ? "off" : (str.tostring(stCntSeqCap) + (stSeqCapAct == "Start again from the base risk (forget the losses)" ? " x back to the base" : "") + (stSeqHalt ? "  HALTED" : "")), stSeqHalt ? color.red : color.gray)
+    f_stCell(_t, 27, "Last trade risk",            na(stLastRisk) ? "-" : (str.tostring(math.round(stLastRisk * 100) / 100) + (na(stLastQty) or stCmLots <= 0 ? "" : "  /  " + str.tostring(stLastQty / stCmLots, "#.#####") + " lots")), color.aqua)
+    f_stCell(_t, 28, "Costs last trade",           (stCmMode == "Off" and stSprd <= 0) or na(stCmLast) ? "-" : (str.tostring(math.round(stCmLast * 100) / 100) + (na(stLastRisk) or stLastRisk <= 0 ? "" : "  = " + str.tostring(math.round(stCmLast / stLastRisk * 1000) / 10) + "% of risk")), (stCmMode == "Off" and stSprd <= 0) or na(stCmLast) ? color.gray : (not na(stLastRisk) and stLastRisk > 0 and stCmLast / stLastRisk > 0.25 ? color.red : color.orange))
+    f_stCell(_t, 29, "Costs paid total (comm + spread)", (stCmMode == "Off" and stSprd <= 0) ? "off" : str.tostring(math.round(stCmPaid * 100) / 100), stCmPaid > 0 ? color.orange : color.gray)
+    f_stCell(_t, 30, "Commission model",           stCmMode == "Off" ? "off" : stCmMode == "Percent of trade value" ? (str.tostring(stCmPct) + "% x2") : stCmMode == "Fixed cash per order" ? (str.tostring(stCmFix) + " x2 / order") : stCmLot <= 0 ? ("0 - type yours in section 11, lot=" + str.tostring(stCmLots)) : (str.tostring(stCmLot) + "/lot x2, lot=" + str.tostring(stCmLots)), stCmMode == "Off" ? color.gray : (stCmMode != "Percent of trade value" and stCmMode != "Fixed cash per order" and stCmLot <= 0) ? color.orange : color.aqua)
+    f_stCell(_t, 31, "Paste into Properties cash/contract", stCmU <= 0 ? "-" : str.tostring(math.round(stCmU / 2.0 * 100000) / 100000), stCmU > 0 ? color.yellow : color.gray)
+    f_stCell(_t, 32, "Time filters",               stTimeOn ? "on" : (_stIntra ? "off" : "off (daily+)"), stTimeOn ? color.aqua : color.gray)
+    f_stCell(_t, 33, "Profit target (made / target)", not stPtOn ? "off" : (str.tostring(math.round(stPtPnl * 100) / 100) + " / " + str.tostring(stPtAmt) + (_ptDay ? " today" : _ptWk ? " this week" : " total") + (stPtHalt ? "  REACHED" : "")), not stPtOn ? color.gray : stPtHalt ? color.lime : color.white)
+    f_stCell(_t, 34, "News windows active on",     not stNewsOn ? "MASTER SWITCH OFF - no news blocks" : not (stNw1On or stNw2On or stNw3On) ? "off (no window on)" : not stNdOn ? "every day" : stNdTxt == "" ? "NO VALID DATES" : (stNdTxt + (stNdScope == "Every month" ? " of every month" : " of " + str.format_time(timenow, "MMM yyyy", stTz))), not (stNw1On or stNw2On or stNw3On) ? color.gray : stNdOn and stNdTxt == "" ? color.red : color.aqua)
     int ny0 = year(timenow, _nyTz)
     int nm0 = month(timenow, _nyTz)
     int nd0 = dayofmonth(timenow, _nyTz)
@@ -4026,25 +4037,25 @@ if stStatOn and bar_index == last_bar_index
         if hn != ""
             _hTxt := (k == 0 ? "TODAY " : "next ") + hn + " " + str.format_time(timestamp("UTC", hy2, hm2, hd2, 12, 0), "dd MMM", "UTC")
             break
-    f_stCell(stTbl, 35, "US news (auto) - next",      not stNewsOn ? "master OFF" : _auTxt, stNewsOn and stAuOn ? color.aqua : color.gray)
-    f_stCell(stTbl, 36, "US clock",                   _clk, color.aqua)
-    f_stCell(stTbl, 37, "US holidays",                (stHolTrade or not stNewsOn ? "trading normally - " : "NO trading - ") + _hTxt, stHolNow ? color.red : stHolTrade ? color.gray : color.aqua)
+    f_stCell(_t, 35, "US news (auto) - next",      not stNewsOn ? "master OFF" : _auTxt, stNewsOn and stAuOn ? color.aqua : color.gray)
+    f_stCell(_t, 36, "US clock",                   _clk, color.aqua)
+    f_stCell(_t, 37, "US holidays",                (stHolTrade or not stNewsOn ? "trading normally - " : "NO trading - ") + _hTxt, stHolNow ? color.red : stHolTrade ? color.gray : color.aqua)
     string _clsN = stCls == 1 ? "Forex" : stCls == 2 ? "Gold" : stCls == 3 ? "Silver" : stCls == 4 ? "Crypto" : "Index / other"
-    f_stCell(stTbl, 38, "Ticker - type / 1 lot / symbol sent", _clsN + "  |  1 lot = " + str.tostring(stCmLots) + "  |  sends " + stSymSend, color.aqua)
-    f_stCell(stTbl, 39, "BLOCKED NOW",                stDDHit ? "drawdown" : stHolNow ? "US holiday" : stNwNow ? "news window" : stPreNow ? "news soon - no new trades" : stWkBlock ? "weekend" : stDayHalt ? "daily limit" : stSeqHalt ? "risk cap" : stPtHalt ? "profit target" : stLdHalt ? "loss pause (days)" : stEqBlock ? "HTF equilibrium not reached" : not stOn ? "disabled" : "-", (stDDHit or stNwNow or stPreNow or stWkBlock or stDayHalt or stSeqHalt or stLdHalt) ? color.red : stEqBlock ? color.orange : stPtHalt ? color.lime : color.gray)
-    f_stCell(stTbl, 40, "Trade direction (section 3)", stDirMode == "Both" ? "both" : (stDirMode + "  -  " + str.tostring(stCntDir) + " signals the other way not traded"), stDirMode == "Both" ? color.gray : color.aqua)
+    f_stCell(_t, 38, "Ticker - type / 1 lot / symbol sent", _clsN + "  |  1 lot = " + str.tostring(stCmLots) + "  |  sends " + stSymSend, color.aqua)
+    f_stCell(_t, 39, "BLOCKED NOW",                stDDHit ? "drawdown" : stHolNow ? "US holiday" : stNwNow ? "news window" : stPreNow ? "news soon - no new trades" : stWkBlock ? "weekend" : stDayHalt ? "daily limit" : stSeqHalt ? "risk cap" : stPtHalt ? "profit target" : stLdHalt ? "loss pause (days)" : stEqBlock ? "HTF equilibrium not reached" : not stOn ? "disabled" : "-", (stDDHit or stNwNow or stPreNow or stWkBlock or stDayHalt or stSeqHalt or stLdHalt) ? color.red : stEqBlock ? color.orange : stPtHalt ? color.lime : color.gray)
+    f_stCell(_t, 40, "Trade direction (section 3)", stDirMode == "Both" ? "both" : (stDirMode + "  -  " + str.tostring(stCntDir) + " signals the other way not traded"), stDirMode == "Both" ? color.gray : color.aqua)
     string _v9 = (stBkOn ? ", stacked BOS risk" : "") + (stHfOn ? ", HTF filter" : "") + (stTrOn ? ", trailing stop" : "") + (stLqOn ? ", liquidity target" : "") + (stPpOn ? ", partial profit" : "") + (stPdOn ? ", premium / discount" : "") + (stLsOn ? ", day pause" : "")
-    f_stCell(stTbl, 41, "Extra options switched ON", _v9 == "" ? "none" : str.substring(_v9, 2), _v9 == "" ? color.gray : color.aqua)
-    f_stCell(stTbl, 42, "  - skipped: HTF filter / premium-discount / paused days", str.tostring(stCntHf) + " / " + str.tostring(stCntPd) + " / " + str.tostring(stCntLs), stCntHf + stCntPd + stCntLs > 0 ? color.orange : color.gray)
-    f_stCell(stTbl, 43, "Cancelled - new BOS before the fill", stBosCnl ? str.tostring(stCntBosCnl) : "off", stBosCnl ? (stCntBosCnl > 0 ? color.orange : color.gray) : color.gray)
+    f_stCell(_t, 41, "Extra options switched ON", _v9 == "" ? "none" : str.substring(_v9, 2), _v9 == "" ? color.gray : color.aqua)
+    f_stCell(_t, 42, "  - skipped: HTF filter / premium-discount / paused days", str.tostring(stCntHf) + " / " + str.tostring(stCntPd) + " / " + str.tostring(stCntLs), stCntHf + stCntPd + stCntLs > 0 ? color.orange : color.gray)
+    f_stCell(_t, 43, "Cancelled - new BOS before the fill", stBosCnl ? str.tostring(stCntBosCnl) : "off", stBosCnl ? (stCntBosCnl > 0 ? color.orange : color.gray) : color.gray)
     // v10.4: the account floor - where it is, the cushion above it and the risk it allows
     string _flT = stFlMode == "Off" ? "off" : (stFlCush <= 0.005 ? "AT THE FLOOR - no risk left  |  " : "") + "P&L " + str.tostring(math.round(stFlPnl * 100) / 100) + "  |  floor " + str.tostring(math.round(stFlFloor * 100) / 100) + "  |  cushion " + str.tostring(math.round(stFlCush * 100) / 100) + "  |  risk " + str.tostring(math.round(stFlRisk * 100) / 100) + (stFlMode == "On - only cap the risk (base / loss recovery, never above the cushion %)" ? " (cap)" : "")
-    f_stCell(stTbl, 44, "ACCOUNT FLOOR (section 8)", _flT, stFlMode == "Off" ? color.gray : stFlCush < 0.25 * stFlAmt ? color.red : color.aqua)
+    f_stCell(_t, 44, "ACCOUNT FLOOR (section 8)", _flT, stFlMode == "Off" ? color.gray : stFlCush < 0.25 * stFlAmt ? color.red : color.aqua)
     // v11.0: feature 1 - the pause after losses in a row, feature 3 - the higher timeframe equilibrium gate
     string _ldT = not stLdOn ? "off" : (stLdHalt ? ("PAUSED until " + str.format_time(stLdUntil, "EEE dd MMM HH:mm", stTz)) : (str.tostring(stLdRun) + " of " + str.tostring(stLdN) + " losses in a row")) + "  |  pauses so far " + str.tostring(stCntLd)
-    f_stCell(stTbl, 45, "PAUSE AFTER LOSSES (section 8)", _ldT, not stLdOn ? color.gray : stLdHalt ? color.red : color.aqua)
+    f_stCell(_t, 45, "PAUSE AFTER LOSSES (section 8)", _ldT, not stLdOn ? color.gray : stLdHalt ? color.red : color.aqua)
     string _eqT = stAutoM ? (not stHtfOk ? "auto mode - higher timeframe not above the chart - no trades" : stAutoDir == 0 ? "AUTO - no higher timeframe leg yet" : stEqOpen ? ("AUTO part 2 - WITH the HTF (" + str.tostring(stEqPct) + "% reached)") : ("AUTO part 1 - AGAINST the HTF until " + (na(stEqLvl) ? "-" : str.tostring(stEqLvl, format.mintick)))) : not stEqOn ? "off" : not stHtfOk ? "higher timeframe not above the chart - no trades" : stEqOpen ? ("OPEN - pulled back to " + str.tostring(stEqPct) + "%") : na(stEqLvl) ? "WAITING - no higher timeframe leg yet" : ("WAITING - needs " + str.tostring(stEqLvl, format.mintick))
-    f_stCell(stTbl, 46, "HTF EQUILIBRIUM FIRST (section 4)", _eqT, not stEqOn and not stAutoM ? color.gray : stEqOpen ? color.lime : color.orange)
+    f_stCell(_t, 46, "HTF EQUILIBRIUM FIRST (section 4)", _eqT, not stEqOn and not stAutoM ? color.gray : stEqOpen ? color.lime : color.orange)
     // v11.2: the stop buffer in use, in price
     string _buU = stBuPipM ? " pips" : stBuPctM ? " %" : ""
     string _buT = stBuPipM ? (str.tostring(stSlBuf) + " pips x " + str.tostring(stPipSz) + " = " + str.tostring(f_stBuf(close), format.mintick)) : stBuPctM ? (str.tostring(stSlBuf) + "% of the level = " + str.tostring(f_stBuf(close), format.mintick) + " now") : ("price " + str.tostring(stSlBuf))
@@ -4052,21 +4063,26 @@ if stStatOn and bar_index == last_bar_index
         _buT := _buT + "  |  spread for sizing " + str.tostring(f_stSprd(close), format.mintick)
     if stMinStop > 0 or stMaxStop > 0
         _buT := _buT + "  |  skip closer " + (stMinStop > 0 ? str.tostring(stMinStop) + _buU : "off") + " / further " + (stMaxStop > 0 ? str.tostring(stMaxStop) + _buU : "off")
-    f_stCell(stTbl, 47, "UNIT + STOP BUFFER (sections 1, 5)", _buT, stBuPipM or stBuPctM ? color.aqua : color.gray)
+    f_stCell(_t, 47, "UNIT + STOP BUFFER (sections 1, 5)", _buT, stBuPipM or stBuPctM ? color.aqua : color.gray)
     // v12.0: rule 3 - entries at the close of the signal candle (group 39)
     string _r3U = stBuPipM ? " pips" : stBuPctM ? " %" : ""
     string _r3T = not stR3On ? "off - rules 1 / 2" : "on  -  " + str.tostring(stCntR3) + " entered at the close" + (stR3BrkOn ? "  |  close within " + str.tostring(stR3Brk) + _r3U + " of the break: " + str.tostring(stCntR3Far) + " skipped" + (stR3Fb ? ", " + str.tostring(stCntR3Fb) + " fell back to rule 1 / 2" : "") : "")
-    f_stCell(stTbl, 48, "RULE 3 - ENTRY AT THE SIGNAL CLOSE (section 3)", _r3T, stR3On ? color.aqua : color.gray)
+    f_stCell(_t, 48, "RULE 3 - ENTRY AT THE SIGNAL CLOSE (section 3)", _r3T, stR3On ? color.aqua : color.gray)
     // v12.1: group 41 (no new trades before news) and group 42 (the loss mark)
     string _preT = not stPreOn ? "off" : not stNewsOn ? "on - but the news master is OFF" : not stAuOn ? "on - but the automatic US news is OFF (no releases)" : (stPreNow ? "NOW - no new trades  |  " : "") + str.tostring(stPreHrs) + " h before the automatic US releases"
-    f_stCell(stTbl, 49, "NO NEW TRADES BEFORE NEWS (section 10)", _preT, not stPreOn ? color.gray : stPreNow ? color.red : color.aqua)
+    f_stCell(_t, 49, "NO NEW TRADES BEFORE NEWS (section 10)", _preT, not stPreOn ? color.gray : stPreNow ? color.red : color.aqua)
     string _lmT = not stLmOn ? "off" : stSeqMode == "Off" ? "on - but loss recovery is Off" : "at " + str.tostring(stLmAmt) + ":  " + str.tostring(stCntLm) + " x back to the base"
-    f_stCell(stTbl, 50, "LOSS MARK - BACK TO THE BASE (section 7)", _lmT, stLmOn and stSeqMode != "Off" ? color.aqua : color.gray)
+    f_stCell(_t, 50, "LOSS MARK - BACK TO THE BASE (section 7)", _lmT, stLmOn and stSeqMode != "Off" ? color.aqua : color.gray)
     // v12.2: group 43 - the profit steps of Rule A / B / C split
     string _spT = not stSplitM ? "off" : "profit " + str.tostring(math.round(stFlPnl * 100) / 100) + "  ->  base " + str.tostring(math.round(stBaseNow * 100) / 100)
-    f_stCell(stTbl, 51, "PROFIT STEPS - A / B / C split (section 7)", _spT, stSplitM ? color.aqua : color.gray)
+    f_stCell(_t, 51, "PROFIT STEPS - A / B / C split (section 7)", _spT, stSplitM ? color.aqua : color.gray)
     // v13.1: the new section 4 filters - how many setups each one skipped, and what they read now
     string _xT = (stFstOn ? ", first of the day " + str.tostring(stCntX0) : "") + (stYdOn ? ", yesterday's high / low " + str.tostring(stCntX1) : "") + (stLegMin > 0 ? ", move < " + str.tostring(stLegMin) + " candles " + str.tostring(stCntX2) : "") + (stTdOn ? ", today's move " + str.tostring(stCntX3) : "") + (stRsLOn ? ", RSI " + f_xTfTxt(stRsLTfS) + " " + str.tostring(stCntX4) : "") + (stRsHOn ? ", RSI " + f_xTfTxt(stRsHTfS) + " " + str.tostring(stCntX5) : "") + (stEmLOn ? ", EMA " + f_xTfTxt(stEmLTfS) + " " + str.tostring(stCntX6) : "") + (stEmHOn ? ", EMA " + f_xTfTxt(stEmHTfS) + " " + str.tostring(stCntX7) : "") + (stMnPct > 0 ? ", stop < " + str.tostring(stMnPct) + "% " + str.tostring(stCntX8) : "")
-    f_stCell(stTbl, 52, "  - skipped: section 4 filters (v13.1)", _xT == "" ? "off" : str.substring(_xT, 2), _xT == "" ? color.gray : color.orange)
+    f_stCell(_t, 52, "  - skipped: section 4 filters (v13.1)", _xT == "" ? "off" : str.substring(_xT, 2), _xT == "" ? color.gray : color.orange)
     string _xN = (stYdOn ? "  |  yesterday " + (na(stYdH) ? "-" : str.tostring(stYdL, format.mintick) + " - " + str.tostring(stYdH, format.mintick)) : "") + (stTdOn ? "  |  today's open " + (na(stDyO) ? "-" : str.tostring(stDyO, format.mintick)) + ", average day " + (stDyAvg > 0 ? str.tostring(stDyAvg, format.mintick) : "not ready") : "") + (stRsLOn ? "  |  RSI(" + str.tostring(stRsLLen) + ") " + f_xTfTxt(stRsLTfS) + " " + (na(stRsLv) ? "-" : str.tostring(stRsLv, "#.#")) : "") + (stRsHOn ? "  |  RSI(" + str.tostring(stRsHLen) + ") " + f_xTfTxt(stRsHTfS) + " " + (na(stRsHv) ? "-" : str.tostring(stRsHv, "#.#")) : "") + (stEmLOn ? "  |  EMA " + (_emL2 ? str.tostring(stEmLFast) + " / " : "") + str.tostring(stEmLLen) + " " + f_xTfTxt(stEmLTfS) + " " + (na(stEmLs) ? "-" : (_emL2 ? str.tostring(stEmLf, format.mintick) + " / " : "") + str.tostring(stEmLs, format.mintick)) : "") + (stEmHOn ? "  |  EMA " + (_emH2 ? str.tostring(stEmHFast) + " / " : "") + str.tostring(stEmHLen) + " " + f_xTfTxt(stEmHTfS) + " " + (na(stEmHs) ? "-" : (_emH2 ? str.tostring(stEmHf, format.mintick) + " / " : "") + str.tostring(stEmHs, format.mintick)) : "")
-    f_stCell(stTbl, 53, "  - section 4 filters now", _xN == "" ? "off" : str.substring(_xN, 5), _xN == "" ? color.gray : color.aqua)
+    f_stCell(_t, 53, "  - section 4 filters now", _xN == "" ? "off" : str.substring(_xN, 5), _xN == "" ? color.gray : color.aqua)
+    _t
+
+var table stTbl = na
+if stStatOn and bar_index == last_bar_index
+    stTbl := f_stTable(stTbl)

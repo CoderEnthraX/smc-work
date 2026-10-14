@@ -1653,27 +1653,27 @@ public:
          cntX[2]++;
          return "the move took " + IntegerToString(lb) + " candles (at least " + IntegerToString(S.legMin) + ")";
       }
-      for (int k = 0; k < 2; k++)
-         if (S.rsOn[k] && g_ind[k].ok)
+      for (int j = 0; j < 2; j++)
+         if (S.rsOn[j] && g_ind[j].ok)
          {
-            double v = g_ind[k].val, a = S.rsLvl[k], b = 100.0 - S.rsLvl[k];
-            bool okR = S.rsMode[k] == 0 ? (d == 1 ? v < a : v > b) : (d == 1 ? v > a : v < b);
+            double v = g_ind[j].val, a = S.rsLvl[j], b = 100.0 - S.rsLvl[j];
+            bool okR = S.rsMode[j] == 0 ? (d == 1 ? v < a : v > b) : (d == 1 ? v > a : v < b);
             if (!okR)
             {
-               cntX[4 + k]++;
-               return "RSI(" + IntegerToString(S.rsLen[k]) + ") " + TfTxt(g_ind[k].tf) + " = " + DoubleToString(v, 1) + ", a " + (d == 1 ? "buy" : "sell") +
-                      " needs " + ((S.rsMode[k] == 0) == (d == 1) ? "below " : "above ") + DoubleToString(d == 1 ? a : b, 1);
+               cntX[4 + j]++;
+               return "RSI(" + IntegerToString(S.rsLen[j]) + ") " + TfTxt(g_ind[j].tf) + " = " + DoubleToString(v, 1) + ", a " + (d == 1 ? "buy" : "sell") +
+                      " needs " + ((S.rsMode[j] == 0) == (d == 1) ? "below " : "above ") + DoubleToString(d == 1 ? a : b, 1);
             }
          }
-      for (int k = 0; k < 2; k++)
-         if (S.emOn[k] && g_ind[2 + k].ok)
+      for (int j = 0; j < 2; j++)
+         if (S.emOn[j] && g_ind[2 + j].ok)
          {
-            double sl2 = g_ind[2 + k].val, fs = S.emMode[k] == 1 ? g_ind[2 + k].val2 : g_c;
+            double sl2 = g_ind[2 + j].val, fs = S.emMode[j] == 1 ? g_ind[2 + j].val2 : g_c;
             if (!(d == 1 ? fs > sl2 : fs < sl2))
             {
-               cntX[6 + k]++;
-               return (S.emMode[k] == 1 ? "EMA " + IntegerToString(S.emFast[k]) : "price " + DoubleToString(g_c, 2)) + (d == 1 ? " not above" : " not below") +
-                      " the EMA " + IntegerToString(S.emLen[k]) + " " + TfTxt(g_ind[2 + k].tf) + " (" + DoubleToString(sl2, 2) + ")";
+               cntX[6 + j]++;
+               return (S.emMode[j] == 1 ? "EMA " + IntegerToString(S.emFast[j]) : "price " + DoubleToString(g_c, 2)) + (d == 1 ? " not above" : " not below") +
+                      " the EMA " + IntegerToString(S.emLen[j]) + " " + TfTxt(g_ind[2 + j].tf) + " (" + DoubleToString(sl2, 2) + ")";
             }
          }
       if (S.fstOn)

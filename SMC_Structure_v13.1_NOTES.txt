@@ -7,6 +7,20 @@ Plain English. Files:
   SMC_Structure_v13.1_NOTES.txt      this file (one notes file for both)
 The v13.0 files stay in the folder.
 
+FIX (14 Oct 2026) - TradingView error CE10295 "The main body of the script
+is too long. Try wrapping code in functions". The first v13.1 TradingView
+file was refused by the compiler: the new settings and filters made the
+top level of the script too big. In the fixed file three DISPLAY-only
+blocks now run inside functions: the statistics table, the last-candle
+structure / equilibrium lines, and the structure alert queue. Nothing that
+trades changed; the EA was not affected. The top level is now about 10%
+smaller than v13.0's. If you pasted the first v13.1 file, paste this one
+again (Pine Editor -> select all -> paste -> save).
+EA: MetaEditor gave 0 errors and 2 warnings "declaration of 'k' hides
+member" (the new RSI / EMA filter check counted with a 'k' that has the
+same name as the side number). The counter is now 'j'; the program
+MetaEditor builds does exactly the same (test copies byte-identical).
+
 v13.1 adds NEW SETUP FILTERS at the END of section 4 (SETUP FILTERS), the
 same in TradingView and in the EA. They are ALL OFF by default. With them
 off, v13.1 trades exactly like v13.0 (checked - see "CHECKS").
@@ -325,7 +339,14 @@ The signal audit labels / journal say why a setup was skipped, e.g.
 --------------------------------------------------------------------------
 13. CHECKS DONE
 --------------------------------------------------------------------------
-  - TradingView parser: PARSED OK (the full Pine grammar).
+  - TradingView parser: PARSED OK (the full Pine grammar). The parser is
+    NOT TradingView's compiler: it does not know the main-body size limit
+    that refused the first v13.1 file (CE10295). Fixed file: the top level
+    is 19,859 tokens (first v13.1 file 24,429; v13.0 22,085; v12.2
+    22,127). The moved lines are the old lines, only indented (the table
+    is named _t inside its function); none of them sets a setting, a
+    counter or an order (checked by a script: no global is changed inside
+    the new functions).
   - Settings: TradingView 136 -> 162, EA 154 -> 180. Every old setting in
     the same order; the new ones at the end of section 4; ASCII only; no
     closeall. Compared with v13.0 line by line: only the intended lines

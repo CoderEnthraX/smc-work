@@ -274,6 +274,17 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   noisy feeds, median +953); C6 1R +1,061; C6 + RSI H 1h(2) pullback 50 +2,006 (406 tr; 40/40 feeds, median +1,629, worst
   +1,147). No other RSI / EMA (1m .. 1M) beat these; EMA filters cut the plain-settings loss (15m EMA 50 -1,606, 1D 20/50 -2,109)
   but all still lost. Notes: tools/notes/build_notes131.py (+ v131_head / results / rsires / emares / checks).
+  **v13.1 FIX (15 Oct 2026, same file names, user report)**: TradingView refused the first v13.1 with CE10295 "The main body
+  of the script is too long. Try wrapping code in functions" (main body grew 22,085 -> 24,429 tokens; scratchpad ce/outline.py
+  counts top-level statements incl. their blocks, functions excluded). pine131.py step at the end: 3 display-only blocks moved
+  into functions - (A) the stats table -> f_stTable(table t0) returns the table (local _t; global var stTbl := f_stTable(stTbl)
+  inside the same last-bar if), (B) the last-candle structure / equilibrium lines -> f_lastDraw() returns 14 lines / labels as a
+  tuple, assigned to the globals in the old if, (C) the structure alert queue (both 'if almOk' blocks, array.push to almQC /
+  almQB) -> f_almQueue(), called every bar. Main body 19,859 tokens (v13.0 22,085, v12.2 22,127); calls 1,173 (v13.0 1,324),
+  code chars 80,403 (88,649), declared vars 1,166 (1,175). Script check: no global assigned inside the new functions; no ta. /
+  request. / history inside them. Parser PARSED OK; 162 inputs same order. Keep the MAIN BODY below ~20k tokens in future
+  versions (put new display / text code in functions). EA: MetaEditor 0 errors / 2 warnings "declaration of 'k' hides member"
+  (XSkip RSI / EMA loops vs CSide member k) -> loop index j (ea131.py); harness + simmain byte-identical. EA compiled by the user.
 
 ## How the v11.1 code works (key points)
 - 118 inputs (v11.2: 122, + group 38 stop buffer unit). Groups: 20 strategy, 21 risk / loss recovery, 24 safety, 25 daily blocking windows,
@@ -540,7 +551,7 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
    SMC_calendar.csv -> test the REAL news list (CPI, FOMC ...) on 2021-2026. With group 29 releases only
    (1m, user settings): none -18,514 / windows -18,844 / +pre 1 h -18,708 / 2 h -18,302 / 4 h -18,070,
    all -0.13R per trade (tools/ea/preeffect.py) -> news blocking does not change the edge.
-0. **MT5 EA**: user compiles `SMC_Structure_EA_v13.1.mq5` in MetaEditor (F7) and sends any error lines; then
+0. **MT5 EA**: v13.1 compiled by the user in MetaEditor (0 errors; the 2 warnings fixed 15 Oct); TradingView v13.1 fix (CE10295) to be confirmed by the user; then
    Strategy Tester (Every tick based on real ticks) and a demo account. Fix compile errors with a patch, re-run
    `tools/ea` checks before delivering.
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,
