@@ -288,8 +288,18 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   v10.4 floor comment): 65 / 100 / 74 / 164; f_lastDraw 180, f_almQueue 86, all old functions <= 76. Main body 19,909 tokens
   (v13.0 22,085). Script check: no global assigned inside the new functions; no ta. / request. / history inside; the table text
   is the old text (stTbl -> _t). Parser PARSED OK; 162 inputs same order; 7 request.security calls.
-  RULE FOR FUTURE VERSIONS: keep the Pine main body below ~20k tokens and every function below ~200 external elements
-  (count with ext3.py-style logic) - TradingView reports these only at the code-generation stage, the parser cannot see them.
+  Fix 3 (TradingView then: CE10117 "Compiled code contains too many tokens: 104405. The limit is 100256"): pine131.py final
+  step = manual() + slim() + inline_consts() + slim() (code inside pine131.py, prototypes in scratchpad ce/: slim.py, manual.py,
+  dangling.py): removes the old Market Structure indicator parts switched OFF by fixed values (structure alerts: queue, slots,
+  sender, retracement-alert trackers mLvl / iLvl / nLvl + *RetFired; pivot / sweep / IDM marks; bgcolor; internal / inner
+  equilibrium lines; f_innStrong; the HTF function's inner tier + evOut / inOut / nnOut - f_tfTrC reads 4 values), every 'if'
+  false from constants alone, unread values / functions; then writes each fixed global value where it is used (137). Kept:
+  mAnch / mOrig (rule 1), the internal tier of f_tfPack (iCe / iFl feed tkAH / tkAL when pbSwp2 is ON). Checks: no new
+  dangling names (used-but-undeclared set unchanged); f_tfTrC to the end (1,576 lines: all trading code) identical except the
+  4-value tuple; 162 inputs same order; parser PARSED OK. Estimated compiled tokens = 104,405 x source tokens / 34,058 (fix2):
+  final 29,795 -> ~91,300 (v13.0 ~96,400, v12.2 ~96,400); main body 17,574; largest function 164 external elements.
+  RULE FOR FUTURE VERSIONS: before delivering any Pine file check ALL THREE TradingView limits with these scripts (main body
+  < ~20k tokens, every function < ~200 external elements, compiled tokens estimate < ~95k) - the parser cannot see them.
   EA: MetaEditor 0 errors / 2 warnings "declaration of 'k' hides member" (XSkip RSI / EMA loops vs CSide member k) -> loop index
   j (ea131.py); harness + simmain byte-identical. EA compiled by the user.
 
@@ -558,7 +568,7 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
    SMC_calendar.csv -> test the REAL news list (CPI, FOMC ...) on 2021-2026. With group 29 releases only
    (1m, user settings): none -18,514 / windows -18,844 / +pre 1 h -18,708 / 2 h -18,302 / 4 h -18,070,
    all -0.13R per trade (tools/ea/preeffect.py) -> news blocking does not change the edge.
-0. **MT5 EA**: v13.1 compiled by the user in MetaEditor (0 errors; the 2 warnings fixed 15 Oct); TradingView v13.1 fix 2 (CE10295 + external elements) to be confirmed by the user; then
+0. **MT5 EA**: v13.1 compiled by the user in MetaEditor (0 errors; the 2 warnings fixed 15 Oct); TradingView v13.1 fix 3 (CE10295 + external elements + CE10117 tokens) to be confirmed by the user; then
    Strategy Tester (Every tick based on real ticks) and a demo account. Fix compile errors with a patch, re-run
    `tools/ea` checks before delivering.
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,

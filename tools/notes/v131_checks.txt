@@ -1,13 +1,19 @@
   - TradingView parser: PARSED OK (the full Pine grammar). The parser is
     NOT TradingView's compiler: it does not know TradingView's size
-    limits, which refused the first two v13.1 files. Both limits are now
-    counted by a script: the top level is 19,909 tokens (first v13.1 file
-    24,429; v13.0 22,085; v12.2 22,127), and the 'external elements' of
-    every function, counted the way TradingView counts them (the count
-    gives TradingView's own 357 for the refused table function), are at
-    most 180 (limit 254). The moved lines are the old lines, only indented
-    (the table is named _t inside its functions); no global is changed
-    inside the new functions (checked by a script).
+    limits, which refused the first three v13.1 files. All three are now
+    measured by a script before delivery:
+      main body        17,574 tokens   (v13.0 22,085 - compiles)
+      largest function    164 external elements   (limit 254; the same
+                       count gives TradingView's own 357 for the refused
+                       table function)
+      compiled tokens  about 91,300 by estimate   (limit 100,256; the
+                       refused file 104,405; v13.0 about 96,400)
+  - The removed code never ran: every removed 'if' was false from fixed
+    values alone, every removed value / function was read by nobody, and
+    a script confirmed no name is left without its declaration. From the
+    higher-timeframe request to the end of the file (1,576 lines: all the
+    trading, sizing, recovery, news, table and webhook code) only one line
+    changed (the request now receives 4 values instead of 7).
   - Settings: TradingView 136 -> 162, EA 154 -> 180. Every old setting in
     the same order; the new ones at the end of section 4; ASCII only; no
     closeall. Compared with v13.0 line by line: only the intended lines

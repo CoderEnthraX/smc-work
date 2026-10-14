@@ -7,19 +7,24 @@ Plain English. Files:
   SMC_Structure_v13.1_NOTES.txt      this file (one notes file for both)
 The v13.0 files stay in the folder.
 
-FIX (15 Oct 2026) - two TradingView compiler limits. The first v13.1 file
-gave CE10295 "The main body of the script is too long. Try wrapping code in
-functions": the new settings and filters made the top level too big. The
-first fix moved three DISPLAY-only blocks into functions (the statistics
-table, the last-candle structure / equilibrium lines, the structure alert
-queue) - then TradingView said "The f_stTable function uses 357 external
-elements. The limit is 254": a function may use at most 254 outside values
-(every setting and global value it reads; whole numbers, prices and on/off
-values count twice). The table is now written by FOUR functions
-(f_stTab1..4, at most 164 each); the largest function in the script uses
-180. Nothing that trades changed; the EA was not affected. If you pasted an
-earlier v13.1 file, paste this one again (Pine Editor -> select all ->
-paste -> save).
+FIX (15 Oct 2026) - three TradingView compiler limits. The first v13.1
+files were refused by TradingView's compiler, one limit at a time:
+  1. "The main body of the script is too long" (CE10295)
+  2. "The f_stTable function uses 357 external elements. The limit is 254"
+  3. "Compiled code contains too many tokens: 104405. The limit is 100256"
+     (CE10117)
+The fixed file: the statistics table and the last-candle lines are drawn
+inside functions (the table by four of them), and the parts of the old
+Market Structure indicator that are switched OFF by fixed values - no
+setting can turn them on, so they never ran or showed - are removed: the
+structure alerts (queue, slots, sender, retracement-alert trackers), the
+pivot / sweep / IDM marks, the background colour, the internal / inner
+equilibrium lines, the inner 'strong pivot' marks, and the inner tier of
+the higher-timeframe function (its result was never read). Every fixed
+value is now written where it is used. Nothing that trades and nothing on
+the chart changed; the 162 settings are the same, in the same order.
+If you pasted an earlier v13.1 file, paste this one again (Pine Editor ->
+select all -> paste -> save).
 EA: MetaEditor gave 0 errors and 2 warnings "declaration of 'k' hides
 member" (the new RSI / EMA filter check counted with a 'k' that has the
 same name as the side number). The counter is now 'j'; the program
@@ -345,14 +350,20 @@ The signal audit labels / journal say why a setup was skipped, e.g.
 --------------------------------------------------------------------------
   - TradingView parser: PARSED OK (the full Pine grammar). The parser is
     NOT TradingView's compiler: it does not know TradingView's size
-    limits, which refused the first two v13.1 files. Both limits are now
-    counted by a script: the top level is 19,909 tokens (first v13.1 file
-    24,429; v13.0 22,085; v12.2 22,127), and the 'external elements' of
-    every function, counted the way TradingView counts them (the count
-    gives TradingView's own 357 for the refused table function), are at
-    most 180 (limit 254). The moved lines are the old lines, only indented
-    (the table is named _t inside its functions); no global is changed
-    inside the new functions (checked by a script).
+    limits, which refused the first three v13.1 files. All three are now
+    measured by a script before delivery:
+      main body        17,574 tokens   (v13.0 22,085 - compiles)
+      largest function    164 external elements   (limit 254; the same
+                       count gives TradingView's own 357 for the refused
+                       table function)
+      compiled tokens  about 91,300 by estimate   (limit 100,256; the
+                       refused file 104,405; v13.0 about 96,400)
+  - The removed code never ran: every removed 'if' was false from fixed
+    values alone, every removed value / function was read by nobody, and
+    a script confirmed no name is left without its declaration. From the
+    higher-timeframe request to the end of the file (1,576 lines: all the
+    trading, sizing, recovery, news, table and webhook code) only one line
+    changed (the request now receives 4 values instead of 7).
   - Settings: TradingView 136 -> 162, EA 154 -> 180. Every old setting in
     the same order; the new ones at the end of section 4; ASCII only; no
     closeall. Compared with v13.0 line by line: only the intended lines

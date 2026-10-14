@@ -296,5 +296,337 @@ blk = s[i:j].rstrip('\n')
 assert blk.count('\nif almOk and ((rtMainRet and aMainRet)') == 1
 s = s[:i] + FX + 'f_almQueue() =>\n' + '\n'.join(('    ' + l) if l.strip() else l for l in blk.split('\n')) + '\n    true\n\nf_almQueue()\n' + s[j:]
 
+
+# ---- v13.1 fix 3 (15 Oct 2026): TradingView CE10117 "Compiled code contains too many tokens: 104405. The limit is 100256".
+# The script still carried parts of the original Market Structure indicator that are switched OFF by fixed values (no setting
+# can turn them on) and therefore never run or never show: the structure alerts (queue, slots, sender, the retracement-alert
+# trackers), pivot / sweep / IDM marks, the background colour, the internal / inner equilibrium lines, the inner 'strong pivot'
+# marks, and the inner tier + two unused outputs of the higher-timeframe function. They are removed; then every fixed value
+# is written where it is used. Nothing that trades and nothing on the chart changes.
+def cut(s, start, end_incl, must=1):
+    """remove from the line starting with 'start' through the line starting with 'end_incl' (both inclusive)"""
+    i = s.index('\n' + start) + 1; j = s.index('\n' + end_incl, i - 1) + 1; j = s.index('\n', j) + 1
+    assert s.count('\n' + start) == must, start
+    return s[:i] + s[j:]
+def manual(s):
+    # M1: the retracement-alert trackers (only the alert queue read them); mAnch / mOrig stay (rule 1 uses them)
+    s = cut(s, 'float mLvl = f_retLvl(trendDir, mAnch, mOrig, aRetPct)', '            rtNnRet    := true')
+    # M2: marks 'retracement alert fired' (realtime only, read only by the trackers above)
+    s = cut(s, 'if almOk and barstate.isrealtime', '        nnRetFired := true')
+    # M3: the structure alert queue function and its call
+    i = s.index('// v13.1 fix: drawn inside a function - TradingView limits the size of the main body of a script (CE10295)\nf_almQueue() =>')
+    j = s.index('\nf_almQueue()\n', i) + len('\nf_almQueue()\n')
+    s = s[:i] + s[j:]
+    # M4: the inner-structure alert block
+    s = cut(s, 'if almOk and (evNBosUp or evNBosDn or evNChoUp or evNChoDn)', '        array.push(almQC, "nCHOCH - " + nnTfTxt)')
+    # M5: the alert sender (nothing is ever queued: every alert switch is fixed OFF)
+    s = cut(s, 'var int almFired = 0', '        alert(_almN, alert.freq_once_per_bar)')
+    # M6: background colour switch fixed OFF
+    s = cut(s, 'bgcolor(paintBg ?', 'bgcolor(paintBg ?')
+    # M8: structure colours: 'white' switch fixed OFF
+    n0 = s.count('whiteStruct ? _wS : '); s = s.replace('whiteStruct ? _wS : ', ''); assert n0 == 12
+    # M7: internal / inner equilibrium lines (switches fixed OFF - the lines are never drawn)
+    i = s.index('f_lastDraw() =>'); j = s.index('\nif bar_index == last_bar_index\n', i)
+    fb = s[i:j]
+    for tag in ('I', 'N'):
+        a = fb.index('    float _eq%sp = na\n' % tag); b = fb.index('\n', fb.index('    [_eq%sL, _eq%sB] = f_hLine(' % (tag, tag))) + 1
+        fb = fb[:a] + fb[b:]
+    fb = fb.replace(', _eqIL, _eqIB, _eqNL, _eqNB]', ']')
+    s = s[:i] + fb + s[j:]
+    s = s.replace(', _eqIL, _eqIB, _eqNL, _eqNB] = f_lastDraw()', '] = f_lastDraw()', 1)
+    for a in ('    eqILn := _eqIL\n', '    eqILb := _eqIB\n', '    eqNLn := _eqNL\n', '    eqNLb := _eqNB\n'):
+        assert s.count(a) == 1; s = s.replace(a, '')
+    # M9: inner 'strong pivot' marks: switch fixed OFF ('if true and false and inWin') - the function never draws
+    s = cut(s, 'f_innStrong(int b, bool isLow) =>', '        f_innPrune()')
+    s = cut(s, 'if not na(rqStrUp)\n    f_innStrong(rqStrUp, true)'.split('\n')[0], '    f_innStrong(rqStrDn, false)')
+    # M10: the higher-timeframe function: its inner tier and the event / internal-trend outputs are never read
+    #      (f_tfTrC keeps the trend, the leg start / extreme and the CHOCH / BOS count only)
+    i = s.index('f_tfPack(bool on) =>'); j = s.index('\n    [trOut, evOut, inOut, nnOut, loOut, lxOut, ecOut]\n', i)
+    fb = s[i:j]
+    a = fb.index('\n        var int   nTr  = 0\n'); fb = fb[:a] + '\n'
+    for x in ('    int evOut = 0\n', '    int inOut = 0\n', '    int nnOut = 0\n', '        if mEvt\n            evOut := tTrend == 1 ? 1 : 2\n',
+              '        inOut := iTr\n        if iEvt\n            evOut := evOut + 4\n'):
+        assert fb.count(x) == 1, x; fb = fb.replace(x, '')
+    s = s[:i] + fb.rstrip('\n') + '\n\n    [trOut, loOut, lxOut, ecOut]\n' + s[j + len('\n    [trOut, evOut, inOut, nnOut, loOut, lxOut, ecOut]\n'):]
+    old = '    [_tA, _tB, _tC, _tD, _tO, _tX, _tE] = f_tfPack(on)'
+    assert s.count(old) == 1; s = s.replace(old, '    [_tA, _tO, _tX, _tE] = f_tfPack(on)')
+    return s
+
+# dead-code removal for the Pine file, behaviour-preserving:
+#  1. constants = global names given a literal (or an expression of constants) once and never assigned again (inputs excluded)
+#  2. 'if' / 'while' statements whose condition is FALSE from constants alone (and that have no 'else') are removed
+#  3. global declarations nobody reads (pure right-hand side) and functions nobody calls are removed; repeat until nothing changes
+import ast
+def strip_comment(l):
+    out = []; q = None; i = 0
+    while i < len(l):
+        c = l[i]
+        if q:
+            out.append(c)
+            if c == '\\' and i + 1 < len(l): out.append(l[i + 1]); i += 2; continue
+            if c == q: q = None
+        else:
+            if c in '"\'': q = c
+            elif l.startswith('//', i): break
+            out.append(c)
+        i += 1
+    return ''.join(out)
+def ind(l): return len(l) - len(l.lstrip(' '))
+def nostr(t):
+    out = []; q = None; i = 0
+    while i < len(t):
+        c = t[i]
+        if q:
+            if c == '\\': i += 2; continue
+            if c == q: q = None; out.append(c)
+        else:
+            if c in '"\'': q = c
+            out.append(c)
+        i += 1
+    return ''.join(out)
+IDS = re.compile(r'(?<![\w.])([A-Za-z_]\w*)(?!\w)')
+UNK = object()
+def ev(node, C):
+    if isinstance(node, ast.Expression): return ev(node.body, C)
+    if isinstance(node, ast.BoolOp):
+        vals = [ev(v, C) for v in node.values]
+        if isinstance(node.op, ast.And):
+            if any(v is False for v in vals): return False
+            return True if all(v is True for v in vals) else UNK
+        if any(v is True for v in vals): return True
+        return False if all(v is False for v in vals) else UNK
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        v = ev(node.operand, C); return UNK if v is UNK else (not v)
+    if isinstance(node, ast.Name): return C.get(node.id, UNK)
+    if isinstance(node, ast.Constant): return node.value
+    if isinstance(node, ast.Compare) and len(node.ops) == 1:
+        a, b = ev(node.left, C), ev(node.comparators[0], C)
+        if a is UNK or b is UNK or isinstance(a, bool) != isinstance(b, bool): return UNK
+        op = node.ops[0]
+        try:
+            return {ast.Eq: a == b, ast.NotEq: a != b, ast.Lt: a < b, ast.LtE: a <= b, ast.Gt: a > b, ast.GtE: a >= b}[type(op)]
+        except Exception: return UNK
+    if isinstance(node, ast.BinOp):
+        a, b = ev(node.left, C), ev(node.right, C)
+        if a is UNK or b is UNK: return UNK
+        try:
+            return {ast.Add: lambda: a + b, ast.Sub: lambda: a - b, ast.Mult: lambda: a * b}[type(node.op)]()
+        except Exception: return UNK
+    return UNK
+def evaluate(expr, C):
+    e = expr.strip()
+    if '?' in e or ':' in e or '[' in e: return UNK
+    e = re.sub(r'\btrue\b', 'True', re.sub(r'\bfalse\b', 'False', e))
+    try: return ev(ast.parse(e, mode='eval'), C)
+    except Exception: return UNK
+def block_end(L, i):
+    """index after the statement at line i with its block / continuation lines"""
+    n = ind(L[i]); j = i + 1
+    while j < len(L):
+        s = strip_comment(L[j])
+        if s.strip() and ind(L[j]) <= n: break
+        j += 1
+    while j > i + 1 and not strip_comment(L[j - 1]).strip(): j -= 1
+    return j
+SIDE = re.compile(r'\b(line|label|box|table|linefill|polyline|strategy|alert|alertcondition|plot\w*|bgcolor|barcolor|fill|hline|runtime|request)\b|\.(push|set|unshift|insert|remove|shift|pop|clear|delete|put|set_\w+)\(|:=|\+=|-=|f_\w+\(|\w+\(')
+PURE_CALL = re.compile(r'\b(color\.new|color\.rgb|array\.new(<[^>]+>)?|array\.new_\w+|math\.\w+|str\.\w+|na|nz|int|float|bool|string|timestamp|map\.new(<[^,>]+,[^>]+>)?)\(')
+PUREF = set()
+NS = ('math', 'str', 'ta', 'color', 'array', 'map', 'matrix', 'timeframe', 'syminfo', 'time', 'dayofweek')
+IMPURE = re.compile(r'\b(line|label|box|table|linefill|polyline|strategy|request|runtime|log)\.\w+\(|\balert\(|\barray\.(push|set|unshift|insert|remove|shift|pop|clear|fill|reverse|sort|concat)\(|\bplot\w*\(|\bbgcolor\(')
+def pure(rhs):
+    r = PURE_CALL.sub('X(', nostr(rhs))
+    calls = re.findall(r'(?<![\w.])([A-Za-z_][\w.]*)\s*\(', r)
+    return all(c == 'X' or c in PUREF for c in calls) and not re.search(r':=', r)
+def func_bodies(L):
+    F = {}
+    for k, l in enumerate(L):
+        c = strip_comment(l)
+        m = re.match(r'^(?:method\s+)?([A-Za-z_]\w*)\s*\(.*\)\s*=>', c)
+        if m: F[m.group(1)] = (k, block_end(L, k))
+    return F
+def pure_funcs(L, F):
+    P = set(F)
+    changed = True
+    while changed:
+        changed = False
+        for n, (a, b) in F.items():
+            if n not in P: continue
+            body = '\n'.join(nostr(strip_comment(x)) for x in L[a:b])
+            bad = IMPURE.search(body)
+            if not bad:
+                for m in re.finditer(r'(?<![\w])([A-Za-z_][\w]*)\.(\w+)\s*\(', body):
+                    if m.group(1) not in NS: bad = True; break
+            if not bad:
+                for c in re.findall(r'(?<![\w.])([A-Za-z_]\w*)\s*\(', body):
+                    if c in F and c not in P and c != n: bad = True; break
+            if bad: P.discard(n); changed = True
+    return P
+def stmt_only(L, F):
+    """functions whose result is never used: every call is a whole statement line"""
+    out = set()
+    code = [nostr(strip_comment(x)) for x in L]
+    for n, (a, b) in F.items():
+        ok = True
+        for k, c in enumerate(code):
+            if a <= k < b: continue
+            for m in re.finditer(r'(?<![\w.])' + re.escape(n) + r'\s*\(', c):
+                if not re.match(r'^\s*' + re.escape(n) + r'\s*\(.*\)\s*$', c): ok = False
+        if ok: out.add(n)
+    return out
+def parent_func(L, k):
+    t = k
+    while t > 0 and ind(L[t]) > 0: t -= 1
+    m = re.match(r'^(?:method\s+)?([A-Za-z_]\w*)\s*\(.*\)\s*=>', strip_comment(L[t]))
+    return m.group(1) if m else None
+def slim(text, keep=()):
+    L = text.split('\n'); log = []
+    for rnd in range(30):
+        changed = False
+        code = [nostr(strip_comment(l)) for l in L]
+        alltxt = '\n'.join(code)
+        # constants
+        C = {}; inputs = set()
+        assigned = set(re.findall(r'(?<![\w.])([A-Za-z_]\w*)\s*(?::=|\+=|-=|\*=|/=)', alltxt))
+        for k, l in enumerate(L):
+            if not l or l[0] == ' ' or not code[k].strip(): continue
+            m = re.match(r'^(?:var\s+)?(?:bool|int|float|string)?\s*([A-Za-z_]\w*)\s*=\s*(.+)$', strip_comment(l))
+            if not m or m.group(1) in assigned: continue
+            if (k + 1 < len(L) and L[k + 1].startswith(' ') and not strip_comment(L[k + 1]).strip() == ''): continue
+            rhs = m.group(2).strip()
+            if 'input' in rhs: inputs.add(m.group(1)); continue
+            v = evaluate(rhs, C) if not rhs.startswith('"') else UNK
+            if rhs.startswith('"') and rhs.endswith('"') and rhs.count('"') == 2: v = rhs[1:-1]
+            if v is not UNK and isinstance(v, (bool, int, float, str)): C[m.group(1)] = v
+        for k, l in enumerate(L):
+            m = re.match(r'^( *)(if|else if|while) (.+)$', l)
+            if m and strip_comment(l) == l:
+                c0 = m.group(3); c = c0
+                for _ in range(4):
+                    c = re.sub(r'^not true or ', '', c); c = re.sub(r'\btrue and ', '', c); c = re.sub(r' and true\b', '', c)
+                    c = re.sub(r'\bnot false and ', '', c); c = re.sub(r' and not false\b', '', c)
+                    c = re.sub(r'\(1 <= 1 or [^()]*(\([^()]*\))?[^()]*\)', 'true', c); c = re.sub(r' and true\b', '', c)
+                if c != c0 and c.strip() and c.strip() not in ('true', 'false'):
+                    L[k] = m.group(1) + m.group(2) + ' ' + c; changed = True; log.append('simplified: %s  ->  %s' % (c0[:60], c[:60]))
+        # dead ifs / whiles (an 'if' that is the last statement of its block is kept when that could be a value someone uses)
+        F = func_bodies(L); PUREF.clear(); PUREF.update(pure_funcs(L, F)); SO = stmt_only(L, F)
+        def last_ok(k):
+            pf = parent_func(L, k)
+            if pf is not None and pf not in SO: return False
+            t = k - 1
+            while t >= 0 and (not strip_comment(L[t]).strip() or ind(L[t]) >= ind(L[k])): t -= 1
+            hdr = strip_comment(L[t]) if t >= 0 else ''
+            return not re.search(r'(:?=)\s*(if|switch)\b', hdr)
+        k = 0
+        while k < len(L):
+            m = re.match(r'^( *)(if|while) (.+)$', strip_comment(L[k]).rstrip())
+            if m and ind(L[k]) % 4 == 0:
+                j = block_end(L, k)
+                nxt = next((t for t in range(j, len(L)) if strip_comment(L[t]).strip()), None)
+                nx = strip_comment(L[nxt]).strip() if nxt is not None else ''
+                has_else = nxt is not None and ind(L[nxt]) == ind(L[k]) and nx.startswith('else')
+                cont = k + 1 < len(L) and strip_comment(L[k + 1]).strip() and ind(L[k + 1]) > ind(L[k]) and ind(L[k + 1]) % 4 != 0
+                if not cont and evaluate(m.group(3), C) is False:
+                    if has_else and nx == 'else' and m.group(2) == 'if':
+                        je = block_end(L, nxt)
+                        after = next((t for t in range(je, len(L)) if strip_comment(L[t]).strip()), None)
+                        last = ind(L[k]) > 0 and (after is None or ind(L[after]) < ind(L[k]))
+                        if not last or last_ok(k):
+                            body = [l[4:] if l.startswith(' ' * (ind(L[k]) + 4)) else l for l in L[nxt + 1:je]]
+                            log.append('dead if with else (%s): kept the else part, %d lines' % (m.group(3).strip()[:60], len(body)))
+                            L[k:je] = body; changed = True; continue
+                    elif not has_else:
+                        prv = next((t for t in range(k - 1, -1, -1) if strip_comment(L[t]).strip()), None)
+                        last = ind(L[k]) > 0 and (nxt is None or ind(L[nxt]) < ind(L[k]))
+                        empty = last and prv is not None and ind(L[prv]) < ind(L[k])
+                        if not empty and (not last or last_ok(k)):
+                            log.append('dead %s (%s): %d lines' % (m.group(2), m.group(3).strip()[:70], j - k))
+                            del L[k:j]; changed = True; continue
+            k += 1
+        # unused globals / functions
+        code = [nostr(strip_comment(l)) for l in L]
+        refs = {}
+        for k, c in enumerate(code):
+            for n in IDS.findall(c): refs.setdefault(n, set()).add(k)
+            for n in re.findall(r'\.([A-Za-z_]\w*)\s*\(', c): refs.setdefault(n, set()).add(k)
+        k = 0
+        while k < len(L):
+            l = L[k]
+            if l and l[0] != ' ' and code[k].strip():
+                j = block_end(L, k)
+                mf = re.match(r'^(?:method\s+)?([A-Za-z_]\w*)\s*\([^=]*\)\s*=>', code[k])
+                md = re.match(r'^(?:var\s+|varip\s+)?(?:(?:bool|int|float|string|color|line|label|box|table|array<[^>]+>|map<[^>]+>)\s+)?([A-Za-z_]\w*)\s*=(?!=)\s*(.*)$', code[k])
+                name = mf.group(1) if mf else (md.group(1) if md else None)
+                if name and name not in keep and not name.startswith(('gx', 'st')) and 'input' not in code[k]:
+                    outside = {r for r in refs.get(name, ()) if not (k <= r < j)}
+                    body = '\n'.join(code[k:j])
+                    ok = bool(mf) or (md and pure(body.split('=', 1)[1]))
+                    if not outside and ok:
+                        log.append('unused %s %s (%d lines)' % ('function' if mf else 'value', name, j - k))
+                        del L[k:j]; changed = True
+                        code = [nostr(strip_comment(x)) for x in L]; refs = {}
+                        for kk, c in enumerate(code):
+                            for n in IDS.findall(c): refs.setdefault(n, set()).add(kk)
+                            for n in re.findall(r'\.([A-Za-z_]\w*)\s*\(', c): refs.setdefault(n, set()).add(kk)
+                        continue
+            k += 1
+        if not changed: break
+    return '\n'.join(L), log
+def inline_consts(text):
+    """write each fixed global value (literal, never assigned again, not a setting) into the places that read it"""
+    L = text.split('\n'); code = [strip_comment(l) for l in L]; ns = [nostr(c) for c in code]
+    alltxt = '\n'.join(ns)
+    assigned = set(re.findall(r'(?<![\w.])([A-Za-z_]\w*)\s*(?::=|\+=|-=|\*=|/=)', alltxt))
+    # every name declared anywhere else (locals, parameters, loop variables, tuple names) - those are not touched
+    decl_count = {}
+    for c in ns:
+        for n in re.findall(r'^\s*(?:var\s+|varip\s+)?(?:[\w<>.]+\s+)?([A-Za-z_]\w*)\s*=(?!=)', c): decl_count[n] = decl_count.get(n, 0) + 1
+        for t in re.findall(r'^\s*\[([^\]]+)\]\s*=', c):
+            for n in t.split(','): decl_count[n.strip()] = decl_count.get(n.strip(), 0) + 1
+        m = re.match(r'^(?:method\s+)?[A-Za-z_]\w*\s*\((.*)\)\s*=>', c)
+        if m:
+            for p in m.group(1).split(','):
+                w = p.strip().split()
+                if w: decl_count[w[-1]] = decl_count.get(w[-1], 0) + 1
+        for n in re.findall(r'^\s*for\s+([A-Za-z_]\w*)\s*=', c): decl_count[n] = decl_count.get(n, 0) + 1
+    C = {}
+    for k, c in enumerate(code):
+        if not c or c[0] == ' ': continue
+        m = re.match(r'^(?:bool|int|float|string|color)?\s*([A-Za-z_]\w*)\s*=\s*(true|false|-?\d+\.?\d*|"[^"\\\\]*"|color\.[a-z]+|#[0-9A-Fa-f]{6,8})\s*$', c.strip())
+        if not m or c.strip().startswith('var '): continue
+        n, v = m.group(1), m.group(2)
+        if n in assigned or decl_count.get(n, 0) != 1 or n.startswith(('gx', 'st')): continue
+        if k + 1 < len(L) and code[k + 1].strip() and code[k + 1].startswith(' ') and ind(L[k + 1]) % 4 != 0: continue
+        C[n] = (k, '(' + v + ')' if v.startswith('-') else v)
+    if not C: return text, 0
+    pat = re.compile(r'(?<![\w.])(' + '|'.join(sorted(map(re.escape, C), key=len, reverse=True)) + r')(?![\w])(?!\s*=(?!=))')
+    out = []; drop = {k for k, v in C.values()}
+    for k, l in enumerate(L):
+        if k in drop: continue
+        # replace outside strings and comments only
+        res = []; q = None; i = 0; seg = ''
+        body, com = (l, '')
+        sc = strip_comment(l)
+        if len(sc) < len(l): body, com = l[:len(sc)], l[len(sc):]
+        while i < len(body):
+            ch = body[i]
+            if q:
+                res.append(ch)
+                if ch == '\\\\' and i + 1 < len(body): res.append(body[i + 1]); i += 2; continue
+                if ch == q: q = None
+            elif ch in '"\'':
+                res.append(pat.sub(lambda m: C[m.group(1)][1], seg)); seg = ''; res.append(ch); q = ch
+            else:
+                seg += ch
+            i += 1
+        res.append(pat.sub(lambda m: C[m.group(1)][1], seg))
+        out.append(''.join(res) + com)
+    return '\n'.join(out), len(C)
+
+s = s.replace(' (v13.1 fix: table, last-candle lines and alert queue drawn in functions),', ' (v13.1 fix: TradingView size limits - table and last-candle lines in functions, switched-off indicator extras removed),', 1)
+s = manual(s)
+s, _l1 = slim(s)
+s, _n = inline_consts(s)
+s, _l2 = slim(s)
+
 open(dst, 'w').write(s)
 print('written', dst)
