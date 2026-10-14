@@ -1,0 +1,14 @@
+Tested (FxPro gold 1-minute, 4 Jan 2021 - 2 Oct 2026, 50 risk per trade,
+loss recovery off, real FxPro costs; each year = the trades entered then):
+   Setting          trades   2021   2022   2023   2024   2025   2026  total
+   Your settings     1,829 -2,870 -2,713 -2,484   -906 +2,202    +40 -6,731
+   Recipe C5           360   -123   +305   +248   -151   +115   +538   +933
+   C6 without RSI      754   -199    -54   +106   +497   +697    +13 +1,061
+   Recipe C6 + RSI     406   -309   +590   +398    +42   +575   +710 +2,006
+   (2026 = to 2 Oct)
+On 40 noisy copies of the price data (every candle moved by a few cents,
+like the difference between OANDA and FxPro), with the v13.1 code:
+   Recipe C5          40 of 40 made money, median +953, worst +375
+   C6 without RSI     38 of 40 made money, median +942, worst -41
+   Recipe C6 + RSI    40 of 40 made money, median +1,629, worst +1,147
+Per trade this is small: C5 about +2.60, C6 + RSI about +4.90 at 50 risk.

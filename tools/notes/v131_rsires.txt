@@ -1,0 +1,14 @@
+Tested (same data and costs, total 2021 - 2 Oct 2026, 50 risk):
+   RSI filter                  your settings      C5      C6
+   none                               -6,731    +933  +1,061
+   1 hour, RSI(2), pullback 50        -6,401    +403  +2,006
+   1 hour, RSI(14), pullback 50       -8,636     +42     +88
+   15 min, RSI(2), pullback 50        -6,699    +185    +530
+   1 hour, RSI(14), momentum 50       -5,232    +155    +970
+   5 min, RSI(14), pullback 50        -7,616    +269    +616
+   4 hours, RSI(2), pullback 50       -9,968    +703    +829
+   1 day, RSI(2), pullback 50         -7,699    +228    +666
+   1 day, RSI(14), momentum 50        -2,720    -286    +834
+   1 week, RSI(2), pullback 50        -9,977    +774    +284
+Only the 1-hour RSI(2) on C6 stood out (and it held on the noisy copies).
+On C5 every RSI filter cut too many trades.

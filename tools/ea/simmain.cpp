@@ -45,6 +45,17 @@ int main(int argc, char **argv)
    InBuMode = (EBuMode)cl("buMode", 0); InBuPips = cd("buPips", 10.0); InBuPct = cd("buPct", 0.02); InBuPip = cd("buPip", 0.0);
 #endif
    InR3On = cb("r3On", false); InR3BrkOn = cb("r3BrkOn", false); InR3Brk = cd("r3Brk", 3.0); InR3Fb = cb("r3Fb", false); InLmOn = cb("lmOn", false); InLmAmt = cd("lmAmt", 300.0); InSp1 = cd("sp1", 200.0); InSpN1 = cd("spN1", 3.0); InSp2 = cd("sp2", 500.0); InSpN2 = cd("spN2", 5.0); InSp3 = cd("sp3", 1000.0); InSpN3 = cd("spN3", 8.0); InSpInc = cd("spInc", 500.0); InSpAdd = cd("spAdd", 1.0);
+#ifdef EA_V131
+   {   // v13.1 (section 4): timeframes given in seconds (0 = the same as the chart)
+      auto tff = [](long s) { return s == 300 ? TFF_M5 : s == 900 ? TFF_M15 : s == 3600 ? TFF_H1 : s == 14400 ? TFF_H4 : s == 86400 ? TFF_D1 :
+                                     s == 604800 ? TFF_W1 : s == 2592000 ? TFF_MN1 : TFF_M1; };
+      InMnPct = cd("mnPct", 0); InFstOn = cb("fstOn", false); InYdOn = cb("ydOn", false); InLegMin = (int)cl("legMin", 0); InTdOn = cb("tdOn", false); InTdAtr = cd("tdAtr", 0.15);
+      InRsLOn = cb("rsLOn", false); InRsLTf = tff(cl("rsLTf", 0)); InRsLLen = (int)cl("rsLLen", 14); InRsLMode = (ERsMode)cl("rsLMode", 0); InRsLLvl = cd("rsLLvl", 50);
+      InRsHOn = cb("rsHOn", false); InRsHTf = tff(cl("rsHTf", 3600)); InRsHLen = (int)cl("rsHLen", 2); InRsHMode = (ERsMode)cl("rsHMode", 0); InRsHLvl = cd("rsHLvl", 50);
+      InEmLOn = cb("emLOn", false); InEmLTf = tff(cl("emLTf", 0)); InEmLMode = (EEmMode)cl("emLMode", 0); InEmLLen = (int)cl("emLLen", 200); InEmLFast = (int)cl("emLFast", 50);
+      InEmHOn = cb("emHOn", false); InEmHTf = tff(cl("emHTf", 3600)); InEmHMode = (EEmMode)cl("emHMode", 0); InEmHLen = (int)cl("emHLen", 200); InEmHFast = (int)cl("emHFast", 50);
+   }
+#endif
    sim::calMode = (int)cl("calMode", 0); sim::calFail = cb("calFail", false); sim::calFailN = cl("calFailN", 0);
    if (cfg.count("fileDir")) sim::fileDir = cfg["fileDir"];
    if (cfg.count("simCal"))

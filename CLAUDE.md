@@ -7,10 +7,12 @@
   receiver only uses the free "MetaApi API") and the MQL5 VPS guide (`SMC_Strategy_v8.3_MQL5_VPS_GUIDE.pdf`).
 - Owner: **Punit** (punit7870@gmail.com). Works from a phone. Wants **simple English, short examples with
   numbers, tables**. Times are **IST** (Asia/Kolkata).
-- **Latest version: v13.0 for BOTH** = `SMC_Structure_Strategy_v13.0.txt` + `SMC_Structure_EA_v13.0.mq5` +
-  `SMC_Structure_v13.0_NOTES.txt` (one notes file: what is new + the old -> new settings map + the v12.0 notes). v13.0 = the
-  v12.2 / v12.3 rules with the settings in 13 SECTIONS, the same order in both files (see Versions). From v13.0 the
-  TradingView and EA version numbers are the same. Before it:
+- **Latest version: v13.1 for BOTH** = `SMC_Structure_Strategy_v13.1.txt` + `SMC_Structure_EA_v13.1.mq5` +
+  `SMC_Structure_v13.1_NOTES.txt` (new part + the two recipes + how to use + the v13.0 notes). v13.1 = v13.0 + new setup
+  filters at the END of section 4, all OFF (see Versions). Before it: **v13.0** = `SMC_Structure_Strategy_v13.0.txt` +
+  `SMC_Structure_EA_v13.0.mq5` + `SMC_Structure_v13.0_NOTES.txt` (one notes file: what is new + the old -> new settings map +
+  the v12.0 notes). v13.0 = the v12.2 / v12.3 rules with the settings in 13 SECTIONS, the same order in both files (see
+  Versions). From v13.0 the TradingView and EA version numbers are the same. Before it:
   TradingView v12.2 + MT5 EA v12.3 = `SMC_Structure_Strategy_v12.2.txt` + `SMC_Structure_EA_v12.3.mq5`
   (EA v12.3 = the v12.2 rules + a safe catch-up after sleep / no connection / restart + the signal audit LABELS on the chart;
   the user asked for the EA file ONLY).
@@ -248,6 +250,30 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   none; effect (1M test account, 1 y): deepest drop smaller in 5 of 7 (C 1:1 21,946 -> 12,218), bigger in 2 (rule 3, C+),
   profit a bit lower in 6 of 7. Same test: 222 of 222 saved tools/ea settings byte-identical v12.3 vs v13.0.
   Next versions: the user chose 'new settings at the END OF THEIR SECTION' (rule 3 updated).
+- v13.1 (user: "build v13.1 with the C5 filters and RSI filter and all other suggestions that can be implemented"; then RSI /
+  EMA filters for a lower AND a higher timeframe, all OFF; then "ONLY 1m, 5m, 15m, 1h, 4h, 1D, 1W, 1M timeframes"). No preset
+  dropdown (recipes in the notes instead); dip-buyers NOT built (separate files, a later step if the user asks).
+  26 new settings at the END of section 4 (TV 136 -> 162, EA 154 -> 180): stMnPct / InMnPct min stop % of the ENTRY (any unit,
+  checked at placement with dOk -> cntSkip + cntX[8]); stFstOn / InFstOn skip the first setup of the day (session-tz day of the
+  bar CLOSE; checked LAST in XSkip so a setup another filter skips is never 'first'; per side; EA keeps fstDay in GV 'fd' over
+  restarts; the EA's start day does not know earlier setups); stYdOn / InYdOn (signal close below yesterday's low = no buy, above
+  its high = no sell; day = New York trading day of the bar OPEN, new day 17:00 NY: DayNy = floor((NyLoc(t) - 61200) / 86400));
+  stLegMin / InLegMin (bars from the CHOCH* pivot EN.flr.x1 / cel.x1 = Pine florS.x1 to the signal bar < N = skip); stTdOn +
+  stTdAtr 0.15 (d * (close - today's open) < X * mean(H - L of the last 14 complete NY days) = skip; not ready = pass; EA
+  WarmBars() = max(InWarm, 17 x 1440 min of bars) when ON); RSI L / H (tf, len 14 / 2, rule Pullback / Momentum, level 50) and
+  EMA L / H (tf, rule price vs EMA / fast vs slow, len 200, fast 50): tf list ETfF = 1m, 5m, 15m, 1h, 4h, 1D, 1W, 1M (defaults L
+  1m, H 1h); a tf not above the chart = the chart's own candles incl. the signal bar; above = the last CLOSED candle before the
+  bar's own (Pine request.security(expr[1], lookahead_on); EA CInd fed by FeedInd from CopyRates like FeedHtf, 3,000 candles
+  seeded at TryInit; harness IndKeyH on the broker clock: weeks from Sunday 00:00, months from the 1st). RSI = ta.rsi (Wilder,
+  SMA seed); EMA starts at the first close. Not ready = pass. Order in XSkip: today, yday, leg, RSI L, RSI H, EMA L, EMA H, first.
+  Audit 'SKIP - ...' texts; table rows 52 / 53 (TV, table 54 rows) / 2 EA rows (XTxt / XNowTxt). Tools: patches/pine131.py,
+  ea131.py; ea/v131tests.py (sep / ea / rs), v131sep.py (separate copy of the v13.0 core + Python RSI / EMA flags); mt5sim.h
+  PERIOD_M3 / M30 / H2 + W1 Sunday-aligned + MN1 calendar months (fix); extract.py CORE_V131 / mql2cpp.py EA_V131; m5.bin / h1.bin.
+  Checks: parser PARSED OK; OFF = v13.0 (v13tests same: 222/222 byte-identical); separate 24/24 identical (1m / 5m / 15m / 1h charts, all tfs);
+  whole EA = core 10/10; restarts 484 x 4 identical. Effect (real costs, 2021 - Oct 2026, 50 risk): C5 1R +933 (360 tr; 40/40
+  noisy feeds, median +953); C6 1R +1,061; C6 + RSI H 1h(2) pullback 50 +2,006 (406 tr; 40/40 feeds, median +1,629, worst
+  +1,147). No other RSI / EMA (1m .. 1M) beat these; EMA filters cut the plain-settings loss (15m EMA 50 -1,606, 1D 20/50 -2,109)
+  but all still lost. Notes: tools/notes/build_notes131.py (+ v131_head / results / rsires / emares / checks).
 
 ## How the v11.1 code works (key points)
 - 118 inputs (v11.2: 122, + group 38 stop buffer unit). Groups: 20 strategy, 21 risk / loss recovery, 24 safety, 25 daily blocking windows,
@@ -484,7 +510,7 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
    SMC_calendar.csv -> test the REAL news list (CPI, FOMC ...) on 2021-2026. With group 29 releases only
    (1m, user settings): none -18,514 / windows -18,844 / +pre 1 h -18,708 / 2 h -18,302 / 4 h -18,070,
    all -0.13R per trade (tools/ea/preeffect.py) -> news blocking does not change the edge.
-0. **MT5 EA**: user compiles `SMC_Structure_EA_v13.0.mq5` in MetaEditor (F7) and sends any error lines; then
+0. **MT5 EA**: user compiles `SMC_Structure_EA_v13.1.mq5` in MetaEditor (F7) and sends any error lines; then
    Strategy Tester (Every tick based on real ticks) and a demo account. Fix compile errors with a patch, re-run
    `tools/ea` checks before delivering.
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,

@@ -2,6 +2,7 @@
 // Prices: 1-minute bars turned into ticks along TradingView's path (open -> nearer extreme -> other -> close),
 // one tick per 0.01. Broker: market / limit orders, SL / TP, hedging positions, deals with commission.
 #pragma once
+#include <ctime>
 #include <string>
 #include <vector>
 #include <map>
@@ -25,7 +26,7 @@ template <class T> int ArrayResize(MqlArr<T> &a, int n, int reserve = 0) { a.v.r
 template <class T> int ArraySize(T (&a)[1]) { return 1; }
 
 // ---------------- enums / constants ----------------
-enum ENUM_TIMEFRAMES { PERIOD_CURRENT = 0, PERIOD_M1 = 1, PERIOD_M5 = 5, PERIOD_M15 = 15, PERIOD_H1 = 16385, PERIOD_H4 = 16388, PERIOD_D1 = 16408, PERIOD_W1 = 32769, PERIOD_MN1 = 49153 };
+enum ENUM_TIMEFRAMES { PERIOD_CURRENT = 0, PERIOD_M1 = 1, PERIOD_M3 = 3, PERIOD_M5 = 5, PERIOD_M15 = 15, PERIOD_M30 = 30, PERIOD_H1 = 16385, PERIOD_H2 = 16386, PERIOD_H4 = 16388, PERIOD_D1 = 16408, PERIOD_W1 = 32769, PERIOD_MN1 = 49153 };
 enum ENUM_SYMBOL_INFO_DOUBLE { SYMBOL_TRADE_TICK_VALUE, SYMBOL_TRADE_TICK_SIZE, SYMBOL_TRADE_CONTRACT_SIZE, SYMBOL_VOLUME_MIN, SYMBOL_VOLUME_MAX, SYMBOL_VOLUME_STEP, SYMBOL_POINT, SYMBOL_BID, SYMBOL_ASK };
 enum ENUM_SYMBOL_INFO_INTEGER { SYMBOL_TRADE_STOPS_LEVEL, SYMBOL_DIGITS, SYMBOL_EXPIRATION_MODE, SYMBOL_TRADE_CALC_MODE };
 enum ENUM_SYMBOL_INFO_STRING { SYMBOL_CURRENCY_BASE, SYMBOL_CURRENCY_PROFIT };
@@ -110,7 +111,8 @@ namespace sim {
 }
 inline int TfSec(ENUM_TIMEFRAMES tf)
 {
-   switch (tf) { case PERIOD_M1: return 60; case PERIOD_M5: return 300; case PERIOD_M15: return 900; case PERIOD_H1: return 3600; case PERIOD_H4: return 14400;
+   switch (tf) { case PERIOD_M1: return 60; case PERIOD_M3: return 180; case PERIOD_M5: return 300; case PERIOD_M15: return 900; case PERIOD_M30: return 1800;
+                 case PERIOD_H1: return 3600; case PERIOD_H2: return 7200; case PERIOD_H4: return 14400;
                  case PERIOD_D1: return 86400; case PERIOD_W1: return 604800; case PERIOD_MN1: return 2592000; default: return sim::chartSec; }
 }
 inline std::vector<SimBar> &BarsOf(ENUM_TIMEFRAMES tf)
@@ -123,6 +125,8 @@ inline std::vector<SimBar> &BarsOf(ENUM_TIMEFRAMES tf)
    for (auto &b : sim::m1)
    {
       datetime k = b.t - ((b.t % s) + s) % s;
+      if (s == 604800) k = b.t - (((b.t - 3 * 86400) % s) + s) % s;   // MT5 weeks start on Sunday 00:00 (broker clock)
+      if (s == 2592000) { time_t tt = (time_t)b.t; struct tm g; gmtime_r(&tt, &g); g.tm_mday = 1; g.tm_hour = 0; g.tm_min = 0; g.tm_sec = 0; k = (datetime)timegm(&g); }   // months on the 1st
       if (v.empty() || v.back().t != k) v.push_back(SimBar{k, b.o, b.h, b.l, b.c});
       else { SimBar &a = v.back(); a.h = std::max(a.h, b.h); a.l = std::min(a.l, b.l); a.c = b.c; }
    }

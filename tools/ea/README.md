@@ -1,4 +1,4 @@
-# tools/ea - checks of the MT5 Expert Advisor (SMC_Structure_EA_v13.0.mq5)
+# tools/ea - checks of the MT5 Expert Advisor (SMC_Structure_EA_v13.1.mq5)
 
 MetaEditor (the MQL5 compiler) only runs on Windows, so the EA is checked here in two ways:
 
@@ -48,6 +48,10 @@ MetaEditor (the MQL5 compiler) only runs on Windows, so the EA is checked here i
 | v13.0 = v12.3 | `python3 v13tests.py same <folder with the v12.3 harness + simmain>` | every saved settings file here (cfg_, rcfg_, fcfg_, ccfg_, lcfg_, ocfg_, xcfg_, pe_ - 222) run by v12.3 and v13.0: every output file byte-identical (222 of 222); the old keys buPips / buPct give the one stop buffer box its value (`CORE_V13` / `EA_V13`) |
 | v13.0 hedge base option | `python3 v13tests.py hgb <v12.3 folder>` | 9 settings: OFF = v12.3 byte-identical; ON: every order size worked out again from the order log (harness option `ordLog`: P / C / F / X lines) by a separate replay - 39,417 orders, 3,590 at the base, 0 wrong (2 exact-half ties); whole EA = core 4 / 4 |
 | v13.0 restarts | `python3 v13tests.py rs` | hedge + shared Rule C 1:1, option ON, touch and pending: 484 restarts = no restarts |
+| v13.1 OFF | `python3 v13tests.py same <folder with the v13.0 harness + simmain>` | every saved settings file (222) run by v13.0 and v13.1 with the new filters off: byte-identical |
+| v13.1 separate | `python3 v131tests.py sep` | the core vs a SEPARATE copy of the v13.0 core with the section 4 filters written again (`v131sep.py`) + the RSI / EMA directions worked out in Python: 17 settings (1m / 15m, every filter, timeframes 3m - 1D, hedge, rule 3), every trade identical |
+| v13.1 whole EA | `python3 v131tests.py ea` | whole EA in the fake MT5 = the core, filters ON: 6 settings x 1 year (touch, pending, hedge, 3m / 5m / 15m / 30m / 2h / 4h / 1D filters) |
+| v13.1 restarts | `python3 v131tests.py rs` | live mode with the 20,000-bar warm-up, 484 restarts, 3 settings (first of the day, RSI / EMA, today's move, hedge): every trade = no restarts |
 | v13.0 speed | (simmain, table + drawings ON, `tester 0`) | one year 1m: v12.3 32.9 s CPU, v13.0 22.0 s, display OFF 4.1 s (hedge 35.5 / 24.8 / 5.5); trades identical |
 
 Notes

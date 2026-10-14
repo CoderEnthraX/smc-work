@@ -1,0 +1,19 @@
+  - TradingView parser: PARSED OK (the full Pine grammar).
+  - Settings: TradingView 136 -> 162, EA 154 -> 180. Every old setting in
+    the same order; the new ones at the end of section 4; ASCII only; no
+    closeall. Compared with v13.0 line by line: only the intended lines
+    changed.
+  - New filters OFF = v13.0: 222 saved test settings run by v13.0 and
+    v13.1 - every output file byte-identical.
+  - Each filter worked out SEPARATELY: a separate copy of the v13.0 engine
+    with the filters written again from their definitions, and the RSI /
+    EMA values worked out in Python, against the v13.1 code: 24 settings
+    (1m, 5m, 15m and 1h charts; every filter; RSI / EMA on 1m, 5m, 15m, 1h,
+    4h, 1D, 1W and 1M; hedge; rule 3) - every trade identical.
+  - The whole EA in my MT5 test copy (ticks, orders, broker clock) = the
+    tested core with the filters ON: 10 settings (1m, 5m, 15m and 1h
+    charts; touch and pending entries; hedge; every timeframe) - the same
+    trades, sizes and prices.
+  - Restarts: live mode with the normal 20,000-bar start, 484 restarts in
+    4 settings (first setup of the day, today's move, RSI / EMA on 1h, 4h,
+    1W, 1M, hedge): every trade the same as without restarts.

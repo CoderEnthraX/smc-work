@@ -152,6 +152,17 @@ double cd(const char *k, double def) { auto it = cfg.find(k); return it == cfg.e
 long   cl(const char *k, long def)   { auto it = cfg.find(k); return it == cfg.end() ? def : atol(it->second.c_str()); }
 bool   cb(const char *k, bool def)   { auto it = cfg.find(k); return it == cfg.end() ? def : (it->second == "1" || it->second == "true" || it->second == "True"); }
 
+#ifdef CORE_V131
+// v13.1: the candle of an RSI / EMA filter timeframe on the broker clock (FxPro UTC+2, +3 in EU summer time), like MT5:
+// weeks start on Sunday 00:00, months on the 1st 00:00, the rest every tf seconds
+long IndKeyH(long t, long tf)
+{
+   long s = t + TzOff(t, 7200, 1);
+   if (tf == 604800) return FloorDivL(s - 3 * 86400, 604800);
+   if (tf == 2592000) { int y = 0, m = 0, d = 0; CivilFromDays(FloorDivL(s, 86400), y, m, d); return (long)y * 12 + m; }
+   return FloorDivL(s, tf);
+}
+#endif
 int main(int argc, char **argv)
 {
    if (argc < 3) { fprintf(stderr, "usage: harness config bars.bin [out.csv]\n"); return 1; }
@@ -218,6 +229,14 @@ int main(int argc, char **argv)
    S.buMode = (int)cl("buMode", 0); S.buPips = cd("buPips", 10.0); S.buPct = cd("buPct", 0.02); S.pipSz = cd("buPip", 0.1);
 #endif
    S.r3On = cb("r3On", false); S.r3BrkOn = cb("r3BrkOn", false); S.r3Brk = cd("r3Brk", 3.0); S.r3Fb = cb("r3Fb", false); S.lmOn = cb("lmOn", false); S.lmAmt = cd("lmAmt", 300.0); S.sp1 = cd("sp1", 200.0); S.spN1 = cd("spN1", 3.0); S.sp2 = cd("sp2", 500.0); S.spN2 = cd("spN2", 5.0); S.sp3 = cd("sp3", 1000.0); S.spN3 = cd("spN3", 8.0); S.spInc = cd("spInc", 500.0); S.spAdd = cd("spAdd", 1.0);
+#ifdef CORE_V131
+   // v13.1 (section 4): timeframes in seconds (0 = the chart)
+   S.mnPct = cd("mnPct", 0); S.fstOn = cb("fstOn", false); S.ydOn = cb("ydOn", false); S.legMin = (int)cl("legMin", 0); S.tdOn = cb("tdOn", false); S.tdAtr = cd("tdAtr", 0.15);
+   S.rsOn[0] = cb("rsLOn", false); S.rsTf[0] = (int)cl("rsLTf", 0); S.rsLen[0] = (int)cl("rsLLen", 14); S.rsMode[0] = (int)cl("rsLMode", 0); S.rsLvl[0] = cd("rsLLvl", 50);
+   S.rsOn[1] = cb("rsHOn", false); S.rsTf[1] = (int)cl("rsHTf", 3600); S.rsLen[1] = (int)cl("rsHLen", 2); S.rsMode[1] = (int)cl("rsHMode", 0); S.rsLvl[1] = cd("rsHLvl", 50);
+   S.emOn[0] = cb("emLOn", false); S.emTf[0] = (int)cl("emLTf", 0); S.emMode[0] = (int)cl("emLMode", 0); S.emLen[0] = (int)cl("emLLen", 200); S.emFast[0] = (int)cl("emLFast", 50);
+   S.emOn[1] = cb("emHOn", false); S.emTf[1] = (int)cl("emHTf", 3600); S.emMode[1] = (int)cl("emHMode", 0); S.emLen[1] = (int)cl("emHLen", 200); S.emFast[1] = (int)cl("emHFast", 50);
+#endif
    S.ldOn = cb("ldOn", false); S.ldN = (int)cl("ldN", 3); S.ldD = (int)cl("ldD", 2); S.eqOn = cb("eqOn", false); S.eqPct = cd("eqPct", 50);
    S.cs = (int)cl("cs", 60); S.cmLots = 100; S.uv = 1.0; S.minLot = cd("minLot", 0.01); S.tick = 0.01;
    long htfSec = cl("htfSec", 900);
@@ -243,6 +262,9 @@ int main(int argc, char **argv)
       }
    }
    long from = cl("from", 0), to = cl("to", nb);
+#ifdef CORE_V131
+   long ixK[4] = {-1, -1, -1, -1}; double ixC[4] = {0, 0, 0, 0}; bool ixHave[4] = {false, false, false, false};
+#endif
    for (long i = 0; i < nb && i < to; i++)
    {
       curBar = (int)i; curT = T[i];
@@ -281,6 +303,17 @@ int main(int argc, char **argv)
       double eq = eqClosed;
       for (int ix : opn) eq += (C[i] - trades[ix].ep) * trades[ix].dir * trades[ix].q;
       g_dry = i < from;
+#ifdef CORE_V131
+      // v13.1: an RSI / EMA filter above the chart gets each candle of its timeframe (broker clock, like MT5) once the
+      // first bar of the next candle arrives = the candles that closed before the one holding this bar
+      for (int q = 0; q < 4; q++)
+      {
+         if (!IndHtf(q)) continue;
+         long kk = IndKeyH(T[i], g_ind[q].tf);
+         if (kk != ixK[q]) { if (ixHave[q]) IndCandle(q, ixC[q]); ixK[q] = kk; ixHave[q] = true; }
+         ixC[q] = C[i];
+      }
+#endif
       CoreBar(T[i], O[i], H[i], L[i], C[i], eq, hT[i], hO[i], hX[i], hE[i]);
    }
    if (olog) fclose(olog);

@@ -1,0 +1,297 @@
+SMC STRUCTURE STRATEGY + MT5 EA  -  v13.1  -  WHAT IS NEW
+==========================================================
+
+Plain English. Files:
+  SMC_Structure_Strategy_v13.1.txt   TradingView, Pine Script v6, ASCII
+  SMC_Structure_EA_v13.1.mq5         MetaTrader 5 Expert Advisor, ASCII
+  SMC_Structure_v13.1_NOTES.txt      this file (one notes file for both)
+The v13.0 files stay in the folder.
+
+v13.1 adds NEW SETUP FILTERS at the END of section 4 (SETUP FILTERS), the
+same in TradingView and in the EA. They are ALL OFF by default. With them
+off, v13.1 trades exactly like v13.0 (checked - see "CHECKS").
+
+   Section 4 - new settings                              default
+   Skip if the stop is closer than X % of the price      0 (off)
+   Skip the first setup of the day                       off
+   No buy below yesterday's low / sell above its high    off
+   Skip a CHOCH / BOS whose move took < N candles        0 (off)
+   Trade only with today's move                          off
+     - at least X x the average daily range              0.15
+   RSI filter - LOWER timeframe                          off
+     - timeframe / length / rule / level   1 min / 14 / pullback / 50
+   RSI filter - HIGHER timeframe                         off
+     - timeframe / length / rule / level   1 hour / 2 / pullback / 50
+   EMA filter - LOWER timeframe                          off
+     - timeframe / rule / EMA / fast EMA   1 min / price / 200 / 50
+   EMA filter - HIGHER timeframe                         off
+     - timeframe / rule / EMA / fast EMA   1 hour / price / 200 / 50
+
+TradingView: 136 -> 162 settings. EA: 154 -> 180 settings.
+
+THE ALERT MESSAGE is still ONLY {{strategy.order.alert_message}}, and the
+condition is still "Order fills only". The strategy never sends closeall.
+Your TheConnector access key goes ONLY into the webhook URL inside
+TradingView:  https://webhook.theconnector.fr/YOUR_ACCESS_KEY
+
+
+--------------------------------------------------------------------------
+1. GOING TO v13.1 - WHAT YOU HAVE TO DO
+--------------------------------------------------------------------------
+TRADINGVIEW
+  The new settings sit in the MIDDLE of the list (end of section 4), and
+  TradingView remembers saved settings by their PLACE in the list. So, while
+  you are FLAT (no open trade):
+    a. Write down your v13.0 settings (or take screenshots).
+    b. Pine Editor -> Open -> New strategy, paste
+       SMC_Structure_Strategy_v13.1.txt, save it, add it to the chart.
+       (If you paste over v13.0 instead: Settings -> Defaults -> Reset
+       settings, then type your settings again.)
+    c. Type your settings again - every old setting is in the same place
+       as in v13.0; only section 4 has new boxes at its end.
+    d. Delete the old alert and create a new one on v13.1: condition
+       "Order fills only", message ONLY {{strategy.order.alert_message}}.
+    e. Remove v13.0 from the chart (two strategies = two sets of orders).
+
+MT5 EA
+  The setting NAMES did not change, so a saved .set file still loads; the
+  new settings start OFF. Compile SMC_Structure_EA_v13.1.mq5 in MetaEditor
+  (F7), attach it with the same magic number, remove v13.0. Run only ONE
+  copy of the EA per chart and per magic number.
+
+
+--------------------------------------------------------------------------
+2. HOW TO USE THEM - TWO RECIPES
+--------------------------------------------------------------------------
+Both recipes were found in the tests of October 2026 (FxPro gold 1-minute,
+4 Jan 2021 - 2 Oct 2026, 50 risk per trade, loss recovery OFF, real FxPro
+costs). They are the best of many tries, so part of it can be luck.
+Test on a demo account first. A past result is not a promise.
+
+RECIPE C5 (the most even one - positive in 2021-23 AND in 2024-26)
+   Section 4  Skip if the stop is closer than X % of the price   0.5
+   Section 4  Skip the first setup of the day                    ON
+   Section 4  No buy below yesterday's low / sell above its high ON
+   Section 4  Skip a CHOCH / BOS whose move took < N candles     12
+   Section 5  Target R                                            1
+   (everything else as you trade now: CHOCH only, rule 1 + 2, ...)
+
+RECIPE C6 + RSI (the most profit in the tests)
+   Section 9  Take entries from 13, stop taking entries at 21  (IST)
+   Section 4  Skip if the stop is closer than X % of the price   0.35
+   Section 4  No buy below yesterday's low / sell above its high ON
+   Section 4  Skip a CHOCH / BOS whose move took < N candles     12
+   Section 4  RSI filter - HIGHER timeframe  ON: 1 hour, length 2,
+              rule Pullback, level 50
+   Section 5  Target R                                            1
+
+{RESULTS}
+
+
+--------------------------------------------------------------------------
+3. MY OTHER SUGGESTIONS - SETTINGS YOU ALREADY HAVE
+--------------------------------------------------------------------------
+No new code was needed for these; set them yourself:
+   What                                  Where             Value
+   Commission per lot, one side (TV)     section 11        13
+     (FxPro Raw+ really costs about 0.19 spread + 0.07 commission per
+      ounce = about 13 per lot per side. With 30 your backtest looks
+      worse than real. Use the same 13 in TradingView's Properties.)
+   Rule 1 + rule 2 ON, rule 3 OFF        section 3
+   Close and reverse                     section 3         OFF
+   Keep the 02:00 force close and the    section 9         ON
+     weekend flat (removing them was luck in the tests)
+   Target                                section 5         3R (or 1R
+                                                           in the recipes)
+   Loss recovery                         section 7         Off
+     or "Rule C Ultra": Rule C, split 3, plus the account floor
+     (section 8) "On - only cap the risk", 3,000 / lock 50 / 10%.
+     Never raise the split above 3; never 1R with split 1.
+   Base risk                             section 6         50 on 10,000
+   EA hedge + shared money: "a trade     section 3 (EA)    ON
+     opened while the other side chases the loss risks only the base"
+   Run the EA on a VPS, or set the computer to sleep "Never".
+
+
+--------------------------------------------------------------------------
+4. SKIP IF THE STOP IS CLOSER THAN X % OF THE PRICE
+--------------------------------------------------------------------------
+A second minimum stop, always in % of the entry price, whatever unit
+section 1 uses - so your stop buffer can stay in price (1.0).
+   X = 0.5, gold at 4,000: the stop must be at least 20.00 away.
+   X = 0.5, gold at 2,000: at least 10.00.
+A closer stop is skipped ("CANCELLED - stop closer than 0.5% of the
+price"). It is checked where the other stop-distance limits are checked.
+The older box at the start of section 4 ("Skip the setup if the stop is
+CLOSER than") still works too, in the section 1 unit.
+Why: very small stops lose most often, and the costs are a bigger part of
+a small stop. 0.5 alone took your result from -6,731 to about 0 in the
+tests, and cut the trades by two thirds.
+
+
+--------------------------------------------------------------------------
+5. SKIP THE FIRST SETUP OF THE DAY
+--------------------------------------------------------------------------
+The first setup of each day that would really be taken is skipped; the
+next ones are taken. The day = the calendar day of the session timezone
+(section 9, India by default).
+   Setups at 07:10, 09:30 and 14:00  ->  07:10 skipped, the others taken.
+A setup that another filter skips (or that is not taken for any other
+reason - outside the hours, already in a trade ...) does not count as the
+first. In the tests the first trade of the day was the worst one.
+Use it on the 1, 5 and 15-minute charts. On a 1-hour or bigger chart there
+is rarely more than one setup a day, so it would skip almost all of them.
+EA: the day whose first setup was used is kept over a restart. On the day
+you START the EA it does not know the setups before it started, so the
+first one it sees that day counts as the first (TradingView knows the
+whole history).
+
+
+--------------------------------------------------------------------------
+6. NO BUY BELOW YESTERDAY'S LOW, NO SELL ABOVE YESTERDAY'S HIGH
+--------------------------------------------------------------------------
+A buy is skipped when the signal candle CLOSES below yesterday's low; a
+sell when it closes above yesterday's high - the price already broke out
+of yesterday's range the other way.
+   Yesterday 4,080 - 4,120:  buy at 4,070 skipped, buy at 4,095 taken,
+                             sell at 4,130 skipped, sell at 4,100 taken.
+"Yesterday" = the gold trading day that ended at 17:00 New York (02:30
+IST in US summer time, 03:30 IST in winter): the gold daily close. After a
+weekend, yesterday is Friday. Alone: -6,731 -> -1,777 in the tests.
+
+
+--------------------------------------------------------------------------
+7. SKIP A CHOCH / BOS WHOSE MOVE TOOK FEWER THAN N CANDLES
+--------------------------------------------------------------------------
+Counts the candles from the swing point that becomes your stop level (the
+low for a buy, the high for a sell - the CHOCH* level) to the candle that
+broke the structure. A faster move - a spike, often news - is skipped.
+   N = 12, 1-minute chart, swing low at 10:00:
+     break at 10:05 = 5 candles   -> skipped
+     break at 10:20 = 20 candles  -> taken
+On a 15-minute chart 12 candles = 3 hours - choose N for your chart.
+
+
+--------------------------------------------------------------------------
+8. TRADE ONLY WITH TODAY'S MOVE
+--------------------------------------------------------------------------
+A buy only when the signal candle closes ABOVE today's open by at least
+X x the average daily range; a sell only BELOW it. The average daily range
+= the average of (high - low) of the last 14 complete days. Today starts at
+17:00 New York, like "yesterday" above.
+   X = 0.15, today's open 4,000, average day 40.00:
+     buys only above 4,006.00, sells only below 3,994.00.
+   X = 0: buys only above today's open, sells only below it.
+Until 14 complete days of history exist, it lets setups through.
+EA: with this filter ON the EA reads at least 17 days of chart history at
+the start (more than the 20,000 bars of section 12 on a 1-minute chart).
+It was part of the C4 set in the tests (not C5).
+
+
+--------------------------------------------------------------------------
+9. RSI FILTERS - A LOWER AND A HIGHER TIMEFRAME
+--------------------------------------------------------------------------
+Two separate RSI filters; each has its own switch, timeframe, length, rule
+and level. Use one, the other, or both.
+  TIMEFRAME: 1 minute, 5 minutes, 15 minutes, 1 hour, 4 hours, 1 day,
+  1 week, 1 month (your list - nothing else).
+  A timeframe ABOVE the chart reads its last CLOSED candle (the one
+  before the candle that holds the signal), so the backtest and live
+  trading agree. A timeframe NOT above the chart (1 minute on a 1-minute
+  or a 15-minute chart) uses the chart's own candles, including the
+  signal candle.
+  RULE "Pullback": a buy needs RSI BELOW the level, a sell needs RSI ABOVE
+  100 minus the level.
+     level 50: buy below 50, sell above 50
+     level 30: buy below 30, sell above 70 (only deep dips)
+  RULE "Momentum": a buy needs RSI ABOVE the level, a sell BELOW 100 minus
+  it.  level 55: buy above 55, sell below 45.
+  LENGTH: 2 = very fast (the tested one), 14 = the classic RSI.
+Tested: HIGHER timeframe 1 hour, length 2, pullback, level 50 = take a
+buy only when the last closed 1-hour candle has RSI(2) below 50 - gold has
+just dipped on the 1-hour chart.
+Careful: on the chart's own timeframe a CHOCH up candle almost always has
+RSI above 50 (it broke up), so the PULLBACK rule there blocks nearly every
+signal. On the chart timeframe use the momentum rule, or a higher
+timeframe.
+The RSI is TradingView's own RSI (Wilder's averages).
+
+{RSIRESULTS}
+
+
+--------------------------------------------------------------------------
+10. EMA FILTERS - A LOWER AND A HIGHER TIMEFRAME
+--------------------------------------------------------------------------
+Two separate EMA filters, each with its own switch, timeframe (the same
+8 as the RSI: 1m, 5m, 15m, 1h, 4h, 1D, 1W, 1M), rule and lengths.
+  RULE "Price above the EMA": a buy needs the signal candle's close ABOVE
+  the EMA, a sell BELOW it.
+     EMA 200 = the classic trend line, 50 / 100 = medium, 9 / 20 = short.
+     Example: 1 hour, EMA 200 at 4,012: a buy at 4,020 is taken, a buy at
+     4,005 is skipped.
+  RULE "Fast EMA above the slow EMA": a buy needs the FAST EMA above the
+  SLOW one (for example 9 above 20, or 50 above 200), a sell below it. The
+  fast one must be shorter than the slow one.
+     Example: 1 hour 50 / 200: buys only while the 1-hour EMA 50 is above
+     the 1-hour EMA 200 (the "golden cross" side).
+  Lengths 1 - 500.
+
+{EMARESULTS}
+
+
+--------------------------------------------------------------------------
+11. THE TABLE AND THE AUDIT
+--------------------------------------------------------------------------
+Two new rows at the end of the table (TradingView rows 52 / 53; EA in the
+full table after "Cancelled - new BOS before the fill"):
+   "- skipped: section 4 filters (v13.1)"  how many setups each filter
+      skipped, e.g. "first of the day 212, yesterday's high / low 96"
+   "- section 4 filters now"  what the filters read now, e.g.
+      "yesterday 4,081.20 - 4,119.80 | RSI(2) 1h 34.5 | EMA 200 1h 4,012.30"
+The signal audit labels / journal say why a setup was skipped, e.g.
+   "SKIP - first setup of the day"
+   "SKIP - below yesterday's low 4,080.00"
+   "SKIP - the move took 5 candles (at least 12)"
+   "SKIP - RSI(2) 1h = 63.4, a buy needs below 50"
+   "SKIP - price 4,005.00 not above the EMA 200 1h (4,012.30)"
+   "CANCELLED - stop closer than 0.50% of the price"
+
+
+--------------------------------------------------------------------------
+12. TRADINGVIEW AND THE EA - SMALL DIFFERENCES
+--------------------------------------------------------------------------
+  - 4-hour, 1-day, 1-week and 1-month RSI / EMA: TradingView (OANDA)
+    starts those candles at 17:00 New York; FxPro MT5 candles follow the
+    broker clock (European summer time). For a few weeks a year (March,
+    October / November) the two clocks are one hour apart, so a candle can
+    differ a little. 1 hour and below: the same candles.
+  - 1 week / 1 month: the EA needs that much history in MT5 (it reads up
+    to 3,000 candles of the filter's timeframe; open the W1 / MN chart of
+    the symbol once if the history is short). An EMA 200 on the monthly
+    chart needs 200 months - use short lengths there (e.g. EMA 6 or 12).
+  - At the very start of the history, while an RSI / EMA does not have
+    enough candles yet, TradingView and the EA can differ for a moment
+    (the filter lets setups through until it has a value). The EA reads
+    3,000 candles of the filter's timeframe before it starts, so live it
+    always has a value.
+  - "Skip the first setup of the day" on the day the EA starts: see 5.
+
+
+--------------------------------------------------------------------------
+13. CHECKS DONE
+--------------------------------------------------------------------------
+{CHECKS}
+Honest limits:
+  - TradingView: my parser is NOT TradingView's compiler. If TradingView
+    shows an error, send me the line.
+  - MetaEditor runs only on Windows - compile the EA (F7) and send me any
+    error line.
+  - The filters choose WHICH setups are taken. They do not change the
+    stop, the target or the size. The tests are past data: 5.75 years and
+    a few hundred trades are not enough to prove an edge.
+
+
+==========================================================================
+EVERYTHING BELOW IS FROM THE v13.0 NOTES.
+==========================================================================
+
