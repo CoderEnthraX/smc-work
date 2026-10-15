@@ -8,6 +8,7 @@
 #          zone decision compared
 #  ea    - the whole EA in the fake MT5 == the core, zone modes ON (touch, pending, hedge, 15m)
 #  rs    - restarts (live mode, 20,000-bar warm-up): every trade == no restarts
+#  box   - the zone boxes the whole EA draws (the last 50) == the core's zone box records, place / prices / colour / text
 # Settings files of these checks start with x150_.
 import sys, os, csv, subprocess, time
 import numpy as np
@@ -115,11 +116,55 @@ def rs_case(t):
     return v131tests.rs_case(('150_' + name, P, extra))
 
 
+# ---------------- box: the zone boxes the whole EA draws (live mode, 20,000-bar warm-up, the last 50 kept) = the core's (Z lines)
+BOX = [('zone_touch', U, dict(sig=12, exec=0)),
+       ('zone_both_hedge_pend', U, dict(sig=14, exec=1, dirMode=3, znBig=0)),
+       ('zone_fvg_whole_line', U, dict(sig=12, exec=0, znOb=0, znHalf=0, znPct=30))]
+
+
+def box_case(t):
+    import re
+    name, P, extra = t
+    log = os.path.join(HERE, 'x150_box_%s.zn' % name)
+    fh = write('box_co_' + name, P, dict(Y, znLog=log, htfSrv=1, **extra))
+    harness(fh)
+    Zs = []
+    for ln in open(log):
+        if ln.startswith('Z,'):
+            f = ln.strip().split(',')
+            Zs.append((int(f[2]), int(f[3]), int(f[4]), float(f[5]), float(f[6]), int(f[7]), int(f[8])))
+    od = os.path.join(HERE, 'x150_box_%s.obj' % name)
+    fe = write('box_ea_' + name, P, dict(Y, tester=0, warm=20000, objDump=od, objPrefix='SMC', **extra))
+    r = subprocess.run([HERE + '/simmain', fe, HERE + '/m1.bin', fe[:-4] + '.csv'], capture_output=True, text=True, cwd=HERE)
+    if r.returncode: return '%s FAILED %s' % (name, r.stderr[-300:]), False
+    rect = {}; txt = {}
+    for ln in open(od):
+        f = ln.rstrip('\n').split('\t')
+        m = re.search(r'_Z(\d+)(t?)$', f[0])
+        if not m: continue
+        if m.group(2): txt[int(m.group(1))] = (int(f[1]), float(f[2]), int(f[3]), f[6])
+        else: rect[int(m.group(1))] = (int(f[1]), float(f[2]), int(f[8]), float(f[9]), int(f[3]))
+    srv = lambda u: u + (10800 if v15sep.eu_summer(u) else 7200)
+    tfs = [900, 3600, 14400]
+    want = []
+    for d, tf, k, top, bot, t0, t1 in Zs[-50:]:
+        left = srv(t0) if tf == 9 else srv(t0) - srv(t0) % tfs[tf]
+        name_ = 'HTF CHOCH* line' if tf == 9 else {0: 'M15', 1: 'H1', 2: 'H4'}[tf] + (' order block' if k == 0 else ' FVG')
+        want.append(((left, top, srv(t1), bot, 19 if d == 1 else 20), (left, top if d == 1 else bot, 19 if d == 1 else 20, name_)))
+    keys = sorted(rect)
+    got = [(rect[i], txt.get(i)) for i in keys]
+    same = got == want and len(keys) == len(set(keys)) and len(got) > 0
+    if not same:
+        for a, b in zip(got, want):
+            if a != b: print('   %s EA %s | core %s' % (name, a, b)); break
+    return '%-24s core %4d boxes in the year, EA keeps %2d: %s | %s' % (name, len(Zs), len(got), 'ALL 50 SAME (place, prices, colour, text)' if same else 'DIFFER', r.stderr.strip().split('\n')[-1]), same
+
+
 if __name__ == '__main__':
     which = sys.argv[1]
     res = []
     with Pool(4) as pool:
-        for fn, L in (('equiv', (eq_case, EQ)), ('sep', (sep_case, SEP)), ('ea', (ea_case, EA)), ('rs', (rs_case, RS))):
+        for fn, L in (('equiv', (eq_case, EQ)), ('sep', (sep_case, SEP)), ('ea', (ea_case, EA)), ('rs', (rs_case, RS)), ('box', (box_case, BOX))):
             if which == fn:
                 for line, ok in pool.imap(L[0], L[1], chunksize=1): print(line, flush=True); res.append(ok)
     print('ALL SAME' if all(res) else 'SOME DIFFER: %d of %d ok' % (sum(res), len(res)))

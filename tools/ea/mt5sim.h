@@ -52,9 +52,9 @@ enum ENUM_ACCOUNT_INFO_INTEGER { ACCOUNT_MARGIN_MODE };
 const long ACCOUNT_MARGIN_MODE_RETAIL_HEDGING = 2;
 enum ENUM_SERIES_INFO_INTEGER { SERIES_SYNCHRONIZED };
 enum ENUM_MQL_INFO_INTEGER { MQL_TESTER, MQL_VISUAL_MODE };
-enum ENUM_OBJECT { OBJ_TREND, OBJ_TEXT, OBJ_LABEL, OBJ_RECTANGLE_LABEL };
+enum ENUM_OBJECT { OBJ_TREND, OBJ_TEXT, OBJ_LABEL, OBJ_RECTANGLE_LABEL, OBJ_RECTANGLE };
 enum ENUM_OBJECT_PROPERTY_INTEGER { OBJPROP_SELECTABLE, OBJPROP_HIDDEN, OBJPROP_BACK, OBJPROP_COLOR, OBJPROP_STYLE, OBJPROP_WIDTH, OBJPROP_RAY_RIGHT, OBJPROP_FONTSIZE, OBJPROP_ANCHOR,
-   OBJPROP_CORNER, OBJPROP_XDISTANCE, OBJPROP_YDISTANCE, OBJPROP_XSIZE, OBJPROP_YSIZE, OBJPROP_BGCOLOR, OBJPROP_BORDER_TYPE };
+   OBJPROP_CORNER, OBJPROP_XDISTANCE, OBJPROP_YDISTANCE, OBJPROP_XSIZE, OBJPROP_YSIZE, OBJPROP_BGCOLOR, OBJPROP_BORDER_TYPE, OBJPROP_FILL };
 enum ENUM_BASE_CORNER { CORNER_LEFT_UPPER };
 enum ENUM_BORDER_TYPE { BORDER_FLAT };
 enum ENUM_CHART_PROPERTY_INTEGER { CHART_WIDTH_IN_PIXELS, CHART_HEIGHT_IN_PIXELS, CHART_COLOR_BACKGROUND };
@@ -67,7 +67,7 @@ enum ENUM_TRADE_TRANSACTION_TYPE { TRADE_TRANSACTION_ORDER_ADD, TRADE_TRANSACTIO
 enum ENUM_INIT_RETCODE { INIT_SUCCEEDED = 0, INIT_FAILED = 1, INIT_PARAMETERS_INCORRECT = 2 };
 const int REASON_REMOVE = 1, REASON_RECOMPILE = 2, REASON_CHARTCHANGE = 3, REASON_CLOSE = 9, REASON_PARAMETERS = 5, REASON_ACCOUNT = 6;
 const int TIME_DATE = 1, TIME_MINUTES = 2;
-const color clrTeal = 1, clrCrimson = 2, clrOrange = 3, clrRed = 4, clrDodgerBlue = 5, clrWhite = 6, clrSilver = 7, clrYellow = 8, clrLime = 9, clrAqua = 10, clrMagenta = 11, clrGray = 12, clrMediumPurple = 13, clrTomato = 14, clrGreen = 15, clrDarkOrange = 16, clrMediumBlue = 17, clrDimGray = 18;
+const color clrTeal = 1, clrCrimson = 2, clrOrange = 3, clrRed = 4, clrDodgerBlue = 5, clrWhite = 6, clrSilver = 7, clrYellow = 8, clrLime = 9, clrAqua = 10, clrMagenta = 11, clrGray = 12, clrMediumPurple = 13, clrTomato = 14, clrGreen = 15, clrDarkOrange = 16, clrMediumBlue = 17, clrDimGray = 18, clrSeaGreen = 19, clrIndianRed = 20;
 const uint TRADE_RETCODE_REQUOTE = 10004, TRADE_RETCODE_REJECT = 10006, TRADE_RETCODE_PLACED = 10008, TRADE_RETCODE_DONE = 10009, TRADE_RETCODE_DONE_PARTIAL = 10010,
            TRADE_RETCODE_ERROR = 10011, TRADE_RETCODE_TIMEOUT = 10012, TRADE_RETCODE_INVALID = 10013, TRADE_RETCODE_INVALID_VOLUME = 10014, TRADE_RETCODE_INVALID_PRICE = 10015,
            TRADE_RETCODE_INVALID_STOPS = 10016, TRADE_RETCODE_TRADE_DISABLED = 10017, TRADE_RETCODE_MARKET_CLOSED = 10018, TRADE_RETCODE_NO_MONEY = 10019,
@@ -161,6 +161,13 @@ inline ushort StringGetCharacter(const string &s, int i) { return (i >= 0 && i <
 inline int    StringReplace(string &s, const string &a, const string &b) { int n = 0; size_t p = 0; while ((p = s.find(a, p)) != string::npos) { s.replace(p, a.size(), b); p += b.size(); n++; } return n; }
 inline int    StringSplit(const string &s, ushort sep, MqlArr<string> &out) { out.v.clear(); string cur; for (char ch : s) { if ((ushort)ch == sep) { out.v.push_back(cur); cur = ""; } else cur += ch; } out.v.push_back(cur); return (int)out.v.size(); }
 template <class E> string EnumToString(E e) { return "PERIOD_" + std::to_string((int)e); }
+// the timeframes by their MT5 names (as MetaTrader 5 writes them)
+inline string EnumToString(ENUM_TIMEFRAMES e)
+{
+   switch (e) { case PERIOD_M1: return "PERIOD_M1"; case PERIOD_M3: return "PERIOD_M3"; case PERIOD_M5: return "PERIOD_M5"; case PERIOD_M15: return "PERIOD_M15"; case PERIOD_M30: return "PERIOD_M30";
+                case PERIOD_H1: return "PERIOD_H1"; case PERIOD_H2: return "PERIOD_H2"; case PERIOD_H4: return "PERIOD_H4"; case PERIOD_D1: return "PERIOD_D1"; case PERIOD_W1: return "PERIOD_W1";
+                case PERIOD_MN1: return "PERIOD_MN1"; default: return "PERIOD_CURRENT"; }
+}
 namespace sim { int verbose = 0; FILE *printTo = nullptr; }   // printTo: where Print writes (default stderr)
 inline void PutOne(std::string &o, const std::string &x) { o += x; }
 inline void PutOne(std::string &o, const char *x) { o += x; }
@@ -265,11 +272,11 @@ inline int      GlobalVariablesTotal() { return (int)sim::gv.size(); }
 inline string   GlobalVariableName(int i) { auto it = sim::gv.begin(); std::advance(it, i); return it->first; }
 // chart objects: ignored
 // chart objects: kept by name (time, price, text, tooltip, colour, anchor, font size) so the tests can read them back
-struct SimObj { int type; datetime t; double p; string text, tip; long col, anchor, fsize; };
+struct SimObj { int type; datetime t; double p; string text, tip; long col, anchor, fsize; datetime t2; double p2; };
 namespace sim { std::map<string, SimObj> objs; long chartBg = 0; }
 inline int  ObjectFind(long, const string &n) { return sim::objs.count(n) ? 0 : -1; }
-inline bool ObjectCreate(long, const string &n, ENUM_OBJECT ty, int, datetime t, double p, datetime = 0, double = 0) { sim::objs[n] = SimObj{(int)ty, t, p, "", "", 0, 0, 0}; return true; }
-inline bool ObjectMove(long, const string &n, int pt, datetime t, double p) { auto it = sim::objs.find(n); if (it != sim::objs.end() && pt == 0) { it->second.t = t; it->second.p = p; } return true; }
+inline bool ObjectCreate(long, const string &n, ENUM_OBJECT ty, int, datetime t, double p, datetime t2 = 0, double p2 = 0) { sim::objs[n] = SimObj{(int)ty, t, p, "", "", 0, 0, 0, t2, p2}; return true; }
+inline bool ObjectMove(long, const string &n, int pt, datetime t, double p) { auto it = sim::objs.find(n); if (it != sim::objs.end() && pt == 0) { it->second.t = t; it->second.p = p; } if (it != sim::objs.end() && pt == 1) { it->second.t2 = t; it->second.p2 = p; } return true; }
 inline bool ObjectSetInteger(long, const string &n, ENUM_OBJECT_PROPERTY_INTEGER pr, long v)
 {
    auto it = sim::objs.find(n);

@@ -307,6 +307,7 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   final 29,795 -> ~91,300 (v13.0 ~96,400, v12.2 ~96,400); main body 17,574; largest function 164 external elements.
   RULE FOR FUTURE VERSIONS: before delivering any Pine file check ALL THREE TradingView limits with these scripts (main body
   < ~20k tokens, every function < ~200 external elements, compiled tokens estimate < ~95k) - the parser cannot see them.
+  (v15.0: + `python3 tools/ea/pineorder.py file` = every function / type / global declared before its first use.)
   EA: MetaEditor 0 errors / 2 warnings "declaration of 'k' hides member" (XSkip RSI / EMA loops vs CSide member k) -> loop index
   j (ea131.py); harness + simmain byte-identical. EA compiled by the user.
 - v14.0 (user asked, answered every question, "give the version number 14.0 to both", "just give me the files", NO notes; NO
@@ -353,6 +354,17 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
 - v15.0 (user: "build v15.0 with your suggestions ... both the meta ea and the tradingview file ... two tradingview files, one
   complete and one without the rsi and ema feature"; no notes; NO profit test). 3 files: SMC_Structure_EA_v15.0.mq5 (194 -> 202
   inputs), SMC_Structure_Strategy_v15.0.txt (176 -> 184), SMC_Structure_Strategy_v15.0_noRSI_EMA.txt (164 = minus the 20 RSI / EMA).
+  ZONE BOX (user's last request, added before delivery; display only): the zone a with-HTF chart signal came from (the
+  ZnAllow pick at the freeze point, BEFORE the visit is closed; any with-HTF signal, traded or not) is drawn as a box from the
+  zone's candle (OB candle / first of the 3 FVG candles; the CHOCH* line: its first touch) to the signal candle, green = buy
+  zone, red = sell zone, text '1h order block' / 'M15 FVG' / 'HTF CHOCH* line'; setting stZnBox / InZnBox (ON) at the END of
+  section 13; TradingView keeps 50 (max_boxes_count default), the EA 50 (g_P + "Z" + n, + text n"t"; redrawn by the warm-up).
+  Core: ZRec t0 / tt, ZnCandle(j, t, ...) with the candle open time (UTC; adapter SrvToUtc), g_znCt ring, ZnBox(d) -> g_zbOn /
+  g_zbD / g_zbTf / g_zbK / g_zbTop / g_zbBot / g_zbT0 / g_zbT1; adapter DrawZnBox (OBJ_RECTANGLE, fill, back, tooltip + text).
+  Pine: f_znReq + time[3], time[ku], time[kd] (13 values), Zn.t0, zL[3] = line first touch, f_znAllow 5 values (line: top =
+  bottom = stHtO), box.new(xloc.bar_time) at the freeze block. Inputs: TV 185 (no RSI / EMA 165), EA 203.
+  BUG CAUGHT before delivery: the box text used f_tfName above its declaration (TradingView would refuse it; the parser did not
+  see it) -> f_tfName moved above f_znUp; NEW CHECK tools/ea/pineorder.py (declared-before-use; v13.1 / v14.0 clean).
   F1 section 4 end: stM1On / InM1On (ON) 'skip closer / further (old + separate boxes), min stop %, rule 3 distance, leg size on
   the 1-minute chart only' (chart > 60 s -> those 0 / off; rule 3 itself works, no fall back; seconds = 1m) + stBcMax2 / InBcMax2
   (0) big candle box for charts > 1m (old box = 1m) - EA Derive x1m / bcE, Pine stX1m, stMnX / stMxX / stMnP / stLzN / stLzX /

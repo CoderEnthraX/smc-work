@@ -62,7 +62,7 @@ int main(int argc, char **argv)
    // v15.0 (defaults = as v14.0 for the saved settings files; the EA's own defaults are ON)
    InM1On = cb("m1On", false); InBcMax2 = cd("bcMax2", 0); InNw1m = cb("nw1m", false);
    InZnPct = cd("znPct", 50); InZnBig = cb("znBig", true); InZnOb = cb("znOb", true); InZnFvg = cb("znFvg", true); InZnHalf = cb("znHalf", true);
-   InZnTwo = cb("znTwo", true); InZnLine = cb("znLine", true);
+   InZnTwo = cb("znTwo", true); InZnLine = cb("znLine", true); InZnBox = cb("znBox", true);
 #endif
 #ifdef EA_V14
    // v14.0: the separate unit boxes (used with buMode 3), the spread for sizing, leg size and big signal candle (section 4)
@@ -258,7 +258,7 @@ int main(int argc, char **argv)
       {
          if (o.first.compare(0, pre.size(), pre) != 0) continue;
          string tip = o.second.tip; size_t q; while ((q = tip.find('\n')) != string::npos) tip.replace(q, 1, "\\n");
-         fprintf(of2, "%s\t%ld\t%.2f\t%ld\t%ld\t%ld\t%s\t%s\n", o.first.c_str(), (long)o.second.t, o.second.p, o.second.col, o.second.anchor, o.second.fsize, o.second.text.c_str(), tip.c_str());
+         fprintf(of2, "%s\t%ld\t%.2f\t%ld\t%ld\t%ld\t%s\t%s\t%ld\t%.2f\n", o.first.c_str(), (long)o.second.t, o.second.p, o.second.col, o.second.anchor, o.second.fsize, o.second.text.c_str(), tip.c_str(), (long)o.second.t2, o.second.p2);
       }
       fclose(of2);
    }

@@ -512,6 +512,103 @@ rep('''   Row("RULE 3 - ENTRY AT THE SIGNAL CLOSE (section 3)", R3Txt(), S.r3On 
    Row("ORDER BLOCK ZONES (section 2)", ZnTxt(), S.obM ? clrAqua : clrGray);   // v15.0
 ''')
 
+# ---- v15.0 zone box: the zone that was touched and then gave the chart signal with the higher timeframe is drawn as a box
+#      (from the zone's own candle - the order block, or the first of the 3 FVG candles; the CHOCH* line from its first touch -
+#      to the signal candle). The core keeps each zone's candle time (UTC) and the line's first touch; display only.
+rep('''   double top, bot, ext;         // ext = the low (buy) / high (sell) of the current visit
+''', '''   double top, bot, ext;         // ext = the low (buy) / high (sell) of the current visit
+   long   t0, tt;                // t0 = the open time of the zone's candle, tt = its first touch (UTC; for the zone box)
+''')
+rep('''double g_znCo[3][6], g_znCh[3][6], g_znCl[3][6], g_znCc[3][6];   // the last closed candles of each zone timeframe (0 = newest)
+''', '''double g_znCo[3][6], g_znCh[3][6], g_znCl[3][6], g_znCc[3][6];   // the last closed candles of each zone timeframe (0 = newest)
+long   g_znCt[3][6];                                              // their open times (UTC)
+bool   g_zbOn = false;                                            // a zone box to draw on this bar (the adapter draws it)
+int    g_zbD = 0, g_zbTf = -1, g_zbK = 0;
+double g_zbTop = 0, g_zbBot = 0;
+long   g_zbT0 = 0, g_zbT1 = 0;
+''')
+rep('''void ZnAdd(int j, int dir, int kind, double top, double bot)
+''', '''void ZnAdd(int j, int dir, int kind, double top, double bot, long t0)
+''')
+rep('''g_zn[g_znN].top = top; g_zn[g_znN].bot = bot;
+''', '''g_zn[g_znN].top = top; g_zn[g_znN].bot = bot; g_zn[g_znN].t0 = t0; g_zn[g_znN].tt = 0;
+''')
+rep('''void ZnCandle(int j, double o, double h, double l, double c)
+''', '''void ZnCandle(int j, long t, double o, double h, double l, double c)
+''')
+rep('''g_znCc[j][k] = g_znCc[j][k - 1]; }
+''', '''g_znCc[j][k] = g_znCc[j][k - 1]; g_znCt[j][k] = g_znCt[j][k - 1]; }
+''')
+rep('''   g_znCo[j][0] = o; g_znCh[j][0] = h; g_znCl[j][0] = l; g_znCc[j][0] = c;
+''', '''   g_znCo[j][0] = o; g_znCh[j][0] = h; g_znCl[j][0] = l; g_znCc[j][0] = c; g_znCt[j][0] = t;
+''')
+rep('''         if (d == 1) ZnAdd(j, 1, 1, g_znCl[j][0], g_znCh[j][2]);
+         else        ZnAdd(j, -1, 1, g_znCl[j][2], g_znCh[j][0]);
+''', '''         if (d == 1) ZnAdd(j, 1, 1, g_znCl[j][0], g_znCh[j][2], g_znCt[j][2]);
+         else        ZnAdd(j, -1, 1, g_znCl[j][2], g_znCh[j][0], g_znCt[j][2]);
+''')
+rep('''               ZnAdd(j, d, 0, g_znCh[j][k], g_znCl[j][k]);
+''', '''               ZnAdd(j, d, 0, g_znCh[j][k], g_znCl[j][k], g_znCt[j][k]);
+''')
+rep('''      if (z.q && (d == 1 ? x <= tl : x >= tl)) { z.tch = true; z.frz = false; z.ext = x; }
+''', '''      if (z.q && (d == 1 ? x <= tl : x >= tl)) { z.tch = true; z.frz = false; z.ext = x; z.tt = g_t; }
+''')
+rep('''string ZnName(int tf)''', '''// v15.0: the zone a with-HTF chart signal came from (before its visit is closed) - kept for the box on the chart
+void ZnBox(int d)
+{
+   int b = ZnAllow(d);
+   if (b == 0) return;
+   g_zbOn = true; g_zbD = d; g_zbT1 = g_t;
+   if (b > 0) { g_zbTf = g_zn[b - 1].tf; g_zbK = g_zn[b - 1].kind; g_zbTop = g_zn[b - 1].top; g_zbBot = g_zn[b - 1].bot; g_zbT0 = g_zn[b - 1].t0; }
+   else       { g_zbTf = 9; g_zbK = 2; g_zbTop = g_htO; g_zbBot = g_htO; g_zbT0 = g_zl.tt; }
+}
+string ZnName(int tf)''')
+rep('''      if ((g_T15 == 1 && sU) || (g_T15 == -1 && sD)) ZnFreeze(g_T15);
+''', '''      if ((g_T15 == 1 && sU) || (g_T15 == -1 && sD)) { ZnBox(g_T15); ZnFreeze(g_T15); }
+''')
+rep('''   g_t = t; g_o = o; g_h = h; g_l = l; g_c = c; g_eq = eq;
+''', '''   g_t = t; g_o = o; g_h = h; g_l = l; g_c = c; g_eq = eq;
+   g_zbOn = false;   // v15.0
+''')
+rep('''   ZnCandle(0, r.open, r.high, r.low, r.close);   // v15.0: zones of the higher timeframe''', '''   ZnCandle(0, SrvToUtc(r.time), r.open, r.high, r.low, r.close);   // v15.0: zones of the higher timeframe''')
+rep('''{ ZnCandle(j, zr[i].open, zr[i].high, zr[i].low, zr[i].close); g_znFed[j] = zr[i].time; }''', '''{ ZnCandle(j, SrvToUtc(zr[i].time), zr[i].open, zr[i].high, zr[i].low, zr[i].close); g_znFed[j] = zr[i].time; }''', 2)
+# the setting (end of section 13) and the drawing
+rep('''input int      InAudMax    = 200;     //   - how many audit labels to keep on the chart (0 = none, the journal only)
+''', '''input int      InAudMax    = 200;     //   - how many audit labels to keep on the chart (0 = none, the journal only)
+input bool     InZnBox     = true;    // Zone modes: draw the zone that was touched and gave the signal as a box (the last 50)
+''')
+rep('''      if (InDraw) DrawBar(r);
+''', '''      if (InDraw) DrawBar(r);
+      if (InZnBox && g_zbOn) DrawZnBox();   // v15.0
+''')
+rep('''void DrawBar(MqlRates &r);
+''', '''void DrawBar(MqlRates &r);
+void DrawZnBox();   // v15.0
+''')
+rep('''void DelObj(string nm) { ObjectDelete(0, nm); ObjectDelete(0, nm + "t"); }
+''', '''void DelObj(string nm) { ObjectDelete(0, nm); ObjectDelete(0, nm + "t"); }
+// v15.0: the zone that was touched and then gave the chart signal with the higher timeframe: a box from the zone's candle (the
+// CHOCH* line: from its first touch) to the signal candle; green = buy zone, red = sell zone; the last 50 are kept
+int g_zbox = 0;
+void DrawZnBox()
+{
+   string nm = g_P + "Z" + IntegerToString(g_zbox);
+   string tx = g_zbTf == 9 ? "HTF CHOCH* line" : TfName(g_znPer[g_zbTf]) + (g_zbK == 0 ? " order block" : " FVG");
+   color  c  = g_zbD == 1 ? clrSeaGreen : clrIndianRed;
+   datetime t1 = UtcToSrv(g_zbT0), t2 = UtcToSrv(g_zbT1);
+   ObjectCreate(0, nm, OBJ_RECTANGLE, 0, t1, g_zbTop, t2, g_zbBot);
+   ObjectSetInteger(0, nm, OBJPROP_COLOR, c);
+   ObjectSetInteger(0, nm, OBJPROP_FILL, true);
+   ObjectSetInteger(0, nm, OBJPROP_BACK, true);
+   ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, nm, OBJPROP_HIDDEN, true);
+   ObjectSetString(0, nm, OBJPROP_TOOLTIP, tx + (g_zbD == 1 ? " (buy) " : " (sell) ") + TkS(g_zbBot) + " - " + TkS(g_zbTop));
+   DrawText(nm + "t", t1, g_zbD == 1 ? g_zbTop : g_zbBot, tx, c, g_zbD == 1 ? ANCHOR_LEFT_LOWER : ANCHOR_LEFT_UPPER);
+   if (g_zbox >= 50) DelObj(g_P + "Z" + IntegerToString(g_zbox - 50));
+   g_zbox++;
+}
+''')
+
 assert all(ord(c) < 128 for c in s), 'not ASCII'
 open(dst, 'w').write(s)
 print('written', dst)

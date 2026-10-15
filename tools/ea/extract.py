@@ -18,6 +18,10 @@ if 'ZnCandle' in core:
     core = core.replace(h, '   if (best == 0 && S.znLine && g_zl.dir == d && g_zl.tch && !g_zl.spent) best = -1;\n'
         '   if (g_znLog) { if (best > 0) fprintf(g_znLog, "A,%d,%d,%d,%d,%.10f,%.10f\\n", EN.bi, d, g_zn[best - 1].tf, g_zn[best - 1].kind, g_zn[best - 1].top, g_zn[best - 1].bot); '
         'else fprintf(g_znLog, "A,%d,%d,%d,-1,0,0\\n", EN.bi, d, best == -1 ? 9 : -1); }\n   return best;\n')
+    # the zone box (the zone a with-HTF chart signal came from): Z,bar,d,tf,kind,top,bottom,left time,right time
+    h = '   else       { g_zbTf = 9; g_zbK = 2; g_zbTop = g_htO; g_zbBot = g_htO; g_zbT0 = g_zl.tt; }\n'
+    if h in core:
+        core = core.replace(h, h + '   if (g_znLog) fprintf(g_znLog, "Z,%d,%d,%d,%d,%.10f,%.10f,%lld,%lld\\n", EN.bi, d, g_zbTf, g_zbK, g_zbTop, g_zbBot, (long long)g_zbT0, (long long)g_zbT1);\n')
 if 'lzMin' in core:
     core = '#define CORE_V14 1\n' + core
     # test hook (harness copy only, the .mq5 is not changed): every call of the section 4 filters with the two levels it reads

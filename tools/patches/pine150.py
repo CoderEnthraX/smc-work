@@ -65,6 +65,10 @@ after_line('stBcMax = input.float(',
 after_line('stPreHrs = input.float(',
     'stNw1m   = input.bool(true, "News on the 1-minute chart only (above 1 minute: no news windows, no news closes)", group = gx10, tooltip = "ON (default): on charts above 1 minute the news windows 1 - 3, the automatic US news and \'no new trades before news\' do nothing - trades are not closed by news. US holidays still work.")\n')
 
+# ---- the zone box setting (end of section 13)
+after_line('stAudSz  = input.string(',
+    'stZnBox  = input.bool(true, "Zone modes: draw the zone that was touched and gave the signal as a box", group = gx13, tooltip = "Order block zone modes only: when the chart\'s CHOCH / BOS with the higher timeframe comes after a zone was touched, that zone is drawn as a box - from the zone\'s candle (the CHOCH* line: from its first touch) to the signal candle. Green = buy zone, red = sell zone. TradingView keeps the last 50 boxes.")\n')
+
 # ---- 2. the loss mark
 setline('stLmOn  = input.bool(', '\x00')
 setline('stLmAmt = input.float(', '\x00')
@@ -188,17 +192,19 @@ f_znUp(string tf) =>
 string stZnTf1 = f_znUp(stHtfTf)
 string stZnTf2 = stZnTf1 == "" ? "" : f_znUp(stZnTf1)
 bool   stZnOn  = stObM and stHtfOk
-// the last CLOSED candle: time, close, low, high, the low / high 2 candles before it, the order block before a gap up / down
+// the last CLOSED candle: time, close, low, high, the low / high 2 candles before it, the order block before a gap up / down;
+// the open times of the first FVG candle and of the two order blocks (for the zone box)
 f_znReq() =>
     int ku = close[3] < open[3] ? 3 : close[4] < open[4] ? 4 : close[5] < open[5] ? 5 : 0
     int kd = close[3] > open[3] ? 3 : close[4] > open[4] ? 4 : close[5] > open[5] ? 5 : 0
-    [time[1], close[1], low[1], high[1], low[3], high[3], ku > 0 ? high[ku] : na, ku > 0 ? low[ku] : na, kd > 0 ? high[kd] : na, kd > 0 ? low[kd] : na]
+    [time[1], close[1], low[1], high[1], low[3], high[3], ku > 0 ? high[ku] : na, ku > 0 ? low[ku] : na, kd > 0 ? high[kd] : na, kd > 0 ? low[kd] : na, time[3], ku > 0 ? time[ku] : na, kd > 0 ? time[kd] : na]
 f_znGet(bool on, string tf) =>
     request.security(syminfo.tickerid, on ? tf : timeframe.period, f_znReq(), lookahead = barmerge.lookahead_on)
-[_z0t, _z0c, _z0l, _z0h, _z0al, _z0ah, _z0ut, _z0ub, _z0dt, _z0db] = f_znGet(stZnOn, stHtfTf)
-[_z1t, _z1c, _z1l, _z1h, _z1al, _z1ah, _z1ut, _z1ub, _z1dt, _z1db] = f_znGet(stZnOn and stZnTf1 != "", stZnTf1)
-[_z2t, _z2c, _z2l, _z2h, _z2al, _z2ah, _z2ut, _z2ub, _z2dt, _z2db] = f_znGet(stZnOn and stZnTf2 != "", stZnTf2)
+[_z0t, _z0c, _z0l, _z0h, _z0al, _z0ah, _z0ut, _z0ub, _z0dt, _z0db, _z0f, _z0uT, _z0dT] = f_znGet(stZnOn, stHtfTf)
+[_z1t, _z1c, _z1l, _z1h, _z1al, _z1ah, _z1ut, _z1ub, _z1dt, _z1db, _z1f, _z1uT, _z1dT] = f_znGet(stZnOn and stZnTf1 != "", stZnTf1)
+[_z2t, _z2c, _z2l, _z2h, _z2al, _z2ah, _z2ut, _z2ub, _z2dt, _z2db, _z2f, _z2uT, _z2dT] = f_znGet(stZnOn and stZnTf2 != "", stZnTf2)
 // one zone: its timeframe (0 = the higher timeframe, 1 / 2 = the ones above), side, kind (0 order block, 1 FVG), top, bottom,
+// the open time of its candle,
 // the visit's low (buy) / high (sell), state (0 fresh, 1 touched - visit open, 2 a signal closed the visit, 3 stopped) and
 // whether it is in the leg's zone on this bar
 type Zn
@@ -207,17 +213,18 @@ type Zn
     int   k
     float top
     float bot
+    int   t0
     float ext
     int   st = 0
     bool  q = false
 var array<Zn>    zA = array.new<Zn>()
-var array<float> zL = array.new<float>(3, na)   // the CHOCH* line: state, visit low / high; the leg's event count
+var array<float> zL = array.new<float>(4, na)   // the CHOCH* line: state, visit low / high; the leg's event count; first touch
 var array<float> zO = array.new<float>(12, na)  // the last order block per timeframe and side (top, bottom)
 var int   stZnF = -1
 var float stZnT = na
 var float stZnB = na
 var int   stCntOb = 0
-f_znAdd(int j, int d, int kd, float tp, float bt) =>
+f_znAdd(int j, int d, int kd, float tp, float bt, int t0) =>
     int same = 0
     int old = -1
     for [i, z] in zA
@@ -228,15 +235,15 @@ f_znAdd(int j, int d, int kd, float tp, float bt) =>
         array.remove(zA, old)
     if array.size(zA) >= 60
         array.remove(zA, 0)
-    array.push(zA, Zn.new(j, d, kd, tp, bt, na))
-f_znOb(int j, int d, float tp, float bt) =>
+    array.push(zA, Zn.new(j, d, kd, tp, bt, t0))
+f_znOb(int j, int d, float tp, float bt, int t0) =>
     int o = j * 4 + (d == 1 ? 0 : 2)
     if stZnOb and not na(tp) and (na(array.get(zO, o)) or tp != array.get(zO, o) or bt != array.get(zO, o + 1))
-        f_znAdd(j, d, 0, tp, bt)
+        f_znAdd(j, d, 0, tp, bt, t0)
         array.set(zO, o, tp)
         array.set(zO, o + 1, bt)
 // one closed candle of zone timeframe j; true = the zone of the waiting setup was broken
-f_znCandle(int j, float c, float cl, float ch, float al, float ah, float ut, float ub, float dt, float db) =>
+f_znCandle(int j, float c, float cl, float ch, float al, float ah, float ut, float ub, float dt, float db, int ft, int uT, int dT) =>
     bool hit = false
     int n = array.size(zA)
     if n > 0
@@ -247,12 +254,12 @@ f_znCandle(int j, float c, float cl, float ch, float al, float ah, float ut, flo
                 array.remove(zA, i)
     if cl > ah
         if stZnFvg
-            f_znAdd(j, 1, 1, cl, ah)
-        f_znOb(j, 1, ut, ub)
+            f_znAdd(j, 1, 1, cl, ah, ft)
+        f_znOb(j, 1, ut, ub, uT)
     if ch < al
         if stZnFvg
-            f_znAdd(j, -1, 1, al, ch)
-        f_znOb(j, -1, dt, db)
+            f_znAdd(j, -1, 1, al, ch, ft)
+        f_znOb(j, -1, dt, db, dT)
     hit
 // this bar against one zone: touch, the visit's low / high, its liquidity taken
 f_znStep(int st, float ext, bool q, int d, float tl) =>
@@ -291,19 +298,24 @@ f_znBar() =>
         z.q := q
     if stZnLine and d != 0 and not na(stHtO)
         [s2, x2] = f_znStep(int(array.get(zL, 0)), array.get(zL, 1), true, d, stHtO)
+        if s2 == 1 and array.get(zL, 0) == 0
+            array.set(zL, 3, time)
         array.set(zL, 0, s2)
         array.set(zL, 1, x2)
-// the zone a signal in direction d may trade from: [timeframe (9 = the CHOCH* line, -1 = none), kind, top, bottom]
+// the zone a signal in direction d may trade from: [timeframe (9 = the CHOCH* line, -1 = none), kind, top, bottom, the open
+// time of its candle (the line: its first touch)]
 f_znAllow(int d) =>
     int big = -1
     for z in zA
         if stZnBig and z.d == d and z.q and z.st != 3
             big := math.max(big, z.tf)
     float ls = array.get(zL, 0)
-    int   rf = stZnLine and (ls == 1 or ls == 2) ? 9 : -1
+    bool  ln = stZnLine and (ls == 1 or ls == 2)
+    int   rf = ln ? 9 : -1
     int   rk = -1
-    float rt = na
-    float rb = na
+    float rt = ln ? stHtO : na
+    float rb = rt
+    int   r0 = ln ? int(array.get(zL, 3)) : na
     int   bf = -1
     for z in zA
         if z.d == d and (z.st == 1 or z.st == 2) and (not stZnBig or z.tf == big) and z.tf > bf
@@ -312,7 +324,8 @@ f_znAllow(int d) =>
             rk := z.k
             rt := z.top
             rb := z.bot
-    [rf, rk, rt, rb]
+            r0 := z.t0
+    [rf, rk, rt, rb, r0]
 // a chart signal with the higher timeframe closes the visit of every touched zone of that side
 f_znFrz(int d) =>
     for z in zA
@@ -328,11 +341,11 @@ rep('''bool stEqBlock = stEqOn and not stEqOpen
 bool stZnBrk = false
 if stZnOn
     if _z0t != nz(_z0t[1])
-        stZnBrk := f_znCandle(0, _z0c, _z0l, _z0h, _z0al, _z0ah, _z0ut, _z0ub, _z0dt, _z0db)
+        stZnBrk := f_znCandle(0, _z0c, _z0l, _z0h, _z0al, _z0ah, _z0ut, _z0ub, _z0dt, _z0db, _z0f, _z0uT, _z0dT)
     if stZnTf1 != "" and _z1t != nz(_z1t[1])
-        stZnBrk := f_znCandle(1, _z1c, _z1l, _z1h, _z1al, _z1ah, _z1ut, _z1ub, _z1dt, _z1db) or stZnBrk
+        stZnBrk := f_znCandle(1, _z1c, _z1l, _z1h, _z1al, _z1ah, _z1ut, _z1ub, _z1dt, _z1db, _z1f, _z1uT, _z1dT) or stZnBrk
     if stZnTf2 != "" and _z2t != nz(_z2t[1])
-        stZnBrk := f_znCandle(2, _z2c, _z2l, _z2h, _z2al, _z2ah, _z2ut, _z2ub, _z2dt, _z2db) or stZnBrk
+        stZnBrk := f_znCandle(2, _z2c, _z2l, _z2h, _z2al, _z2ah, _z2ut, _z2ub, _z2dt, _z2db, _z2f, _z2uT, _z2dT) or stZnBrk
     f_znBar()
 ''')
 rep('''        // v13.1 (section 4): the new setup filters; the first setup of the day is checked LAST, so a setup that another
@@ -342,7 +355,7 @@ rep('''        // v13.1 (section 4): the new setup filters; the first setup of t
         float _zt = na
         float _zb = na
         if stObM
-            [_a1, _a2, _a3, _a4] = f_znAllow(_d)
+            [_a1, _a2, _a3, _a4, _a5] = f_znAllow(_d)
             _zf := _d == stT15 ? _a1 : -1
             _zk := _a2
             _zt := _a3
@@ -362,8 +375,13 @@ rep('''            stFix  := stRule == 2 ? _piv : na
                 _audS += _zf == 9 ? " (CHOCH* line)" : " (" + (_zf == 0 ? "HTF" : _zf == 1 ? "HTF+1" : "HTF+2") + (_zk == 0 ? " order block)" : " FVG)")
 ''')
 rep('''if stAudit and (stSigUp or stSigDn)
-    bool   _aCh = stUseCho''', '''// v15.0: a chart signal with the higher timeframe closes the visit of the touched zones
+    bool   _aCh = stUseCho''', '''// v15.0: a chart signal with the higher timeframe closes the visit of the touched zones; the zone it came from is drawn as a
+// box (from the zone's candle - the CHOCH* line: from its first touch - to this candle; green = buy zone, red = sell zone)
 if stZnOn and stT15 != 0 and (stT15 == 1 ? stSigUp : stSigDn)
+    [_bf, _bk, _bt, _bb, _b0] = f_znAllow(stT15)
+    if stZnBox and _bf >= 0
+        color _bc = stT15 == 1 ? color.green : color.red
+        box.new(_b0, _bt, time, _bb, xloc = xloc.bar_time, border_color = _bc, bgcolor = color.new(_bc, 85), text = _bf == 9 ? "HTF CHOCH* line" : f_tfName(_bf == 0 ? stHtfTf : _bf == 1 ? stZnTf1 : stZnTf2) + (_bk == 0 ? " order block" : " FVG"), text_size = size.small, text_color = _bc)
     f_znFrz(stT15)
 if stAudit and (stSigUp or stSigDn)
     bool   _aCh = stUseCho''')
@@ -373,6 +391,11 @@ rep('\x00\n', '')
 rep('    // v12.1: group 41 (no new trades before news) and group 42 (the loss mark)\n', '    // v12.1: group 41 (no new trades before news); v15.0: the order block zones\n')
 
 assert 'stFav' not in s and 'stAgn' not in s and 'stAutoM' not in s and 'stAutoDir' not in s and 'stHfEff' not in s and 'stLm' not in s and 'stCntLm' not in s, 'old names left'
+
+# ---- the zone box names the timeframe: the timeframe-name helper must be declared before that (TradingView reads top down)
+_tfn = 'f_tfName(string tf) =>\n    tf == "15" ? "15m" : tf == "60" ? "1h" : tf == "240" ? "4h" : tf\n'
+rep(_tfn, '')
+rep('f_znUp(string tf) =>\n', _tfn + 'f_znUp(string tf) =>\n')
 
 # the table title still said v13.1
 rep('"STRATEGY v13.1"', '"STRATEGY v15.0"')

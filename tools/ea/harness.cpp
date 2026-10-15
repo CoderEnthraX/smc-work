@@ -304,7 +304,7 @@ int main(int argc, char **argv)
       auto up = [](long sec) -> long { const long LD[6] = {900, 3600, 14400, 86400, 604800, 2592000}; for (int a = 0; a < 6; a++) if (sec < LD[a]) return LD[a]; return 0; };
       znTf[0] = htfSec; znTf[1] = up(htfSec); znTf[2] = znTf[1] ? up(znTf[1]) : 0;
    }
-   long zK[3] = {-1, -1, -1}; double zo[3] = {0, 0, 0}, zh[3] = {0, 0, 0}, zl[3] = {0, 0, 0}, zc[3] = {0, 0, 0}; bool zHave[3] = {false, false, false};
+   long zK[3] = {-1, -1, -1}, zt[3] = {0, 0, 0}; double zo[3] = {0, 0, 0}, zh[3] = {0, 0, 0}, zl[3] = {0, 0, 0}, zc[3] = {0, 0, 0}; bool zHave[3] = {false, false, false};
 #endif
    for (long i = 0; i < nb && i < to; i++)
    {
@@ -360,7 +360,7 @@ int main(int argc, char **argv)
       {
          if (!znTf[q]) continue;
          long kk = q == 0 ? (htSrv ? (T[i] + TzOff(T[i], 7200, 1)) / htfSec : T[i] / htfSec) : IndKeyH(T[i], znTf[q]);
-         if (kk != zK[q]) { if (zHave[q]) ZnCandle(q, zo[q], zh[q], zl[q], zc[q]); zK[q] = kk; zHave[q] = true; zo[q] = O[i]; zh[q] = H[i]; zl[q] = L[i]; zc[q] = C[i]; }
+         if (kk != zK[q]) { if (zHave[q]) ZnCandle(q, zt[q], zo[q], zh[q], zl[q], zc[q]); zK[q] = kk; zHave[q] = true; zt[q] = T[i]; zo[q] = O[i]; zh[q] = H[i]; zl[q] = L[i]; zc[q] = C[i]; }
          else { zh[q] = std::max(zh[q], H[i]); zl[q] = std::min(zl[q], L[i]); zc[q] = C[i]; }
       }
 #endif

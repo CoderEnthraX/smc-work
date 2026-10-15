@@ -45,15 +45,16 @@ def run(name, extra, htf, binf='m1.bin'):
                stZnLine=bool(int(extra.get('znLine', 1))), stZnF=-1, stZnT=None, stZnB=None)
     cho, bos = (sig % 3) != 1, (sig % 3) != 0
     g = load_pine(inp)
-    B = {}; A = {}
+    B = {}; A = {}; Z = {}
     for ln in open(log):
         f = ln.strip().split(',')
         if f[0] == 'B': B[int(f[1])] = (int(f[2]), float(f[3]), float(f[4]), int(f[5]), int(f[6]), int(f[7]), int(f[8]), int(f[9]))
+        elif f[0] == 'Z': Z.setdefault(int(f[1]), []).append((int(f[2]), int(f[3]), int(f[4]), float(f[5]), float(f[6]), int(f[7]), int(f[8])))
         else: A.setdefault(int(f[1]), []).append((int(f[2]), int(f[3]), int(f[4]), float(f[5]), float(f[6])))
     tfs = [htf, v15sep.up(htf), 0]
     tfs[2] = v15sep.up(tfs[1]) if tfs[1] else 0
     keys = [None] * 3; acc = [None] * 3; hist = [[], [], []]
-    calls = bad = 0
+    calls = bad = boxes = 0
     nanv = lambda v: NAN if v is None or abs(v) > 1e299 else v
     for i in range(len(T)):
         if i not in B: continue
@@ -64,21 +65,22 @@ def run(name, extra, htf, binf='m1.bin'):
             if k != keys[j]:
                 if acc[j] is not None:
                     cs = hist[j]; cs.insert(0, tuple(acc[j])); del cs[8:]
+                    tim = lambda n: cs[n - 1][4] if n - 1 < len(cs) else NAN
                     get = lambda n, f: cs[n - 1][f] if n - 1 < len(cs) else NAN      # Pine [n] of the zone timeframe: [1] = the candle that closed
                     ku = 3 if get(3, 3) < get(3, 0) else 4 if get(4, 3) < get(4, 0) else 5 if get(5, 3) < get(5, 0) else 0
                     kd = 3 if get(3, 3) > get(3, 0) else 4 if get(4, 3) > get(4, 0) else 5 if get(5, 3) > get(5, 0) else 0
                     g['f_znCandle'](j, get(1, 3), get(1, 2), get(1, 1), get(3, 2), get(3, 1), get(ku, 1) if ku else NAN, get(ku, 2) if ku else NAN,
-                                    get(kd, 1) if kd else NAN, get(kd, 2) if kd else NAN)
+                                    get(kd, 1) if kd else NAN, get(kd, 2) if kd else NAN, tim(3), tim(ku) if ku else NAN, tim(kd) if kd else NAN)
                 keys[j] = k
-                acc[j] = [O[i], H[i], L[i], C[i]]
+                acc[j] = [O[i], H[i], L[i], C[i], t]
             else:
                 acc[j][1] = max(acc[j][1], H[i]); acc[j][2] = min(acc[j][2], L[i]); acc[j][3] = C[i]
         d, hO, hX, hE, cu, cd, bu, bd = B[i]
         g['stT15'] = d; g['stHtO'] = nanv(hO); g['stHtX'] = nanv(hX); g['stHtE'] = hE
-        g['S_low'] = float(L[i]); g['S_high'] = float(H[i])
+        g['S_low'] = float(L[i]); g['S_high'] = float(H[i]); g['time'] = t
         g['f_znBar']()
         for (dd, tf, kind, top, bot) in A.get(i, []):
-            rf, rk, rt, rb = g['f_znAllow'](dd)
+            rf, rk, rt, rb, r0 = g['f_znAllow'](dd)
             calls += 1
             if tf in (0, 1, 2): same = (rf, rk) == (tf, kind) and abs(rt - top) < 1e-6 and abs(rb - bot) < 1e-6
             else: same = rf == tf
@@ -88,7 +90,17 @@ def run(name, extra, htf, binf='m1.bin'):
         sU = (cho and cu) or (bos and bu)
         sD = (cho and cd) or (bos and bd)
         if d != 0 and (sU if d == 1 else sD):
+            # the zone box: the Pine values the box is drawn from (left time, top, right = this candle, bottom) = the core's
+            rf, rk, rt, rb, r0 = g['f_znAllow'](d)
+            got = Z.get(i, [])
+            if rf < 0: same = not got
+            else: same = len(got) == 1 and (rf, rk if rf != 9 else 2) == got[0][1:3] and abs(rt - got[0][3]) < 1e-6 and abs(rb - got[0][4]) < 1e-6 and int(r0) == got[0][5] and got[0][6] == t
+            calls += 1; boxes += 1 if rf >= 0 else 0
+            if not same:
+                bad += 1
+                if bad <= 5: print('   %s box bar %d d %d: pine %s | core %s' % (name, i, d, (rf, rk, rt, rb, r0), got))
             g['f_znFrz'](d)
+    print('   %s: %d zone boxes' % (name, boxes))
     return calls, bad
 
 

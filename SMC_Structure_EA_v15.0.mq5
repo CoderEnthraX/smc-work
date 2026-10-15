@@ -454,6 +454,7 @@ input int      InHtfMarks  = 50;      //   - how many past higher-timeframe CHOC
 input bool     InAudit     = false;   // Signal audit - a label on the chart for every signal (what happened to it) + the Experts journal
 input EAudSz   InAudSz     = AS_LARGE; //   - audit label size
 input int      InAudMax    = 200;     //   - how many audit labels to keep on the chart (0 = none, the journal only)
+input bool     InZnBox     = true;    // Zone modes: draw the zone that was touched and gave the signal as a box (the last 50)
 
 //---------------------------------------------------------------- arrays used by the core (MQL5 version)
 class CArrD
@@ -1363,12 +1364,18 @@ struct ZRec
 {
    int    id, tf, dir, kind;     // kind 0 = order block, 1 = FVG
    double top, bot, ext;         // ext = the low (buy) / high (sell) of the current visit
+   long   t0, tt;                // t0 = the open time of the zone's candle, tt = its first touch (UTC; for the zone box)
    bool   q, tch, frz, spent;   // q = in the leg's zone at this bar, tch = touched, frz = a signal closed the visit, spent = stopped
 };
 ZRec   g_zn[ZMAX];
 ZRec   g_zl;                     // the higher timeframe's CHOCH* line as a zone
 int    g_znN = 0, g_znId = 0, g_znLegE = -1;
 double g_znCo[3][6], g_znCh[3][6], g_znCl[3][6], g_znCc[3][6];   // the last closed candles of each zone timeframe (0 = newest)
+long   g_znCt[3][6];                                              // their open times (UTC)
+bool   g_zbOn = false;                                            // a zone box to draw on this bar (the adapter draws it)
+int    g_zbD = 0, g_zbTf = -1, g_zbK = 0;
+double g_zbTop = 0, g_zbBot = 0;
+long   g_zbT0 = 0, g_zbT1 = 0;
 int    g_znCn[3];
 double g_znObT[3][2], g_znObB[3][2];   // the last order block added per timeframe and side (the same one is not added twice)
 int    g_znDtf[32];                    // the zones broken by a close (timeframe, top, bottom) - a waiting setup from them is cancelled
@@ -1390,19 +1397,19 @@ void ZnReset()
 }
 void ZnDel(int i) { for (int k = i; k + 1 < g_znN; k++) g_zn[k] = g_zn[k + 1]; g_znN--; }
 // a new zone; the oldest of the same timeframe and side goes when there are already ZPER
-void ZnAdd(int j, int dir, int kind, double top, double bot)
+void ZnAdd(int j, int dir, int kind, double top, double bot, long t0)
 {
    int same = 0, old = -1;
    for (int i = 0; i < g_znN; i++) if (g_zn[i].tf == j && g_zn[i].dir == dir) { same++; if (old < 0) old = i; }
    if (same >= ZPER) ZnDel(old);
    if (g_znN >= ZMAX) ZnDel(0);
    g_znId++;
-   g_zn[g_znN].id = g_znId; g_zn[g_znN].tf = j; g_zn[g_znN].dir = dir; g_zn[g_znN].kind = kind; g_zn[g_znN].top = top; g_zn[g_znN].bot = bot;
+   g_zn[g_znN].id = g_znId; g_zn[g_znN].tf = j; g_zn[g_znN].dir = dir; g_zn[g_znN].kind = kind; g_zn[g_znN].top = top; g_zn[g_znN].bot = bot; g_zn[g_znN].t0 = t0; g_zn[g_znN].tt = 0;
    ZnClr(g_zn[g_znN]);
    g_znN++;
 }
 // one CLOSED candle of zone timeframe j
-void ZnCandle(int j, double o, double h, double l, double c)
+void ZnCandle(int j, long t, double o, double h, double l, double c)
 {
    if (!S.obM || j < 0 || j > 2) return;
    for (int i = g_znN - 1; i >= 0; i--)
@@ -1412,8 +1419,8 @@ void ZnCandle(int j, double o, double h, double l, double c)
          g_znDtf[w] = j; g_znDt[w] = g_zn[i].top; g_znDb[w] = g_zn[i].bot; g_znDn++;
          ZnDel(i);
       }
-   for (int k = 5; k > 0; k--) { g_znCo[j][k] = g_znCo[j][k - 1]; g_znCh[j][k] = g_znCh[j][k - 1]; g_znCl[j][k] = g_znCl[j][k - 1]; g_znCc[j][k] = g_znCc[j][k - 1]; }
-   g_znCo[j][0] = o; g_znCh[j][0] = h; g_znCl[j][0] = l; g_znCc[j][0] = c;
+   for (int k = 5; k > 0; k--) { g_znCo[j][k] = g_znCo[j][k - 1]; g_znCh[j][k] = g_znCh[j][k - 1]; g_znCl[j][k] = g_znCl[j][k - 1]; g_znCc[j][k] = g_znCc[j][k - 1]; g_znCt[j][k] = g_znCt[j][k - 1]; }
+   g_znCo[j][0] = o; g_znCh[j][0] = h; g_znCl[j][0] = l; g_znCc[j][0] = c; g_znCt[j][0] = t;
    if (g_znCn[j] < 6) g_znCn[j]++;
    if (g_znCn[j] < 3) return;
    for (int a = 0; a < 2; a++)
@@ -1422,8 +1429,8 @@ void ZnCandle(int j, double o, double h, double l, double c)
       if (!(d == 1 ? g_znCl[j][0] > g_znCh[j][2] : g_znCh[j][0] < g_znCl[j][2])) continue;
       if (S.znFvg)
       {
-         if (d == 1) ZnAdd(j, 1, 1, g_znCl[j][0], g_znCh[j][2]);
-         else        ZnAdd(j, -1, 1, g_znCl[j][2], g_znCh[j][0]);
+         if (d == 1) ZnAdd(j, 1, 1, g_znCl[j][0], g_znCh[j][2], g_znCt[j][2]);
+         else        ZnAdd(j, -1, 1, g_znCl[j][2], g_znCh[j][0], g_znCt[j][2]);
       }
       if (!S.znOb) continue;
       for (int k = 2; k <= 4 && k < g_znCn[j]; k++)
@@ -1431,7 +1438,7 @@ void ZnCandle(int j, double o, double h, double l, double c)
          {
             if (g_znCh[j][k] != g_znObT[j][a] || g_znCl[j][k] != g_znObB[j][a])
             {
-               ZnAdd(j, d, 0, g_znCh[j][k], g_znCl[j][k]);
+               ZnAdd(j, d, 0, g_znCh[j][k], g_znCl[j][k], g_znCt[j][k]);
                g_znObT[j][a] = g_znCh[j][k]; g_znObB[j][a] = g_znCl[j][k];
             }
             break;
@@ -1456,7 +1463,7 @@ void ZnStep(ZRec &z, double tl)
    double x = d == 1 ? g_l : g_h;
    if (!z.tch)
    {
-      if (z.q && (d == 1 ? x <= tl : x >= tl)) { z.tch = true; z.frz = false; z.ext = x; }
+      if (z.q && (d == 1 ? x <= tl : x >= tl)) { z.tch = true; z.frz = false; z.ext = x; z.tt = g_t; }
       return;
    }
    if (z.spent) return;
@@ -1512,6 +1519,15 @@ void ZnFreeze(int d)
 {
    for (int i = 0; i < g_znN; i++) if (g_zn[i].dir == d && g_zn[i].tch) g_zn[i].frz = true;
    if (g_zl.dir == d && g_zl.tch) g_zl.frz = true;
+}
+// v15.0: the zone a with-HTF chart signal came from (before its visit is closed) - kept for the box on the chart
+void ZnBox(int d)
+{
+   int b = ZnAllow(d);
+   if (b == 0) return;
+   g_zbOn = true; g_zbD = d; g_zbT1 = g_t;
+   if (b > 0) { g_zbTf = g_zn[b - 1].tf; g_zbK = g_zn[b - 1].kind; g_zbTop = g_zn[b - 1].top; g_zbBot = g_zn[b - 1].bot; g_zbT0 = g_zn[b - 1].t0; }
+   else       { g_zbTf = 9; g_zbK = 2; g_zbTop = g_htO; g_zbBot = g_htO; g_zbT0 = g_zl.tt; }
 }
 string ZnName(int tf) { return tf == 0 ? "HTF" : (tf == 1 ? "HTF+1" : (tf == 2 ? "HTF+2" : "CHOCH* line")); }
 
@@ -2342,6 +2358,7 @@ void CoreSetup()
 void CoreBar(long t, double o, double h, double l, double c, double eq, int htT, double htO, double htX, int htE)
 {
    g_t = t; g_o = o; g_h = h; g_l = l; g_c = c; g_eq = eq;
+   g_zbOn = false;   // v15.0
    EN.Step(o, h, l, c);
    DayStep(t, o, h, l);                                                                 // v13.1: the trading day
    for (int i = 0; i < 4; i++) if (IndOn(i) && g_ind[i].tf == 0) g_ind[i].Step(c);    // v13.1: filters on the chart's candles
@@ -2403,7 +2420,7 @@ void CoreBar(long t, double o, double h, double l, double c, double eq, int htT,
    if (S.obM && g_T15 != 0)
    {
       bool sU = (S.useCho && EN.evCU) || (S.useBos && EN.evBU), sD = (S.useCho && EN.evCD) || (S.useBos && EN.evBD);
-      if ((g_T15 == 1 && sU) || (g_T15 == -1 && sD)) ZnFreeze(g_T15);
+      if ((g_T15 == 1 && sU) || (g_T15 == -1 && sD)) { ZnBox(g_T15); ZnFreeze(g_T15); }
    }
    // v15.0: only a zone broken by a close on THIS bar cancels a waiting setup (as in TradingView) - forget this bar's
    if (g_znDn > 0) { for (int i = 0; i < 32; i++) g_znDtf[i] = -1; g_znDn = 0; }
@@ -2519,6 +2536,7 @@ string   g_calTxt = "", g_calHolTxt = "";
 
 //---------------------------------------------------------------- functions defined further down
 void DrawBar(MqlRates &r);
+void DrawZnBox();   // v15.0
 void DrawAll(datetime tNow);
 void DrawHtfMark(datetime tEnd);
 void Panel();
@@ -3507,7 +3525,7 @@ datetime TimeOfHtf(int hb)
 void HtfStep(MqlRates &r)
 {
    HT.Step(r.open, r.high, r.low, r.close);
-   ZnCandle(0, r.open, r.high, r.low, r.close);   // v15.0: zones of the higher timeframe
+   ZnCandle(0, SrvToUtc(r.time), r.open, r.high, r.low, r.close);   // v15.0: zones of the higher timeframe
    PushHtfTime(r.time);
    g_htfFed = r.time;
    if (HT.brkNow)
@@ -3593,7 +3611,7 @@ bool FeedZn(datetime barOpen)
       int n = CopyRates(g_sym, g_znPer[j], g_znFed[j] + 1, hc - 1, zr);
       if (n < 0) return false;
       for (int i = 0; i < n; i++)
-         if (zr[i].time > g_znFed[j] && zr[i].time < hc) { ZnCandle(j, zr[i].open, zr[i].high, zr[i].low, zr[i].close); g_znFed[j] = zr[i].time; }
+         if (zr[i].time > g_znFed[j] && zr[i].time < hc) { ZnCandle(j, SrvToUtc(zr[i].time), zr[i].open, zr[i].high, zr[i].low, zr[i].close); g_znFed[j] = zr[i].time; }
    }
    return true;
 }
@@ -3662,6 +3680,7 @@ void ProcessBar(MqlRates &r, bool dry, datetime tEnd)
    if (!g_tester || g_visual)
    {
       if (InDraw) DrawBar(r);
+      if (InZnBox && g_zbOn) DrawZnBox();   // v15.0
       if (!dry) DrawAll(r.time);
    }
 }
@@ -4306,7 +4325,7 @@ bool TryInit()
       if (zc0 == 0) return false;
       MqlRates zr[];
       int m = CopyRates(g_sym, g_znPer[j], zc0 - 1, 3000, zr);
-      for (int i = 0; i < m; i++) if (zr[i].time < zc0) { ZnCandle(j, zr[i].open, zr[i].high, zr[i].low, zr[i].close); g_znFed[j] = zr[i].time; }
+      for (int i = 0; i < m; i++) if (zr[i].time < zc0) { ZnCandle(j, SrvToUtc(zr[i].time), zr[i].open, zr[i].high, zr[i].low, zr[i].close); g_znFed[j] = zr[i].time; }
       if (g_znFed[j] == 0) g_znFed[j] = zc0 - 1;
    }
    // a waiting setup saved before a restart a few bars ago?
@@ -4406,6 +4425,26 @@ void DrawBar(MqlRates &r)
    }
 }
 void DelObj(string nm) { ObjectDelete(0, nm); ObjectDelete(0, nm + "t"); }
+// v15.0: the zone that was touched and then gave the chart signal with the higher timeframe: a box from the zone's candle (the
+// CHOCH* line: from its first touch) to the signal candle; green = buy zone, red = sell zone; the last 50 are kept
+int g_zbox = 0;
+void DrawZnBox()
+{
+   string nm = g_P + "Z" + IntegerToString(g_zbox);
+   string tx = g_zbTf == 9 ? "HTF CHOCH* line" : TfName(g_znPer[g_zbTf]) + (g_zbK == 0 ? " order block" : " FVG");
+   color  c  = g_zbD == 1 ? clrSeaGreen : clrIndianRed;
+   datetime t1 = UtcToSrv(g_zbT0), t2 = UtcToSrv(g_zbT1);
+   ObjectCreate(0, nm, OBJ_RECTANGLE, 0, t1, g_zbTop, t2, g_zbBot);
+   ObjectSetInteger(0, nm, OBJPROP_COLOR, c);
+   ObjectSetInteger(0, nm, OBJPROP_FILL, true);
+   ObjectSetInteger(0, nm, OBJPROP_BACK, true);
+   ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, nm, OBJPROP_HIDDEN, true);
+   ObjectSetString(0, nm, OBJPROP_TOOLTIP, tx + (g_zbD == 1 ? " (buy) " : " (sell) ") + TkS(g_zbBot) + " - " + TkS(g_zbTop));
+   DrawText(nm + "t", t1, g_zbD == 1 ? g_zbTop : g_zbBot, tx, c, g_zbD == 1 ? ANCHOR_LEFT_LOWER : ANCHOR_LEFT_UPPER);
+   if (g_zbox >= 50) DelObj(g_P + "Z" + IntegerToString(g_zbox - 50));
+   g_zbox++;
+}
 // a higher-timeframe CHOCH / BOS that just happened: the broken level, from where it started to the candle that broke it
 void DrawHtfMark(datetime tEnd)
 {
