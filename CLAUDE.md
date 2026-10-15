@@ -624,7 +624,13 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
    (no feature removed - the user said so). F2 (CONFIRMED): REMOVE completely the loss mark "Start again from the base
    risk when the losses carried reach" (section 7: stLmOn / stLmAmt, EA InLmOn / InLmAmt, table row 50 / EA row, counters
    cntLm); KEEP the hard-cap choice "Start again from the base risk (forget the losses)" (CAP_BASE) - the user
-   confirmed. F3..: waiting for the user.
+   confirmed. F3 (being clarified): new 'Take trades on' modes CHOCH / BOS / CHOCH+BOS "- HTF order block zone": trade only
+   with the HTF (15m on 1m) trend, only after the chart price touched an ORDER BLOCK WITH AN FVG (OB edge or the FVG's 50%)
+   that lies in the HTF leg's pullback zone (from about 40-50% = equilibrium up to 100% = the leg's start), then the chart
+   gives the CHOCH (or BOS); OBs searched on 15m, 1h, 4h inside the 15m leg - if a bigger-timeframe OB is in the zone, only
+   that one counts (4h > 1h > 15m). Open questions sent (OB / FVG definition, fresh only, touch, how long a touch stays valid,
+   zone %, several OBs, entry / stop rules, which timeframes). TV token cost large (3 HTF requests) - must compact other code.
+   F4..: waiting for the user.
 0. **v14.0**: the user compiles both (TradingView + MetaEditor F7) and reports errors / warnings. (v13.1: MetaEditor 0 errors,
    TradingView fix 3 confirmed working by the user.) Then
    Strategy Tester (Every tick based on real ticks) and a demo account. Fix compile errors with a patch, re-run
