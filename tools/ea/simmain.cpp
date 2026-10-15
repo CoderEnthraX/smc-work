@@ -56,6 +56,13 @@ int main(int argc, char **argv)
       InEmHOn = cb("emHOn", false); InEmHTf = tff(cl("emHTf", 3600)); InEmHMode = (EEmMode)cl("emHMode", 0); InEmHLen = (int)cl("emHLen", 200); InEmHFast = (int)cl("emHFast", 50);
    }
 #endif
+#ifdef EA_V14
+   // v14.0: the separate unit boxes (used with buMode 3), the spread for sizing, leg size and big signal candle (section 4)
+   InSprd = cd("sprd", 0);
+   InR3U = (EUnit)cl("r3U", 0); InR3V = cd("r3V", 3.0); InSkU = (EUnit)cl("skU", 0); InSkMin = cd("skMin", 0); InSkMax = cd("skMax", 0);
+   InBfU = (EUnit)cl("bfU", 0); InBfV = cd("bfV", 0); InSpdU = (EUnit)cl("spdU", 0); InSpdV = cd("spdV", 0);
+   InLzU = (EUnit)cl("lzU", 0); InLzMin = cd("lzMin", 0); InLzMax = cd("lzMax", 0); InBcU = (EUnit)cl("bcU", 0); InBcMax = cd("bcMax", 0);
+#endif
    sim::calMode = (int)cl("calMode", 0); sim::calFail = cb("calFail", false); sim::calFailN = cl("calFailN", 0);
    if (cfg.count("fileDir")) sim::fileDir = cfg["fileDir"];
    if (cfg.count("simCal"))

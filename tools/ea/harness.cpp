@@ -175,6 +175,9 @@ int main(int argc, char **argv)
    fclose(bf);
    verbose = cb("verbose", false); fixTies = cb("fixTies", false); grid = cb("grid", false);
    if (cfg.count("ordLog")) olog = fopen(cfg["ordLog"].c_str(), "w");
+#ifdef CORE_V14
+   if (cfg.count("xsLog")) g_xsLog = fopen(cfg["xsLog"].c_str(), "w");   // v14.0 test hook (see extract.py)
+#endif
    // settings
    S.altMode = cb("altMode", false); S.pbBodyOn = cb("pbBodyOn", false); S.pbBodyRef = cb("pbBodyRef", false); S.pbSwp2 = cb("pbSwp2", false);
    S.on = true; S.r1 = cb("r1", true); S.r2 = cb("r2", true); S.sig = (int)cl("sig", 0);
@@ -225,10 +228,25 @@ int main(int argc, char **argv)
    S.buMode = (int)cl("buMode", 0); S.pipSz = cd("buPip", 0.1);
    if (S.buMode == 1) S.slBuf = cd("buPips", 10.0); else if (S.buMode == 2) S.slBuf = cd("buPct", 0.02);
    S.hgBase = cb("hgBase", false);
+#ifdef CORE_V14
+   // v14.0: section 1 'Separate unit for each setting' (buMode 3) - each distance its own unit (0 price, 1 pips, 2 %) and box
+   // (keys bfU / bfV, skU / skMin / skMax, r3U / r3V, spdU / spdV); the spread for sizing (key sprd, 0 = not modelled);
+   // section 4 leg size (lzU / lzMin / lzMax) and big signal candle (bcU / bcMax)
+   S.sprd = cd("sprd", 0);
+   if (S.buMode == 3)
+   {
+      S.uBf = (int)cl("bfU", 0); S.slBuf = cd("bfV", 0); S.uSk = (int)cl("skU", 0); S.minStop = cd("skMin", 0); S.maxStop = cd("skMax", 0);
+      S.uR3 = (int)cl("r3U", 0); S.uSp = (int)cl("spdU", 0); S.sprd = cd("spdV", 0);
+   }
+   S.lzU = (int)cl("lzU", 0); S.lzMin = cd("lzMin", 0); S.lzMax = cd("lzMax", 0); S.bcU = (int)cl("bcU", 0); S.bcMax = cd("bcMax", 0);
+#endif
 #else
    S.buMode = (int)cl("buMode", 0); S.buPips = cd("buPips", 10.0); S.buPct = cd("buPct", 0.02); S.pipSz = cd("buPip", 0.1);
 #endif
    S.r3On = cb("r3On", false); S.r3BrkOn = cb("r3BrkOn", false); S.r3Brk = cd("r3Brk", 3.0); S.r3Fb = cb("r3Fb", false); S.lmOn = cb("lmOn", false); S.lmAmt = cd("lmAmt", 300.0); S.sp1 = cd("sp1", 200.0); S.spN1 = cd("spN1", 3.0); S.sp2 = cd("sp2", 500.0); S.spN2 = cd("spN2", 5.0); S.sp3 = cd("sp3", 1000.0); S.spN3 = cd("spN3", 8.0); S.spInc = cd("spInc", 500.0); S.spAdd = cd("spAdd", 1.0);
+#ifdef CORE_V14
+   if (S.buMode == 3) S.r3Brk = cd("r3V", 3.0);
+#endif
 #ifdef CORE_V131
    // v13.1 (section 4): timeframes in seconds (0 = the chart)
    S.mnPct = cd("mnPct", 0); S.fstOn = cb("fstOn", false); S.ydOn = cb("ydOn", false); S.legMin = (int)cl("legMin", 0); S.tdOn = cb("tdOn", false); S.tdAtr = cd("tdAtr", 0.15);
@@ -317,6 +335,9 @@ int main(int argc, char **argv)
       CoreBar(T[i], O[i], H[i], L[i], C[i], eq, hT[i], hO[i], hX[i], hE[i]);
    }
    if (olog) fclose(olog);
+#ifdef CORE_V14
+   if (g_xsLog) fclose(g_xsLog);
+#endif
    FILE *of = argc > 3 ? fopen(argv[3], "w") : stdout;
    fprintf(of, "side,dir,ebar,ep,q,xbar,xp,why,pnl,pbar,prisk,sl0\n");
    for (auto &t : trades) if (!t.open) fprintf(of, "%d,%d,%d,%.5f,%.4f,%d,%.5f,%s,%.6f,%d,%.6f,%.5f\n", t.side, t.dir, t.ebar, t.ep, t.q, t.xbar, t.xp, t.why.c_str(), t.pnl, t.pbar, t.prisk, t.sl);

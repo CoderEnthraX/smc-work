@@ -7,7 +7,10 @@
   receiver only uses the free "MetaApi API") and the MQL5 VPS guide (`SMC_Strategy_v8.3_MQL5_VPS_GUIDE.pdf`).
 - Owner: **Punit** (punit7870@gmail.com). Works from a phone. Wants **simple English, short examples with
   numbers, tables**. Times are **IST** (Asia/Kolkata).
-- **Latest version: v13.1 for BOTH** = `SMC_Structure_Strategy_v13.1.txt` + `SMC_Structure_EA_v13.1.mq5` +
+- **Latest version: v14.0 for BOTH** = `SMC_Structure_Strategy_v14.0.txt` + `SMC_Structure_EA_v14.0.mq5` (NO notes file -
+  the user said it is not needed; the v13.1 notes still describe everything else). v14.0 = v13.1 + section 1 'Separate unit
+  for each setting' + section 4 leg size and big signal candle filters, all OFF (see Versions). Before it: **v13.1** =
+  `SMC_Structure_Strategy_v13.1.txt` + `SMC_Structure_EA_v13.1.mq5` +
   `SMC_Structure_v13.1_NOTES.txt` (new part + the two recipes + how to use + the v13.0 notes). v13.1 = v13.0 + new setup
   filters at the END of section 4, all OFF (see Versions). Before it: **v13.0** = `SMC_Structure_Strategy_v13.0.txt` +
   `SMC_Structure_EA_v13.0.mq5` + `SMC_Structure_v13.0_NOTES.txt` (one notes file: what is new + the old -> new settings map +
@@ -302,6 +305,46 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   < ~20k tokens, every function < ~200 external elements, compiled tokens estimate < ~95k) - the parser cannot see them.
   EA: MetaEditor 0 errors / 2 warnings "declaration of 'k' hides member" (XSkip RSI / EMA loops vs CSide member k) -> loop index
   j (ea131.py); harness + simmain byte-identical. EA compiled by the user.
+- v14.0 (user asked, answered every question, "give the version number 14.0 to both", "just give me the files", NO notes; NO
+  profit test). Both files, 14 new settings each (TV 162 -> 176, EA 180 -> 194), all at the END of their section, OFF / 0:
+  1. Section 1 unit: 4th choice "Separate unit for each setting" (EA BU_SEP = 3). Then the stop buffer, skip closer / further,
+  rule 3 distance and spread each use their OWN unit dropdown (Price / Pips (auto per market) / % of price; EA enum EUnit) + ONE
+  box, at the end of their section; skip closer / further share ONE dropdown with 2 boxes (the user's wish). The old 5 boxes are
+  ignored in that mode. Inputs: section 3 stR3U / stR3V (InR3U / InR3V, % of the close, default 3.0); section 4 stSkU / stSkMin /
+  stSkMax (InSkU / InSkMin / InSkMax, % of the entry); section 5 stBfU / stBfV (InBfU / InBfV, % of the CHOCH* level, rounded to
+  the tick like before); section 11 stSpdU / stSpdV (InSpdU / InSpdV, % of the price). % buffer / spread > 10 = error.
+  Core: CSet uBf / uSk / uR3 / uSp (Derive(): = buMode unless buMode 3; the adapter sets them + the values in mode 3);
+  LimAt(int u, double v, double ref); BufAt / SprdAt read uBf / uSp. Pine: stBuSepM, f_unN, stUBf / stUSk / stUR3 / stUSp,
+  stBfX / stMnX / stMxX / stR3X / stSpX (the box in use), f_unPx, f_unTxt.
+  2. Section 4 LEG SIZE (always its own unit, any section 1 unit): leg = d x (broken level - CHOCH* level) = the pivot the signal
+  candle closed beyond (EA piv = g_ceilPrev / g_florPrev, Pine _piv = stCeilPrev / stFlorPrev - the same level rule 2 / 3 use)
+  to opl (flr / cel price = the stop level), NOT the candle's close (the user's definition). stLzU / stLzMin / stLzMax (InLzU /
+  InLzMin / InLzMax; % = of the CHOCH* level); skip if leg < min - tick / 2 or > max + tick / 2; no broken level = pass; min >
+  max = error. Checked separately from skip closer / further (both must pass - the user's example: leg 10, pullback 50%, stop
+  under 8 -> skipped by 'closer').
+  3. Section 4 BIG SIGNAL CANDLE: stBcU / stBcMax (InBcU / InBcMax; % = of its close): signal candle high - low > max + tick / 2 ->
+  skip that setup (no trade on that leg); only the signal candle; the next CHOCH / BOS is judged again.
+  Order in XSkip (EA) / the Pine chain: v13.1 filters, then leg, then candle, then 'first of the day' (still last). Counters
+  cntX[9] leg short, [10] leg long, [11] candle (Pine stCntX9..11); table row 52 / EA row "(v13.1 / v14.0)"; audit "SKIP - leg
+  6.00 (broken level 4006.00 to the CHOCH* level 4000.00) shorter than 8.00" / "SKIP - big signal candle 14.00 (most 10.00)".
+  EA XSkip(d, piv, opl); TkS() = price text with the tick's decimals.
+  Tools: patches/pine140.py (patched on the FINAL v13.1 file), ea140.py; harness / simmain keys buMode 3, bfU / bfV, skU / skMin /
+  skMax, r3U / r3V, spdU / spdV, sprd (harness spread for sizing, 0 = before), lzU / lzMin / lzMax, bcU / bcMax (CORE_V14 /
+  EA_V14); extract.py adds a test hook to the harness copy (xsLog: every XSkip call with bar, side, d, piv, opl); ea/v14tests.py.
+  Checks: TV parser PARSED OK; TV limits main body 18,190 tokens, largest function f_stTab4 187 external elements, compiled
+  tokens estimate ~94,200 (v13.1 ~91,300 compiled fine; limit 100,256); inputs old order kept, new ones at the end of their
+  sections (both files); OFF = v13.1 byte-identical (222 saved settings, v13tests same); equiv 5/5 byte-identical (separate
+  units in price / pips / % = the old unit; mixed = old way; old boxes set wrong to prove them unused); separate Python
+  recalculation of every leg / candle / first-of-day decision from the logged levels + bars: 10 settings, ~65,600 decisions,
+  all agree; whole EA = core 4/4 to the cent + 15m pending / touch same trades with one entry 0.31 better in the EA (1-minute
+  jump over the limit inside a 15m candle - v13.1 identical, pre-existing); restarts 484 x 2 identical.
+  OLD BUG FOUND + FIXED in v14.0 (MT5 part only, core unchanged): a restart or a settings change (both reload the EA) inside a
+  candle right after a TOUCH fill sent the same entry again (duplicate trade) - the waiting order came back from the state saved
+  at the last close; 1 case in the first v14.0 restart test (1m), 3 of 81 setups on 15m touch with ~2,450 restarts a year in
+  v13.1 (since v11.1; earlier restart tests missed it by luck). SendMarket now sends only while the core still has that setup
+  waiting (g_side dir != 0, same seq - else the book entry goes off) and not when FilledSince(comment, g_curOpen) finds an open
+  position / IN deal of it in this candle. v14tests dup: v14.0 0 duplicates; 15m touch 2,453 restarts = no restarts. Also the
+  journal line "SMC EA v12.3 ready" -> "v14.0 ready". NOT compiled by TradingView / MetaEditor yet (the user does).
 
 ## How the v11.1 code works (key points)
 - 118 inputs (v11.2: 122, + group 38 stop buffer unit). Groups: 20 strategy, 21 risk / loss recovery, 24 safety, 25 daily blocking windows,
@@ -568,7 +611,8 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
    SMC_calendar.csv -> test the REAL news list (CPI, FOMC ...) on 2021-2026. With group 29 releases only
    (1m, user settings): none -18,514 / windows -18,844 / +pre 1 h -18,708 / 2 h -18,302 / 4 h -18,070,
    all -0.13R per trade (tools/ea/preeffect.py) -> news blocking does not change the edge.
-0. **MT5 EA**: v13.1 compiled by the user in MetaEditor (0 errors; the 2 warnings fixed 15 Oct); TradingView v13.1 fix 3 (CE10295 + external elements + CE10117 tokens) to be confirmed by the user; then
+0. **v14.0**: the user compiles both (TradingView + MetaEditor F7) and reports errors / warnings. (v13.1: MetaEditor 0 errors,
+   TradingView fix 3 confirmed working by the user.) Then
    Strategy Tester (Every tick based on real ticks) and a demo account. Fix compile errors with a patch, re-run
    `tools/ea` checks before delivering.
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,

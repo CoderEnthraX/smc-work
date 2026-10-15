@@ -15,3 +15,5 @@ sleep_out/
 aud_out/
 v13_out/
 v131_sep/
+*.deals
+*.xs

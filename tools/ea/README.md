@@ -1,4 +1,4 @@
-# tools/ea - checks of the MT5 Expert Advisor (SMC_Structure_EA_v13.1.mq5)
+# tools/ea - checks of the MT5 Expert Advisor (SMC_Structure_EA_v14.0.mq5)
 
 MetaEditor (the MQL5 compiler) only runs on Windows, so the EA is checked here in two ways:
 
@@ -52,6 +52,12 @@ MetaEditor (the MQL5 compiler) only runs on Windows, so the EA is checked here i
 | v13.1 separate | `python3 v131tests.py sep` | the core vs a SEPARATE copy of the v13.0 core with the section 4 filters written again (`v131sep.py`) + the RSI / EMA directions worked out in Python: 17 settings (1m / 15m, every filter, timeframes 3m - 1D, hedge, rule 3), every trade identical |
 | v13.1 whole EA | `python3 v131tests.py ea` | whole EA in the fake MT5 = the core, filters ON: 6 settings x 1 year (touch, pending, hedge, 3m / 5m / 15m / 30m / 2h / 4h / 1D filters) |
 | v13.1 restarts | `python3 v131tests.py rs` | live mode with the 20,000-bar warm-up, 484 restarts, 3 settings (first of the day, RSI / EMA, today's move, hedge): every trade = no restarts |
+| v14.0 OFF | `python3 v13tests.py same <folder with the v13.1 harness + simmain>` | every saved settings file (222) run by v13.1 and v14.0 with the new settings off: byte-identical |
+| v14.0 units | `python3 v14tests.py equiv` | section 1 'Separate unit for each setting' with every box in price / pips / % = the old unit (the old boxes set to wrong values, so they are proven unused); mixed (buffer in pips, skip closer in %, rule 3 / spread in price) = the same distances the old way (buffer 1.0, v13.1 'min stop % of the price'); 1m and 15m, 2021 - Oct 2026: 5 of 5 byte-identical |
+| v14.0 separate | `python3 v14tests.py sep` | every call of the section 4 filters logged with the two levels the core read (test hook added by `extract.py` to the harness copy only, key `xsLog`); Python works out again leg = d x (broken level - CHOCH* level), the candle high - low, the units (pips 0.1, % of the CHOCH* level / of the close), half a tick, and the first setup of the day after them; compared with the core's own note: 10 settings (price / pips / %, min, max, both, candle, with first of the day, rule 3 fall back, CHOCH + BOS, hedge, 15m), about 66,000 decisions, all agree |
+| v14.0 whole EA | `python3 v14tests.py ea` | whole EA = core: mixed units touch, % pending, hedge + first of the day pending, rule 3 pips touch - same trades to the cent; 15m pending / touch: same trades, one entry 0.31 better in the EA (a 1-minute candle opened beyond the limit inside the 15-minute candle - MT5 fills at the better price; v13.1 gives the same difference with the filters off) |
+| v14.0 restarts | `python3 v14tests.py rs` | live mode, 20,000-bar warm-up, 484 restarts, 2 settings (mixed units + leg + candle touch; hedge + first of the day + leg min / max + candle pending): every trade = no restarts. (The first run found an OLD bug, see the next row: one setup entered twice.) |
+| v14.0 double entry fix | `python3 v14tests.py dup` | a restart every ~150 bars (about 2,450 a year), the v13.1 EA (folder old131) vs v14.0: touch 1m 0 / 0, touch 15m v13.1 3 of 81 setups ENTERED TWICE, v14.0 0; pending 15m 0 / 0; rule 3 touch 1m 0 / 0. Cause (since v11.1): a restart / a settings change inside a candle after a touch fill - the waiting order came back from the state saved at the last close and was sent again. v14.0 SendMarket: only while the core still has that setup waiting (side dir != 0 and the same setup number), and not when an IN deal / open position with that comment exists since the candle's open (FilledSince). 15m touch with 2,453 restarts = no restarts |
 | v13.0 speed | (simmain, table + drawings ON, `tester 0`) | one year 1m: v12.3 32.9 s CPU, v13.0 22.0 s, display OFF 4.1 s (hedge 35.5 / 24.8 / 5.5); trades identical |
 
 Notes
