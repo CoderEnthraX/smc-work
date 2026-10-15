@@ -621,7 +621,10 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
    'near the broken level' distance (rule 3 itself still works; no fall back there), and the leg size min / max. Seconds
    charts count as 1 minute. Big signal candle: TWO boxes sharing the one unit dropdown - the old box = 1-minute (and seconds)
    charts, a new box (default 0 = off) = all charts above 1 minute; not tied to the switch. Make room in TV by compacting code
-   (no feature removed - the user said so). F2..: waiting for the user.
+   (no feature removed - the user said so). F2 (asked, to confirm): REMOVE completely the loss mark "Start again from the base
+   risk when the losses carried reach" (section 7: stLmOn / stLmAmt, EA InLmOn / InLmAmt, table row 50 / EA row, counters
+   cntLm); my suggestion: keep the hard-cap choice "Start again from the base risk (forget the losses)" (CAP_BASE) - a
+   different feature. F3..: waiting for the user.
 0. **v14.0**: the user compiles both (TradingView + MetaEditor F7) and reports errors / warnings. (v13.1: MetaEditor 0 errors,
    TradingView fix 3 confirmed working by the user.) Then
    Strategy Tester (Every tick based on real ticks) and a demo account. Fix compile errors with a patch, re-run
