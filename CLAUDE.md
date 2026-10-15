@@ -624,13 +624,22 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
    (no feature removed - the user said so). F2 (CONFIRMED): REMOVE completely the loss mark "Start again from the base
    risk when the losses carried reach" (section 7: stLmOn / stLmAmt, EA InLmOn / InLmAmt, table row 50 / EA row, counters
    cntLm); KEEP the hard-cap choice "Start again from the base risk (forget the losses)" (CAP_BASE) - the user
-   confirmed. F3 (being clarified): new 'Take trades on' modes CHOCH / BOS / CHOCH+BOS "- HTF order block zone": trade only
-   with the HTF (15m on 1m) trend, only after the chart price touched an ORDER BLOCK WITH AN FVG (OB edge or the FVG's 50%)
-   that lies in the HTF leg's pullback zone (from about 40-50% = equilibrium up to 100% = the leg's start), then the chart
-   gives the CHOCH (or BOS); OBs searched on 15m, 1h, 4h inside the 15m leg - if a bigger-timeframe OB is in the zone, only
-   that one counts (4h > 1h > 15m). Open questions sent (OB / FVG definition, fresh only, touch, how long a touch stays valid,
-   zone %, several OBs, entry / stop rules, which timeframes). TV token cost large (3 HTF requests) - must compact other code.
-   F4..: waiting for the user.
+   confirmed. F3 (answers 1-5 = my suggestions; details still being clarified): 3 new 'Take trades on' modes CHOCH / BOS /
+   CHOCH+BOS "- HTF order block zone", ALL chart timeframes (1m -> HTF 15m, 15m -> HTF 4h ...), always WITH the HTF direction
+   (a counter CHOCH is never taken). POIs inside the HTF leg's pullback zone (setting, default 50%): ORDER BLOCKS (last opposite
+   candle before a move that leaves an FVG; zone = its high-low) touching / beyond the line - touch = their near edge; FVGs only
+   beyond the line (at ~50% only OBs count) - touch = the FVG's 50% line. Trigger = POI touched, then the chart's CHOCH / BOS.
+   Touch valid until the CHOCH, the POI breaks, or the HTF leg changes. POI dead when an HTF (15m) candle CLOSES beyond its far
+   side. RE-ENTRY: a POI already visited counts again if price comes back, takes the liquidity of the earlier visit's swing
+   (goes beyond its low / high) and then gives the CHOCH, as long as no 15m close broke the POI. Timeframes: the user wants
+   'whatever higher timeframe OB is in the 15m leg' (mostly 15m / 1h, rarely 4h); biggest timeframe wins; entry / stop /
+   target as now. Asked: ladder = HTF + 2 above?, FVG rule (midpoint beyond the line?), priority for FVGs, does every
+   trade need a new touch (user's example: after a sell, a buy CHOCH is skipped, then 'another sell CHOCH is taken').
+   F4 (to confirm): switch "News rules on the 1-minute chart only" - above 1m no news windows / closes (asked: holidays?
+   pre-news block? default ON?), end of section 10. F5 (to confirm): 'Take trades on' keeps ONLY 6 choices: CHOCH only, BOS
+   only, CHOCH and BOS + the 3 OB-zone modes; REMOVE favourable / against / auto (9 choices). (Favourable = the section 4
+   'Higher-timeframe filter' switch - same trades.) EA: give the new modes NEW enum numbers so old .set values 3-11 do not
+   silently become OB modes. F6..: waiting for the user.
 0. **v14.0**: the user compiles both (TradingView + MetaEditor F7) and reports errors / warnings. (v13.1: MetaEditor 0 errors,
    TradingView fix 3 confirmed working by the user.) Then
    Strategy Tester (Every tick based on real ticks) and a demo account. Fix compile errors with a patch, re-run
