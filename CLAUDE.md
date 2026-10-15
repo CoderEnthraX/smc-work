@@ -7,7 +7,11 @@
   receiver only uses the free "MetaApi API") and the MQL5 VPS guide (`SMC_Strategy_v8.3_MQL5_VPS_GUIDE.pdf`).
 - Owner: **Punit** (punit7870@gmail.com). Works from a phone. Wants **simple English, short examples with
   numbers, tables**. Times are **IST** (Asia/Kolkata).
-- **Latest version: v14.0 for BOTH** = `SMC_Structure_Strategy_v14.0.txt` + `SMC_Structure_EA_v14.0.mq5` (NO notes file -
+- **Latest version: v15.0 for BOTH** = `SMC_Structure_Strategy_v15.0.txt` (complete) + `SMC_Structure_Strategy_v15.0_noRSI_EMA.txt`
+  (the same without the 4 RSI / EMA filters - the user asked for two TradingView files) + `SMC_Structure_EA_v15.0.mq5`; NO notes
+  (user). v15.0 = v14.0 + HTF order block zone modes + 1-minute-only section 4 rules + news on 1m only, loss mark and
+  favourable / against / auto modes removed, TradingView code made smaller (v14.0 failed the token limit) - see Versions.
+  Before it: **v14.0 for BOTH** = `SMC_Structure_Strategy_v14.0.txt` + `SMC_Structure_EA_v14.0.mq5` (NO notes file -
   the user said it is not needed; the v13.1 notes still describe everything else). v14.0 = v13.1 + section 1 'Separate unit
   for each setting' + section 4 leg size and big signal candle filters, all OFF (see Versions). Before it: **v13.1** =
   `SMC_Structure_Strategy_v13.1.txt` + `SMC_Structure_EA_v13.1.mq5` +
@@ -345,6 +349,47 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   waiting (g_side dir != 0, same seq - else the book entry goes off) and not when FilledSince(comment, g_curOpen) finds an open
   position / IN deal of it in this candle. v14tests dup: v14.0 0 duplicates; 15m touch 2,453 restarts = no restarts. Also the
   journal line "SMC EA v12.3 ready" -> "v14.0 ready". NOT compiled by TradingView / MetaEditor yet (the user does).
+  **v14.0 TradingView then FAILED CE10117 (100,771 tokens > 100,256) -> fixed in v15.0 (smaller code).**
+- v15.0 (user: "build v15.0 with your suggestions ... both the meta ea and the tradingview file ... two tradingview files, one
+  complete and one without the rsi and ema feature"; no notes; NO profit test). 3 files: SMC_Structure_EA_v15.0.mq5 (194 -> 202
+  inputs), SMC_Structure_Strategy_v15.0.txt (176 -> 184), SMC_Structure_Strategy_v15.0_noRSI_EMA.txt (164 = minus the 20 RSI / EMA).
+  F1 section 4 end: stM1On / InM1On (ON) 'skip closer / further (old + separate boxes), min stop %, rule 3 distance, leg size on
+  the 1-minute chart only' (chart > 60 s -> those 0 / off; rule 3 itself works, no fall back; seconds = 1m) + stBcMax2 / InBcMax2
+  (0) big candle box for charts > 1m (old box = 1m) - EA Derive x1m / bcE, Pine stX1m, stMnX / stMxX / stMnP / stLzN / stLzX /
+  stR3B / stBcE. F2 loss mark REMOVED (stLmOn / stLmAmt, InLmOn / InLmAmt, cntLm, row 50); CAP_BASE kept. F4 section 10 end:
+  stNw1m / InNw1m (ON): chart > 1m -> windows 1-3, auto US news, EA calendar news, pre-news block off; US holidays (incl. EA
+  calendar holidays) still work (Pine stNwX; EA NewsFlags). F5 'Take trades on' = 6 choices (CHOCH / BOS / both + the 3 zone
+  modes); EA ESig SIG_CHOCH_OB / BOS_OB / BOTH_OB = 12 / 13 / 14; old .set 3-5 (favourable) -> hfOn + plain, 6-11 -> plain.
+  F3 HTF ORDER BLOCK ZONE modes (section 2 end: stZnPct 50 / InZnPct, znBig, znOb, znFvg, znHalf, znTwo, znLine all ON): zone
+  timeframes = HTF + 2 above (ladder 15m, 1h, 4h, 1D, 1W, 1M); zones from CLOSED candles: FVG = candle 1 / 3 gap, its OB = the
+  last opposite candle among the 3 before the move (dedupe = same as the last OB of that tf / side); 10 per tf / side, 60 max;
+  a zone dies on a close of ITS OWN tf beyond its far side (then a waiting order of it is cancelled); qualify per bar in the
+  HTF leg's zone (OB touching / beyond the line, FVG touch line beyond it, both up to the leg start); touch = the bar's low
+  (buy) reaches the touch line (OB near edge, FVG 50% or near edge); state 0 fresh / 1 visit open / 2 a with-HTF chart signal
+  closed the visit / 3 stopped; beyond the visit's low (buy) after state 2 = liquidity taken: znTwo ON -> 1 again, OFF -> 3;
+  new HTF leg (event count) = all states 0; biggest tf = max tf among qualified non-stopped zones; pick = first zone with
+  the max tf among touched ones; else the CHOCH* line (leg start) if touched. Signal must be WITH the HTF; skipped = 'SKIP -
+  zone mode: ...', cntOb / stCntOb, table row 'ORDER BLOCK ZONES (section 2)'; armed text gets '(HTF+1 order block)'.
+  EA core: ZRec g_zn[60], ZnCandle / ZnBar / ZnAllow / ZnFreeze / ZnDead; adapter ZnSetup / FeedZn / ZnUp, GVs zf / zt / zb.
+  Pine: type Zn + array zA, zL (line state), zO (last OBs), f_znReq / f_znGet (3 request.security, lookahead_on + [1] = last
+  CLOSED candle; feed when its time changes, nz() for the first one), f_znCandle / f_znBar / f_znAllow / f_znFrz.
+  EA fix found while checking the Pine: ZnDead looked at the last 32 broken zones (an old zone at the same prices could cancel
+  a new setup); now only THIS bar's (ring cleared at the end of CoreBar) = TradingView.
+  TV SIZE (no feature removed): pine150c.py = (1) values nobody reads (mnHiP / mnLoP, evSwp, iRun / nRun, evN, rqStr, stCapFlag,
+  _eId / _eDir, f_tfPack iTr / iEvt), (2) fixed display choices written as values (styleOf, hAlignOf, lstyle / tsize /
+  lblStyle, 12 black colour vars, eqLive / eqClose, caps 10), (3) internal (blue iBOS) + inner (yellow nBOS) tiers = ONE routine
+  (type TLvl / Tier, f_tier / f_tSeed / f_tAdopt / f_tIdm / f_tBrk / f_tMark / f_tDraw; display only), (4) f_retExt(from, high,
+  inc) = old f_retExtreme / f_retExtInc, (5) one global table stTbl (f_stCell(r, ...)), f_mt / f_r2 text helpers, f_hLine
+  without setters that never change. Also table title 'STRATEGY v13.1' -> 'v15.0'. Tokens (ce/outline.py): v14.0 30,725 (=
+  100,771 compiled), v15.0 complete 28,388, no RSI / EMA 26,748 -> estimate ~98,200 / ~96,400 (worst case ~99,000; the limit
+  100,256). Main body 15,372; largest function f_stTab4 184 external elements.
+  Checks: EA OFF = v14.0 (v13tests same old140): 184 of 222 byte-identical, the 38 others ALL use removed features (loss mark /
+  against / auto; 4 loss-mark files identical - mark never fired) = 0 unexpected; equiv 6/6 byte-identical (switches = by hand; 1m unchanged); v15sep.py
+  separate Python zone engine 10/10 settings ~32,000 decisions agree; whole EA = core 5/5 to the cent; restarts 484 x 2 identical.
+  TradingView: tools/ea/pine2py.py (small Pine -> Python translator) + pinerun.py (OLD = NOCOMPACT=1 pine150.py output vs NEW
+  compacted, the whole chart engine incl. every line / label, per bar): 5 x 60,000 bars (altMode, pbSwp2, pbBody, last-500 /
+  every bar drawing) IDENTICAL; planted bugs caught (3 tried, 3 caught over 50k bars). pinezone.py: the Pine zone code run on
+  the core's logged inputs = core 10/10 settings, 32,223 decisions (planted bugs caught). Parser PARSED OK (both files).
 
 ## How the v11.1 code works (key points)
 - 118 inputs (v11.2: 122, + group 38 stop buffer unit). Groups: 20 strategy, 21 risk / loss recovery, 24 safety, 25 daily blocking windows,
@@ -611,7 +656,11 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
    SMC_calendar.csv -> test the REAL news list (CPI, FOMC ...) on 2021-2026. With group 29 releases only
    (1m, user settings): none -18,514 / windows -18,844 / +pre 1 h -18,708 / 2 h -18,302 / 4 h -18,070,
    all -0.13R per trade (tools/ea/preeffect.py) -> news blocking does not change the edge.
-0a. **v14.0 TradingView FAILED CE10117: 100,771 tokens (limit 100,256, over by 515)**; v13.1 passed -> my estimate (104,405 x
+0a. **v15.0 delivered (see Versions)**: the user compiles the 3 files (TradingView complete + no RSI / EMA, MetaEditor F7) and
+   reports errors. If TradingView says CE10117 again: my token model is only 2 points (fix2 104,405 / 34,058 outline tokens;
+   v14.0 100,771 / 30,725) -> compiled ~= 100,771 + 1.09 x (tokens - 30,725); more room = the zone engine / table texts.
+   The F1-F5 list below is what v15.0 built (kept for reference).
+   OLD: **v14.0 TradingView FAILED CE10117: 100,771 tokens (limit 100,256, over by 515)**; v13.1 passed -> my estimate (104,405 x
    tokens / 34,058 = ~94,200) was WRONG: the marginal cost is about 1 compiled token per outline.py token (fix 3 removed 4,263
    -> about 4,300; v14 added 930 -> about 1,000), with a big fixed part. Calibrate from now on: compiled ~= 100,771 + (my tokens
    - 30,725). Next version (number not given yet) - user features being collected, NO build before written permission:
@@ -645,8 +694,8 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
    only, CHOCH and BOS + the 3 OB-zone modes; REMOVE favourable / against / auto (9 choices). (Favourable = the section 4
    'Higher-timeframe filter' switch - same trades.) EA: give the new modes NEW enum numbers so old .set values 3-11 do not
    silently become OB modes. F6..: waiting for the user.
-0. **v14.0**: the user compiles both (TradingView + MetaEditor F7) and reports errors / warnings. (v13.1: MetaEditor 0 errors,
-   TradingView fix 3 confirmed working by the user.) Then
+0. **v15.0** (v14.0 superseded): the user compiles all 3 (TradingView x2 + MetaEditor F7) and reports errors / warnings.
+   (v13.1: MetaEditor 0 errors, TradingView fix 3 confirmed working by the user.) Then
    Strategy Tester (Every tick based on real ticks) and a demo account. Fix compile errors with a patch, re-run
    `tools/ea` checks before delivering.
 1. **Waiting for the user's data**: v11.1 one-year backtests 2023, 2024, 2025, 2026 (loss recovery,

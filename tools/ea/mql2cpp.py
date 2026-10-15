@@ -24,6 +24,7 @@ for i, l in enumerate(out):
         out[i + 1] = '{ if (sim::onDrop) sim::onDrop(hi, lo, when);'
 if 'InAudSz' in src: out.insert(0, '#define HAS_AUDLB 1')
 if 'InRsLOn' in src: out.insert(0, '#define EA_V131 1')   # v13.1: the new section 4 filters
-if 'InLzMin' in src: out.insert(0, '#define EA_V14 1')   # v14.0: separate units, leg size, big candle
+if 'InLzMin' in src: out.insert(0, '#define EA_V14 1')
+if 'InZnPct' in src: out.insert(0, '#define EA_V15 1')   # v15.0   # v14.0: separate units, leg size, big candle
 if 'InHgBase' in src: out.insert(0, '#define EA_V13 1')   # v13.0: one stop buffer box, hedge 'base' option   # v12.3: the EA draws the audit labels (group 44)
 open(sys.argv[2], 'w').write('\n'.join(out))

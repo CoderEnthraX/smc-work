@@ -178,6 +178,9 @@ int main(int argc, char **argv)
 #ifdef CORE_V14
    if (cfg.count("xsLog")) g_xsLog = fopen(cfg["xsLog"].c_str(), "w");   // v14.0 test hook (see extract.py)
 #endif
+#ifdef CORE_V15
+   if (cfg.count("znLog")) g_znLog = fopen(cfg["znLog"].c_str(), "w");   // v15.0 test hook (see extract.py)
+#endif
    // settings
    S.altMode = cb("altMode", false); S.pbBodyOn = cb("pbBodyOn", false); S.pbBodyRef = cb("pbBodyRef", false); S.pbSwp2 = cb("pbSwp2", false);
    S.on = true; S.r1 = cb("r1", true); S.r2 = cb("r2", true); S.sig = (int)cl("sig", 0);
@@ -243,9 +246,17 @@ int main(int argc, char **argv)
 #else
    S.buMode = (int)cl("buMode", 0); S.buPips = cd("buPips", 10.0); S.buPct = cd("buPct", 0.02); S.pipSz = cd("buPip", 0.1);
 #endif
-   S.r3On = cb("r3On", false); S.r3BrkOn = cb("r3BrkOn", false); S.r3Brk = cd("r3Brk", 3.0); S.r3Fb = cb("r3Fb", false); S.lmOn = cb("lmOn", false); S.lmAmt = cd("lmAmt", 300.0); S.sp1 = cd("sp1", 200.0); S.spN1 = cd("spN1", 3.0); S.sp2 = cd("sp2", 500.0); S.spN2 = cd("spN2", 5.0); S.sp3 = cd("sp3", 1000.0); S.spN3 = cd("spN3", 8.0); S.spInc = cd("spInc", 500.0); S.spAdd = cd("spAdd", 1.0);
+   S.r3On = cb("r3On", false); S.r3BrkOn = cb("r3BrkOn", false); S.r3Brk = cd("r3Brk", 3.0); S.r3Fb = cb("r3Fb", false); S.sp1 = cd("sp1", 200.0); S.spN1 = cd("spN1", 3.0); S.sp2 = cd("sp2", 500.0); S.spN2 = cd("spN2", 5.0); S.sp3 = cd("sp3", 1000.0); S.spN3 = cd("spN3", 8.0); S.spInc = cd("spInc", 500.0); S.spAdd = cd("spAdd", 1.0);
 #ifdef CORE_V14
    if (S.buMode == 3) S.r3Brk = cd("r3V", 3.0);
+#endif
+#ifndef CORE_V15
+   S.lmOn = cb("lmOn", false); S.lmAmt = cd("lmAmt", 300.0);
+#else
+   // v15.0: section 4 rules on 1m only (key m1On; 0 = as v14.0), the big candle box above 1 minute, news on 1m only, the zone modes
+   S.m1On = cb("m1On", false); S.bcMax2 = cd("bcMax2", 0); S.nw1m = cb("nw1m", false);
+   S.znPct = cd("znPct", 50); S.znBig = cb("znBig", true); S.znOb = cb("znOb", true); S.znFvg = cb("znFvg", true); S.znHalf = cb("znHalf", true);
+   S.znTwo = cb("znTwo", true); S.znLine = cb("znLine", true);
 #endif
 #ifdef CORE_V131
    // v13.1 (section 4): timeframes in seconds (0 = the chart)
@@ -282,6 +293,18 @@ int main(int argc, char **argv)
    long from = cl("from", 0), to = cl("to", nb);
 #ifdef CORE_V131
    long ixK[4] = {-1, -1, -1, -1}; double ixC[4] = {0, 0, 0, 0}; bool ixHave[4] = {false, false, false, false};
+#endif
+#ifdef CORE_V15
+   // v15.0: the zone timeframes = the higher timeframe + the next two of 15m, 1h, 4h, 1D, 1W, 1M (broker clock; the higher
+   // timeframe on the same clock as the HT candles above)
+   long znTf[3] = {0, 0, 0};
+   bool htSrv = cb("htfSrv", false);
+   if (S.obM && S.htfOk)
+   {
+      auto up = [](long sec) -> long { const long LD[6] = {900, 3600, 14400, 86400, 604800, 2592000}; for (int a = 0; a < 6; a++) if (sec < LD[a]) return LD[a]; return 0; };
+      znTf[0] = htfSec; znTf[1] = up(htfSec); znTf[2] = znTf[1] ? up(znTf[1]) : 0;
+   }
+   long zK[3] = {-1, -1, -1}; double zo[3] = {0, 0, 0}, zh[3] = {0, 0, 0}, zl[3] = {0, 0, 0}, zc[3] = {0, 0, 0}; bool zHave[3] = {false, false, false};
 #endif
    for (long i = 0; i < nb && i < to; i++)
    {
@@ -332,11 +355,23 @@ int main(int argc, char **argv)
          ixC[q] = C[i];
       }
 #endif
+#ifdef CORE_V15
+      for (int q = 0; q < 3; q++)
+      {
+         if (!znTf[q]) continue;
+         long kk = q == 0 ? (htSrv ? (T[i] + TzOff(T[i], 7200, 1)) / htfSec : T[i] / htfSec) : IndKeyH(T[i], znTf[q]);
+         if (kk != zK[q]) { if (zHave[q]) ZnCandle(q, zo[q], zh[q], zl[q], zc[q]); zK[q] = kk; zHave[q] = true; zo[q] = O[i]; zh[q] = H[i]; zl[q] = L[i]; zc[q] = C[i]; }
+         else { zh[q] = std::max(zh[q], H[i]); zl[q] = std::min(zl[q], L[i]); zc[q] = C[i]; }
+      }
+#endif
       CoreBar(T[i], O[i], H[i], L[i], C[i], eq, hT[i], hO[i], hX[i], hE[i]);
    }
    if (olog) fclose(olog);
 #ifdef CORE_V14
    if (g_xsLog) fclose(g_xsLog);
+#endif
+#ifdef CORE_V15
+   if (g_znLog) fclose(g_znLog);
 #endif
    FILE *of = argc > 3 ? fopen(argv[3], "w") : stdout;
    fprintf(of, "side,dir,ebar,ep,q,xbar,xp,why,pnl,pbar,prisk,sl0\n");
