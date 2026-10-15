@@ -624,19 +624,20 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
    (no feature removed - the user said so). F2 (CONFIRMED): REMOVE completely the loss mark "Start again from the base
    risk when the losses carried reach" (section 7: stLmOn / stLmAmt, EA InLmOn / InLmAmt, table row 50 / EA row, counters
    cntLm); KEEP the hard-cap choice "Start again from the base risk (forget the losses)" (CAP_BASE) - the user
-   confirmed. F3 (answers 1-5 = my suggestions; details still being clarified): 3 new 'Take trades on' modes CHOCH / BOS /
-   CHOCH+BOS "- HTF order block zone", ALL chart timeframes (1m -> HTF 15m, 15m -> HTF 4h ...), always WITH the HTF direction
-   (a counter CHOCH is never taken). POIs inside the HTF leg's pullback zone (setting, default 50%): ORDER BLOCKS (last opposite
-   candle before a move that leaves an FVG; zone = its high-low) touching / beyond the line - touch = their near edge; FVGs only
-   beyond the line (at ~50% only OBs count) - touch = the FVG's 50% line. Trigger = POI touched, then the chart's CHOCH / BOS.
-   Touch valid until the CHOCH, the POI breaks, or the HTF leg changes. POI dead when an HTF (15m) candle CLOSES beyond its far
-   side. RE-ENTRY: a POI already visited counts again if price comes back, takes the liquidity of the earlier visit's swing
-   (goes beyond its low / high) and then gives the CHOCH, as long as no 15m close broke the POI. Timeframes: the user wants
-   'whatever higher timeframe OB is in the 15m leg' (mostly 15m / 1h, rarely 4h); biggest timeframe wins; entry / stop /
-   target as now. Asked: ladder = HTF + 2 above?, FVG rule (midpoint beyond the line?), priority for FVGs, does every
-   trade need a new touch (user's example: after a sell, a buy CHOCH is skipped, then 'another sell CHOCH is taken').
-   F4 (to confirm): switch "News rules on the 1-minute chart only" - above 1m no news windows / closes (asked: holidays?
-   pre-news block? default ON?), end of section 10. F5 (to confirm): 'Take trades on' keeps ONLY 6 choices: CHOCH only, BOS
+   confirmed. F3 (mostly answered; my model of the zone life sent for confirmation): 3 new 'Take trades on' modes CHOCH /
+   BOS / CHOCH+BOS "- HTF order block zone", ALL chart timeframes, always WITH the HTF direction. Zones searched on the HTF +
+   the 2 timeframes above it (1m chart: 15m / 1h / 4h; 15m chart: 4h / 1D / 1W), inside the HTF leg's pullback zone (line
+   setting, default 50%; at ~50% only OBs, FVGs only beyond the line). New settings: 'only the biggest timeframe's zones
+   count' (ON = biggest present wins, OB + FVG together; OFF = all count); 'use order blocks'; 'use FVGs'; 'FVG: only its far
+   half (touch at its 50% line)' (OFF = whole FVG, touch at its near edge); 'second visit counts if it takes the first
+   visit's liquidity' (OFF = it does not). OB = last opposite candle before a move that leaves an FVG (zone = its high-low).
+   A zone DIES only when a candle of ITS OWN timeframe closes beyond its far side (15m zone -> 15m close, 1h -> 1h, 4h -> 4h)
+   or the HTF leg changes; a wick beyond (even above the 100% swing) is fine. After a touch, EVERY with-HTF chart CHOCH counts
+   while the zone is alive and price has not closed beyond it (user's example: sell, buy CHOCH ignored, next sell CHOCH below
+   the zone taken); a CHOCH after the zone died needs a NEW zone. Entry / stop / target as now. F4 news switch: answers =
+   my suggestions (above 1m ignore windows 1-3, automatic US news, EA calendar news, 'no new trades before news'; US
+   holidays keep working; default ON; end of section 10). F5 confirmed by the user's earlier message.
+   F5: 'Take trades on' keeps ONLY 6 choices: CHOCH only, BOS
    only, CHOCH and BOS + the 3 OB-zone modes; REMOVE favourable / against / auto (9 choices). (Favourable = the section 4
    'Higher-timeframe filter' switch - same trades.) EA: give the new modes NEW enum numbers so old .set values 3-11 do not
    silently become OB modes. F6..: waiting for the user.
