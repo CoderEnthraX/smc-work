@@ -611,6 +611,17 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
    SMC_calendar.csv -> test the REAL news list (CPI, FOMC ...) on 2021-2026. With group 29 releases only
    (1m, user settings): none -18,514 / windows -18,844 / +pre 1 h -18,708 / 2 h -18,302 / 4 h -18,070,
    all -0.13R per trade (tools/ea/preeffect.py) -> news blocking does not change the edge.
+0a. **v14.0 TradingView FAILED CE10117: 100,771 tokens (limit 100,256, over by 515)**; v13.1 passed -> my estimate (104,405 x
+   tokens / 34,058 = ~94,200) was WRONG: the marginal cost is about 1 compiled token per outline.py token (fix 3 removed 4,263
+   -> about 4,300; v14 added 930 -> about 1,000), with a big fixed part. Calibrate from now on: compiled ~= 100,771 + (my tokens
+   - 30,725). Next version (number not given yet) - user features being collected, NO build before written permission:
+   F1 (confirmed): new switch at the end of section 4 "Use closer / further, the rule 3 distance and the leg size on the
+   1-minute chart only", ON by default (user's wish): on charts above 1 minute ignore skip closer / further (old boxes AND the
+   separate-unit boxes), the v13.1 min stop % of the price (stMnPct / InMnPct, user said make it 1m-only too), the rule 3
+   'near the broken level' distance (rule 3 itself still works; no fall back there), and the leg size min / max. Seconds
+   charts count as 1 minute. Big signal candle: TWO boxes sharing the one unit dropdown - the old box = 1-minute (and seconds)
+   charts, a new box (default 0 = off) = all charts above 1 minute; not tied to the switch. Make room in TV by compacting code
+   (no feature removed - the user said so). F2..: waiting for the user.
 0. **v14.0**: the user compiles both (TradingView + MetaEditor F7) and reports errors / warnings. (v13.1: MetaEditor 0 errors,
    TradingView fix 3 confirmed working by the user.) Then
    Strategy Tester (Every tick based on real ticks) and a demo account. Fix compile errors with a patch, re-run
