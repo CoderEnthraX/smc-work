@@ -634,7 +634,11 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
    A zone DIES only when a candle of ITS OWN timeframe closes beyond its far side (15m zone -> 15m close, 1h -> 1h, 4h -> 4h)
    or the HTF leg changes; a wick beyond (even above the 100% swing) is fine. After a touch, EVERY with-HTF chart CHOCH counts
    while the zone is alive and price has not closed beyond it (user's example: sell, buy CHOCH ignored, next sell CHOCH below
-   the zone taken); a CHOCH after the zone died needs a NEW zone. Entry / stop / target as now. F4 news switch: answers =
+   the zone taken); a CHOCH after the zone died needs a NEW zone. Entry / stop / target as now. EXTRA setting (asked last):
+   'the HTF CHOCH* line counts as a zone' - after an HTF BOS, the HTF CHOCH* line (100%, the leg start) works like a zone:
+   chart price reaches it, no HTF candle closes beyond it, then the chart CHOCH back with the HTF -> trade (mirror for buys).
+   FULL LIST + suggestions (zone line 50, biggest-tf ON, OB ON, FVG ON, far half ON, second visit ON, CHOCH* line ON, dead
+   zone cancels a waiting order, both OB + FVG off = error, version v15.0 both files, no notes) SENT, asked WRITTEN permission. F4 news switch: answers =
    my suggestions (above 1m ignore windows 1-3, automatic US news, EA calendar news, 'no new trades before news'; US
    holidays keep working; default ON; end of section 10). F5 confirmed by the user's earlier message.
    F5: 'Take trades on' keeps ONLY 6 choices: CHOCH only, BOS
