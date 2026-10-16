@@ -279,6 +279,7 @@ f_znKill(int ls) =>
             if not na(ls) and z.te <= ls
                 z.dead := true
                 array.remove(zA, i)
+                z.vs  := 0
             else
                 z.st  := 0
                 z.ext := na
