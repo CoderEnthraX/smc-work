@@ -459,7 +459,8 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   str.startswith / contains, SwingTracker defaults, the two order parts in one loop. Outline tokens: complete 29,514 (v15.0
   28,648 passed), no RSI / EMA 27,896; estimate ~99,450 / ~97,690 (limit 100,256 - the complete file is CLOSE: if CE10117,
   next room = the table texts f_stTab1..4 ~3,300 tokens). Main body 16,223; largest function f_stTab4 207 external elements.
-  CHECKS: separate Python (v151sep) = core 12/12 settings (MSS 1m / confirmation first + newest / OB2 + last + both / hedge /
+  CHECKS: OFF = v15.0: 222 of 222 saved settings byte-identical (v13tests same old150; with the close-order fix below 221 + the
+  1 explained); separate Python (v151sep) = core 12/12 settings (MSS 1m / confirmation first + newest / OB2 + last + both / hedge /
   rule 3 + whole FVG / BOS + no 2nd visit / 15m; up to 63,000 zone counts, 17,000 boxes, 3,214 MSS, 940 confirmations, 965
   failures per setting, zones-gone cancels); Pine zone + MSS code = core (pinezone151) on the same settings; chart engine
   merge = old bar by bar (5 x 60,000 bars, 3 planted bugs caught); equiv 5/5 byte-identical (pxOff = by hand 1m / zones+MSS /
@@ -745,6 +746,10 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
    SMC_calendar.csv -> test the REAL news list (CPI, FOMC ...) on 2021-2026. With group 29 releases only
    (1m, user settings): none -18,514 / windows -18,844 / +pre 1 h -18,708 / 2 h -18,302 / 4 h -18,070,
    all -0.13R per trade (tools/ea/preeffect.py) -> news blocking does not change the edge.
+0a0. **v15.1 delivered (see Versions)**: the user compiles the 3 files (TradingView x2, MetaEditor F7) and reports errors. The
+   complete TradingView file is CLOSE to the token limit (estimate ~99,450 of 100,256; v15.0 at ~98,500 passed): if CE10117, the
+   no RSI / EMA file still fits (~97,690) and the next room is the table texts (f_stTab1..4). Zone / MSS / pause modes were NOT
+   profit-tested (the user did not ask). Then Strategy Tester + demo.
 0a. **v15.0 delivered (see Versions)**: the user compiles the 3 files (TradingView complete + no RSI / EMA, MetaEditor F7) and
    reports errors. If TradingView says CE10117 again: my token model is only 2 points (fix2 104,405 / 34,058 outline tokens;
    v14.0 100,771 / 30,725) -> compiled ~= 100,771 + 1.09 x (tokens - 30,725); more room = the zone engine / table texts.
