@@ -63,6 +63,12 @@ int main(int argc, char **argv)
    InM1On = cb("m1On", false); InBcMax2 = cd("bcMax2", 0); InNw1m = cb("nw1m", false);
    InZnPct = cd("znPct", 50); InZnBig = cb("znBig", true); InZnOb = cb("znOb", true); InZnFvg = cb("znFvg", true); InZnHalf = cb("znHalf", true);
    InZnTwo = cb("znTwo", true); InZnLine = cb("znLine", true); InZnBox = cb("znBox", true);
+#ifdef EA_V151
+   InPxOff = cb("pxOff", false); InFl1m = cb("fl1m", false); InZnLast = cb("znLast", false); InZnSw = cb("znSw", false); InZnOb2 = cb("znOb2", false);
+   InMssOn = cb("mssOn", false); InMssN = (int)cl("mssN", 2); InMssCf = cb("mssCf", false); InMssSt = (EMssSt)cl("mssSt", 0);
+   InLdN2 = (int)cl("ldN2", 0); InLdSkip = (int)cl("ldSkip", 1); InWk247 = cb("wk247", false);
+   InZnAll = cb("znAll", false);
+#endif
 #endif
 #ifdef EA_V14
    // v14.0: the separate unit boxes (used with buMode 3), the spread for sizing, leg size and big signal candle (section 4)

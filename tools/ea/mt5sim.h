@@ -67,7 +67,7 @@ enum ENUM_TRADE_TRANSACTION_TYPE { TRADE_TRANSACTION_ORDER_ADD, TRADE_TRANSACTIO
 enum ENUM_INIT_RETCODE { INIT_SUCCEEDED = 0, INIT_FAILED = 1, INIT_PARAMETERS_INCORRECT = 2 };
 const int REASON_REMOVE = 1, REASON_RECOMPILE = 2, REASON_CHARTCHANGE = 3, REASON_CLOSE = 9, REASON_PARAMETERS = 5, REASON_ACCOUNT = 6;
 const int TIME_DATE = 1, TIME_MINUTES = 2;
-const color clrTeal = 1, clrCrimson = 2, clrOrange = 3, clrRed = 4, clrDodgerBlue = 5, clrWhite = 6, clrSilver = 7, clrYellow = 8, clrLime = 9, clrAqua = 10, clrMagenta = 11, clrGray = 12, clrMediumPurple = 13, clrTomato = 14, clrGreen = 15, clrDarkOrange = 16, clrMediumBlue = 17, clrDimGray = 18, clrSeaGreen = 19, clrIndianRed = 20;
+const color clrTeal = 1, clrCrimson = 2, clrOrange = 3, clrRed = 4, clrDodgerBlue = 5, clrWhite = 6, clrSilver = 7, clrYellow = 8, clrLime = 9, clrAqua = 10, clrMagenta = 11, clrGray = 12, clrMediumPurple = 13, clrTomato = 14, clrGreen = 15, clrDarkOrange = 16, clrMediumBlue = 17, clrDimGray = 18, clrSeaGreen = 19, clrIndianRed = 20, clrDarkGreen = 21, clrMaroon = 22;
 const uint TRADE_RETCODE_REQUOTE = 10004, TRADE_RETCODE_REJECT = 10006, TRADE_RETCODE_PLACED = 10008, TRADE_RETCODE_DONE = 10009, TRADE_RETCODE_DONE_PARTIAL = 10010,
            TRADE_RETCODE_ERROR = 10011, TRADE_RETCODE_TIMEOUT = 10012, TRADE_RETCODE_INVALID = 10013, TRADE_RETCODE_INVALID_VOLUME = 10014, TRADE_RETCODE_INVALID_PRICE = 10015,
            TRADE_RETCODE_INVALID_STOPS = 10016, TRADE_RETCODE_TRADE_DISABLED = 10017, TRADE_RETCODE_MARKET_CLOSED = 10018, TRADE_RETCODE_NO_MONEY = 10019,

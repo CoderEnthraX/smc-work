@@ -7,7 +7,11 @@
   receiver only uses the free "MetaApi API") and the MQL5 VPS guide (`SMC_Strategy_v8.3_MQL5_VPS_GUIDE.pdf`).
 - Owner: **Punit** (punit7870@gmail.com). Works from a phone. Wants **simple English, short examples with
   numbers, tables**. Times are **IST** (Asia/Kolkata).
-- **Latest version: v15.0 for BOTH** = `SMC_Structure_Strategy_v15.0.txt` (complete) + `SMC_Structure_Strategy_v15.0_noRSI_EMA.txt`
+- **Latest version: v15.1 for BOTH** = `SMC_Structure_Strategy_v15.1.txt` (complete) + `SMC_Structure_Strategy_v15.1_noRSI_EMA.txt`
+  + `SMC_Structure_EA_v15.1.mq5`; NO notes (user). v15.1 = v15.0 + one box per zone / show all zones, zones of an old HTF leg
+  go, a setup goes only when ALL its zones are gone, last zone only, order block type 2 / to the swing, MSS + its
+  confirmation, every-other-day mode after a pause, force close on 1m only, every price distance off - see Versions.
+  Before it: **v15.0 for BOTH** = `SMC_Structure_Strategy_v15.0.txt` (complete) + `SMC_Structure_Strategy_v15.0_noRSI_EMA.txt`
   (the same without the 4 RSI / EMA filters - the user asked for two TradingView files) + `SMC_Structure_EA_v15.0.mq5`; NO notes
   (user). v15.0 = v14.0 + HTF order block zone modes + 1-minute-only section 4 rules + news on 1m only, loss mark and
   favourable / against / auto modes removed, TradingView code made smaller (v14.0 failed the token limit) - see Versions.
@@ -402,6 +406,79 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   compacted, the whole chart engine incl. every line / label, per bar): 5 x 60,000 bars (altMode, pbSwp2, pbBody, last-500 /
   every bar drawing) IDENTICAL; planted bugs caught (3 tried, 3 caught over 50k bars). pinezone.py: the Pine zone code run on
   the core's logged inputs = core 10/10 settings, 32,223 decisions (planted bugs caught). Parser PARSED OK (both files).
+
+- v15.1 (user agreed to all my suggestions + added order block type 2, MSS, MSS confirmation, force close on 1m only, 'every price
+  distance off'; then "build v15.1 ... perfect working file without any bugs ... check everything"; no notes; NO profit test).
+  3 files: SMC_Structure_EA_v15.1.mq5 (203 -> 223 settings), SMC_Structure_Strategy_v15.1.txt (185 -> 205),
+  SMC_Structure_Strategy_v15.1_noRSI_EMA.txt (165 -> 185). All new settings OFF (force close on 1m only ON, its old behaviour on
+  1m), at the END of their section, the same order in both.
+  1. BOXES (display): ONE box per zone (named by the zone; a later signal stretches it, text '1h OB x3'), every zone that
+  counted for a with-HTF signal (OB + FVG, every tf), kept after the zone dies; green / red, darker when it was the last zone
+  (EA SeaGreen / IndianRed, DarkGreen / Maroon; TV green / red, #006400 / #800000, 85 transparent); FVG with 'far half' drawn
+  as its far half; newest 440 kept (TV max_boxes_count 500). Section 13 end: 'Show all zones' (InZnAll / stZnAll, OFF): every
+  live zone in the leg's zone with no signal yet, to the last candle; visible % 50 / 30 / 15 (HTF / +1 / +2), border on HTF
+  zones, labels of HTF+1 / +2 in the label colour (white), OB buy green / sell red, FVG teal / orange, last zone +25% (max 90),
+  border 2, '(last)'. EA: colours mixed with the chart background (MT5 boxes cannot be see-through), redrawn every bar.
+  2. A new HTF leg (CHOCH or BOS) kills zones MADE before the leg started (made = close of the 3rd FVG candle; te <= the open
+  of the leg-start HTF candle -> dies) + the old leg's CHOCH* line; always on. Core: CHtf tRunLoT / tRunHiT / legT (strict
+  < / >, = Pine tRLoT / tRHiT / tLegT in f_tfPack, 5th security value stHtS).
+  3. A waiting order goes only when ALL its zones are gone (own-tf close beyond / killed); capacity drops are not deaths.
+  EA: support tuples (supTf / supK / supD / supT / supB / supT0, up to 12 in GVs) checked against THIS bar's deaths (g_zd*);
+  Pine: stSup = the array f_znCount returned, Zn.dead flags.
+  4. Section 2 end: 'Only trade from the last zone' (znLast): last zone = among OBs in the leg's zone, not spent, HTF
+  direction: highest tf, then the deepest (buy: lowest bottom); FVGs / the line never last; the line still counts alone when
+  no zone counted; overrides 'biggest'; error if ON with OB OFF. 'OB box reaches the swing' (znSw): box to the min low / max
+  high from the OB candle to candle 3. 'Order block type 2' (znOb2): OB = candle 1 of the FVG, any colour, one per burst (an
+  FVG whose candle 1 is one of the last FVG's 3 candles = same burst). OB dedupe now by candle time.
+  5. MSS (mssOn, mssN 2 = candles each side, 1-10): MSS up = first close above the newest strict swing high, WITH the HTF,
+  not on a candle with a used chart CHOCH / BOS; MSS low = lowest low from the swing candle INCLUSIVE to this candle; needs a
+  chart FVG with its OB (type 1: an opposite candle among candle 1 and the 2 before; type 2: always) with candle 1 >= the MSS
+  low bar, and ZnCount(d, 2) > 0. One trade per visit: a visit that gave an MSS does not count for CHOCH / BOS, any signal
+  blocks MSS. Entry rules 1 / 2 / 3 (rule 1 = pullback of the MSS move msAnch / msLow, rule 2 = the broken swing, rule 3 =
+  close); stop = MSS low -/+ buffer; section 4 filters with the MSS low as the CHOCH* level, candles from the MSS low bar;
+  premium / discount on the MSS move; exempt from trend-flip cancel, bosCnl and the rule-1 live stop; cancelled by an opposite
+  chart CHOCH / BOS; a same-way chart signal no zone allows leaves it (keepMs). Confirmation (mssCf) + stop choice (mssSt:
+  First MSS low / Newest swing low = the pullback extreme): wait for a touch of the first FVG's near edge (bar > MSS bar),
+  then a NEW FVG with OB completing with candle 1 >= the touch bar -> enter at its close (market, rule 3, one chance); a
+  wick beyond the MSS low = failed; rules 1 / 2 / 3 not used then (EA rule 4). Table / audit: 'MSS', counts.
+  6. Section 8 end: ldN2 (0 = off) losses in a row AFTER a pause -> every-other-day mode: the rest of that day blocked, then
+  only every (ldSkip + 1)-th trading day (Mon-Fri; every day with 24/7 / crypto in Pine) until ONE winning trade; no new
+  pause in that mode. Blocked text 'loss pause (every other day)'.
+  7. Section 9 end: 'Force close at 02:00 on the 1-minute chart only' (fl1m, ON): charts above 1m have no daily force close
+  (entry hours / weekend unchanged; seconds = 1m). 8. Section 1 end: 'Switch OFF every price-distance setting' (pxOff, OFF):
+  stop buffer, closer / further (old + separate boxes), min stop %, rule 3 distance (rule 3 still enters), leg size, big
+  candle (both boxes), spread for sizing, 'push target out to cover commission'; the commission itself stays.
+  Tools: patches/ea151.py, pine151.py (+ the pine150lite.py cut for the 3rd file); extract.py hooks B / A / Z / L / M / W / K /
+  F / X / R / E (key znLog); harness / simmain keys pxOff, fl1m, znLast, znSw, znOb2, mssOn, mssN, mssCf, mssSt, ldN2, ldSkip,
+  wk247, znAll (EA_V151 / CORE_V151); v151sep.py (separate zone + MSS + confirmation engine), v151tests.py (sep / equiv / fl1m /
+  pause / ea / rs / box), pinezone151.py (the Pine zone + MSS code translated, fed the core's inputs), pinehtf151.py (the Pine
+  f_tfPack translated: trend / leg / count / leg start time = core), pinedead.py; scratchpad
+  b151/engrun.py (pinerun on the file before / after the engine merge).
+  TV SIZE (no feature removed): f_tfPack's dead internal tracker (141 lines; pinedead.py), long / short orders in one call,
+  the chart engine's ceiling / floor written once (for _k = 0 to 1), f_blk, f_xRsT / f_xEmT, f_stCancel(), seq-mode names by
+  str.startswith / contains, SwingTracker defaults, the two order parts in one loop. Outline tokens: complete 29,514 (v15.0
+  28,648 passed), no RSI / EMA 27,896; estimate ~99,450 / ~97,690 (limit 100,256 - the complete file is CLOSE: if CE10117,
+  next room = the table texts f_stTab1..4 ~3,300 tokens). Main body 16,223; largest function f_stTab4 207 external elements.
+  CHECKS: separate Python (v151sep) = core 12/12 settings (MSS 1m / confirmation first + newest / OB2 + last + both / hedge /
+  rule 3 + whole FVG / BOS + no 2nd visit / 15m; up to 63,000 zone counts, 17,000 boxes, 3,214 MSS, 940 confirmations, 965
+  failures per setting, zones-gone cancels); Pine zone + MSS code = core (pinezone151) on the same settings; chart engine
+  merge = old bar by bar (5 x 60,000 bars, 3 planted bugs caught); equiv 5/5 byte-identical (pxOff = by hand 1m / zones+MSS /
+  15m separate units; fl1m on 1m); fl1m 15m: 0 'Time flat' with ON (275 OFF), weekend close kept; pause replay 4/4 agree
+  with every core note (65 / 58 / 38 / 76 every-other-day starts).
+  EA vs TV differences known: a zone box deleted by the 440 ring and stretched again: EA recreates it, TV keeps it deleted.
+  OLD BUG FOUND + FIXED (MT5 part only, core unchanged; there since v11.0): two trades of ONE side closing in the same second
+  (stacked trades closed together) were counted for the loss pause / losses in a row in the broker's close order live, but in
+  entry order after a restart (and in the core / TradingView) -> after a restart a pause could start that live did not (v15.1
+  restart check: 244 vs 242 trades). Now GatherIO (ClsAfter) and ReplayMoney sort same-second closes by entry time, then
+  main part before the early-profit part: live = restart = core (short range 11 = 11 = 11 trades).
+  Effect on the saved settings: only the loss pause / day pause read that order -> the 50 saved whole-EA settings with ldOn /
+  lsOn (restart twins = plain) re-run with the fix: 46 byte-identical, 3 lev1000 'OnInit failed' in every version, 1 changed
+  (ocfg_off_bos_partial: a win + a loss closed in the same second; now counted win-then-loss like the core / TradingView ->
+  a pause starts earlier; 6,392 -> 6,257 trades over 5.75 y). Whole EA = core 6/6 incl. the case that showed it (242 = 242).
+  More checks: whole EA = core 5/5 to the cent; boxes: the 440 boxes the EA keeps over 3 years = the core's (place, prices,
+  colour incl. darker last zone, 'x N'), 3 settings; Pine f_tfPack = core on 2,037,534 1m bars + 2 x 135,898 15m bars; the
+  Pine MSS confirmation block = core on 6,370 setups (2,542 confirmed + stop, 2,427 failed; CF=1 pinezone151.py).
+  Pine f_ldAlt = the EA's AltHalt on 96,000 cases (pinepause151.py, IST + New York). Parser PARSED OK (both files).
 
 ## How the v11.1 code works (key points)
 - 118 inputs (v11.2: 122, + group 38 stop buffer unit). Groups: 20 strategy, 21 risk / loss recovery, 24 safety, 25 daily blocking windows,

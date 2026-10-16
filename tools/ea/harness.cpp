@@ -257,6 +257,13 @@ int main(int argc, char **argv)
    S.m1On = cb("m1On", false); S.bcMax2 = cd("bcMax2", 0); S.nw1m = cb("nw1m", false);
    S.znPct = cd("znPct", 50); S.znBig = cb("znBig", true); S.znOb = cb("znOb", true); S.znFvg = cb("znFvg", true); S.znHalf = cb("znHalf", true);
    S.znTwo = cb("znTwo", true); S.znLine = cb("znLine", true);
+#ifdef CORE_V151
+   // v15.1 (defaults = as v15.0 for the saved settings files): every price distance off, the force close on 1m only, the zone settings,
+   // MSS, the every-other-day mode after the pause
+   S.pxOff = cb("pxOff", false); S.fl1m = cb("fl1m", false); S.znLast = cb("znLast", false); S.znSw = cb("znSw", false); S.znOb2 = cb("znOb2", false);
+   S.mssOn = cb("mssOn", false); S.mssN = (int)cl("mssN", 2); S.mssCf = cb("mssCf", false); S.mssSt = (int)cl("mssSt", 0);
+   S.ldN2 = (int)cl("ldN2", 0); S.ldSkip = (int)cl("ldSkip", 1); S.wk247 = cb("wk247", false);
+#endif
 #endif
 #ifdef CORE_V131
    // v13.1 (section 4): timeframes in seconds (0 = the chart)
@@ -274,20 +281,29 @@ int main(int argc, char **argv)
    CoreSetup();
    for (int k = 0; k < 2; k++) g_money[k].liveT = LNONE;
    // higher timeframe: aggregate by t / htfSec, value for a bar = state after the previous higher-timeframe candle
-   std::vector<int> hT(nb); std::vector<double> hO(nb), hX(nb); std::vector<int> hE(nb);
+   std::vector<int> hT(nb); std::vector<double> hO(nb), hX(nb); std::vector<int> hE(nb); std::vector<long> hS(nb, LNONE);
    {
-      long curK = -1; double ao = 0, ah = 0, al = 0, ac = 0; bool have = false;
+      long curK = -1, atm = 0; double ao = 0, ah = 0, al = 0, ac = 0; bool have = false; long ls = LNONE;
       int lt = 0; double lo = NAD, lx = NAD; int le = 0;
       for (long i = 0; i < nb; i++)
       {
          long kk = cb("htfSrv", false) ? (T[i] + TzOff(T[i], 7200, 1)) / htfSec : T[i] / htfSec;
          if (kk != curK)
          {
-            if (have) { HT.Step(ao, ah, al, ac); lt = HT.tTrend; lo = HT.outO; lx = HT.outX; le = HT.evN; }
-            curK = kk; ao = O[i]; ah = H[i]; al = L[i]; ac = C[i]; have = true;
+            if (have)
+            {
+#ifdef CORE_V151
+               HT.tNow = atm;   // v15.1: the open of the candle (its first bar's time), for the time of the leg start
+#endif
+               HT.Step(ao, ah, al, ac); lt = HT.tTrend; lo = HT.outO; lx = HT.outX; le = HT.evN;
+#ifdef CORE_V151
+               ls = HT.legT;
+#endif
+            }
+            curK = kk; ao = O[i]; ah = H[i]; al = L[i]; ac = C[i]; have = true; atm = T[i];
          }
          else { ah = std::max(ah, H[i]); al = std::min(al, L[i]); ac = C[i]; }
-         hT[i] = lt; hO[i] = lo; hX[i] = lx; hE[i] = le;
+         hT[i] = lt; hO[i] = lo; hX[i] = lx; hE[i] = le; hS[i] = ls;
       }
    }
    long from = cl("from", 0), to = cl("to", nb);
@@ -360,11 +376,20 @@ int main(int argc, char **argv)
       {
          if (!znTf[q]) continue;
          long kk = q == 0 ? (htSrv ? (T[i] + TzOff(T[i], 7200, 1)) / htfSec : T[i] / htfSec) : IndKeyH(T[i], znTf[q]);
+#ifdef CORE_V151
+         // v15.1: the candle's close = the first bar of the next candle (the leg start: the first bar of its higher timeframe candle)
+         if (kk != zK[q]) { if (zHave[q]) ZnCandle(q, zt[q], T[i], zo[q], zh[q], zl[q], zc[q]); zK[q] = kk; zHave[q] = true; zt[q] = T[i]; zo[q] = O[i]; zh[q] = H[i]; zl[q] = L[i]; zc[q] = C[i]; }
+#else
          if (kk != zK[q]) { if (zHave[q]) ZnCandle(q, zt[q], zo[q], zh[q], zl[q], zc[q]); zK[q] = kk; zHave[q] = true; zt[q] = T[i]; zo[q] = O[i]; zh[q] = H[i]; zl[q] = L[i]; zc[q] = C[i]; }
+#endif
          else { zh[q] = std::max(zh[q], H[i]); zl[q] = std::min(zl[q], L[i]); zc[q] = C[i]; }
       }
 #endif
+#ifdef CORE_V151
+      CoreBar(T[i], O[i], H[i], L[i], C[i], eq, hT[i], hO[i], hX[i], hE[i], hS[i]);
+#else
       CoreBar(T[i], O[i], H[i], L[i], C[i], eq, hT[i], hO[i], hX[i], hE[i]);
+#endif
    }
    if (olog) fclose(olog);
 #ifdef CORE_V14
