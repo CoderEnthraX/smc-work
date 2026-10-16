@@ -270,6 +270,7 @@ f_znStep(Zn z, bool q, float tl) =>
         z.st  := stZnTwo ? 1 : 3
         z.ext := x
         z.vs  := 0
+    true
 // a new higher timeframe leg: the zones made before it started go (ls = the open of the candle that started it); the rest start again
 f_znKill(int ls) =>
     int n = array.size(zA)
@@ -284,6 +285,7 @@ f_znKill(int ls) =>
                 z.st  := 0
                 z.ext := na
                 z.vs  := 0
+    true
 // which zones are in the leg's zone, touches, visits; returns the last zone (the deepest order block of the biggest timeframe)
 f_znBar() =>
     int d = stT15
