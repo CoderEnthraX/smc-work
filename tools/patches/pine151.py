@@ -639,7 +639,7 @@ if stZnOn and stT15 != 0
             f_znBox(_z)
         f_znFrz(stT15, _sk)
 // v15.1 'show all zones': every live zone of the leg's zone that has not given a signal yet, to the last candle
-if barstate.islast and stZnOn
+if bar_index == last_bar_index and stZnOn
     while array.size(stZax) > 0
         box.delete(array.pop(stZax))
     if stZnAll
