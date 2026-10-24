@@ -756,6 +756,16 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   53.5% / +0.052 (1R) .. +0.083 (4R), 184 tr; the 15m zone / BOS modes nothing positive in both halves. ALL top picks' 95% ranges
   include 0 (e.g. CHOCH+BOS zone R2 4R C6+RSI -0.020..+0.308, years -0.13 / +0.36 / +0.24 / +0.37 / +0.43 / 2026 -0.37);
   'no time rules' 15m picks big R but 22-27% win, few trades, swap not modelled, one half negative.
+  REDONE as the user wants (scratchpad rr/grid2.py, g2/res.jsonl, an2.py, build2.py; same page, 864 runs, variants without 'no
+  time rules'): 15m = NO entry hours / 02:00 close / weekend flatten / news (sessMode 2, auOn 0) + swap estimate (long 4%, short
+  1% a year per 17:00 NY rollover, Wed x3; 0.02-0.08 R per trade, 3-17 nights held); 1m = time rules + automatic US news ON
+  (the first grid had auOn 0 - my slip, told the user; effect about +-0.03 R, same best settings). 1m yours -0.09..-0.19 R, win
+  39-43 / 30-35 / 27-33 / 26-32% at 1-4R; best CHOCH+BOS zone R2 C6+RSI 201 tr 51% +0.10 / 46% +0.13 / 45% +0.12 / 45% +0.11
+  (both halves + at all 4); CHOCH zone R2 C6+RSI 162 tr +0.08..+0.12; CHOCH R1+R2 C6+RSI ~410 tr +0.05..+0.08; CHOCH+BOS R2 C6+RSI
+  323 tr +0.06..+0.08; BOS / BOS zone nothing reliable; 2026 negative for the zone picks (-0.17..-0.36). 15m without time rules:
+  only 2 of 219 runs (>= 100 trades) + in both halves (CHOCH+BOS R3 3R min 0.5% 500 tr 28% +0.10, range -0.06..+0.26; CHOCH R1
+  1R HTF filter +0.01); gains = 2024-26 (gold's rise), 2021-23 lost; with the time rules 15m CHOCH R2 min 0.5% was + in both
+  halves at all 4 targets (+0.05..+0.08) - without them 2021-23 negative at every target.
 
 ## Open items / next steps
 00. **Group 41**: ask the user to attach the EA once with "save the calendar to a file" ON and send
