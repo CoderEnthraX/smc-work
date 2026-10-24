@@ -509,7 +509,7 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   force-close block and the table helper f_xc (the same text); main body 16,557; largest function f_stTab4 207 external elements.
   Tools: patches/ea152.py, pine152.py; extract.py CORE_V152 + hook key kzLog; mql2cpp EA_V152; harness / simmain keys c5, c6, kzOn,
   kzAs, kzLo, kzNy, kzLc, kzEnd; ea/v152tests.py (equiv / eqea / kz / ea / rs), pinekz152.py; old151/ = the v15.1 binaries.
-  CHECKS: OFF = v15.1 PENDING (still running at the first commit); sets = typed by hand (boxes set to other values) core 7/7 + whole EA 2/2 byte-identical; kill
+  CHECKS: OFF = v15.1 222 of 222 saved settings byte-identical; sets = typed by hand (boxes set to other values) core 7/7 + whole EA 2/2 byte-identical; kill
   zone flag worked out again in Python (zoneinfo, minute by minute) = core on 2,037,534 1m bars x 6 settings + 15m + 1h, every arm
   inside / skip outside, end ON: every cancel + close on the first bar outside, no trade open across a bar outside; whole EA = core
   6/6 to the cent; restarts 484 = none 2/2; Pine (pine2py) kill zone flag = core 1.9 M bars, C5 / C6 values = Derive 3,000 cases,
