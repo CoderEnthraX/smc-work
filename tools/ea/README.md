@@ -1,4 +1,4 @@
-# tools/ea - checks of the MT5 Expert Advisor (SMC_Structure_EA_v15.1.mq5) and of the TradingView v15.0 / v15.1 rewrites
+# tools/ea - checks of the MT5 Expert Advisor (SMC_Structure_EA_v15.2.mq5) and of the TradingView v15.0 / v15.1 / v15.2 rewrites
 
 MetaEditor (the MQL5 compiler) only runs on Windows, so the EA is checked here in two ways:
 
@@ -79,6 +79,12 @@ MetaEditor (the MQL5 compiler) only runs on Windows, so the EA is checked here i
 | v15.1 TradingView every-other-day | `NEWPINE=<file> python3 pinepause151.py [timezone]` | the Pine f_ldAlt (translated, Pine's time functions emulated in the session timezone) = the EA's AltHalt rule: 400 random start days x every 3 hours of 30 days x skip 1-4 x Mon-Fri / every day = 96,000 cases, IST and New York |
 | v15.1 TradingView higher timeframe | `NEWPINE=<file> python3 pinehtf151.py [names]` (needs the sep .zn logs) | the Pine f_tfPack (translated) run on the same higher timeframe candles: trend, leg start, leg extreme, CHOCH / BOS count and the new leg start time = what the core read on every chart bar |
 | v15.1 dead code | `python3 pinedead.py ../../SMC_Structure_Strategy_v15.0.txt ../../SMC_Structure_Strategy_v15.1.txt` | the internal swing tracker dropped from f_tfPack assigned only names nothing kept reads; the tracker methods write only their own fields |
+| v15.2 build | `python3 ../patches/ea152.py ../../SMC_Structure_EA_v15.1.mq5 ../../SMC_Structure_EA_v15.2.mq5`, `python3 ../patches/pine152.py ../../SMC_Structure_Strategy_v15.1.txt ../../SMC_Structure_Strategy_v15.2.txt`, then the usual extract / mql2cpp builds | kill zones (section 9) + the C5 / C6 + RSI sets (section 4); harness / simmain keys c5, c6, kzOn, kzAs, kzLo, kzNy, kzLc, kzEnd, kzLog (CORE_V152 / EA_V152) |
+| v15.2 OFF | `python3 v13tests.py same old151` (folder with the v15.1 harness + simmain) | every saved settings file, v15.1 vs v15.2 with every new setting at its default: PENDING |
+| v15.2 sets | `python3 v152tests.py equiv`, `python3 v152tests.py eqea` | the C5 / C6 + RSI set ON with the boxes set to OTHER values = the set's values typed by hand: core 7/7 (1m, 15m, zones + MSS, kill zones + hedge, rule 3, the kill zone boxes with the master OFF = nothing) and whole EA 2/2 byte-identical (the EA's C6 switches the RSI to the 1-hour MT5 candles) |
+| v15.2 kill zones | `python3 v152tests.py kz` | every bar's kill zone flag worked out again in Python (New York clock from zoneinfo, the next bar's minutes one by one) = the core's (hook key kzLog): 2,037,534 1m bars x 6 settings + 15m + 1h; every setup armed inside, every 'outside the kill zones' skip outside; 'when a kill zone ends' ON: every cancel and 'Kill zone end' close on the first bar outside, no trade open across a bar outside; OFF: trades run on |
+| v15.2 whole EA / restarts | `python3 v152tests.py ea`, `python3 v152tests.py rs` | whole EA = core to the cent 6/6 (kill zones, end ON / OFF, BOS + hedge, C6, 15m x 2); restarts (484) = no restarts 2/2 |
+| v15.2 TradingView | `python3 v152tests.py kz` (makes the .kz logs) then `NEWPINE=<file> python3 pinekz152.py` | the Pine kill zone flag (f_dAhead, f_ovl, _tMk, stKzIn translated by pine2py, New York clock emulated) = the core on 1.9 million bars; the Pine C5 / C6 values in use = the core's Derive() in 3,000 random cases; the table row written with the new f_xc = the v15.1 text in 5,000 random states; 2 planted bugs caught |
 | v13.0 speed | (simmain, table + drawings ON, `tester 0`) | one year 1m: v12.3 32.9 s CPU, v13.0 22.0 s, display OFF 4.1 s (hedge 35.5 / 24.8 / 5.5); trades identical |
 
 Notes

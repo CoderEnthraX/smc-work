@@ -7,7 +7,10 @@
   receiver only uses the free "MetaApi API") and the MQL5 VPS guide (`SMC_Strategy_v8.3_MQL5_VPS_GUIDE.pdf`).
 - Owner: **Punit** (punit7870@gmail.com). Works from a phone. Wants **simple English, short examples with
   numbers, tables**. Times are **IST** (Asia/Kolkata).
-- **Latest version: v15.1 for BOTH** = `SMC_Structure_Strategy_v15.1.txt` (complete) + `SMC_Structure_Strategy_v15.1_noRSI_EMA.txt`
+- **Latest version: v15.2** = `SMC_Structure_Strategy_v15.2.txt` (the complete TradingView file only - the user asked for "the
+  strategy and the EA"; no noRSI_EMA copy, the C6 set needs the RSI) + `SMC_Structure_EA_v15.2.mq5`; NO notes. v15.2 = v15.1 + kill zones
+  (section 9) + the C5 / C6 + RSI sets (section 4) - see Versions.
+  Before it: **v15.1 for BOTH** = `SMC_Structure_Strategy_v15.1.txt` (complete) + `SMC_Structure_Strategy_v15.1_noRSI_EMA.txt`
   + `SMC_Structure_EA_v15.1.mq5`; NO notes (user). v15.1 = v15.0 + one box per zone / show all zones, zones of an old HTF leg
   go, a setup goes only when ALL its zones are gone, last zone only, order block type 2 / to the swing, MSS + its
   confirmation, every-other-day mode after a pause, force close on 1m only, every price distance off - see Versions.
@@ -485,6 +488,32 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   'true' (z.vs := 0 in both branches); warning 'barstate.islast' -> show-all zones drawn on bar_index == last_bar_index (do not
   turn on calc_on_every_tick). pine151.py has both steps; commits 9b325c9 / b9f68d4 / b4f5a8d. The parser cannot see CE10235.
   EA unchanged.
+- v15.2 (user: kill zone setting "go with your suggestion but add IST in brackets"; at the end of a kill zone NOT cancelled by default
+  + "a checkbox to end the trade also"; "you don't need to test it"; + two checkboxes C5 / C6, OFF, ON = all their settings on, OFF =
+  set them by hand; "give me both files" = the strategy + the EA). 2 files: SMC_Structure_EA_v15.2.mq5 (223 -> 231 settings),
+  SMC_Structure_Strategy_v15.2.txt (205 -> 213). All new settings OFF (the London / New York boxes ON, used only with the master ON).
+  1. Section 9 end: stKzOn / InKzOn 'Only take entries in kill zones' + Asian 20-24 / London 2-5 / New York 7-10 / London close 10-12
+  (New York times, so they follow US summer / winter time; IST in the names: 05:30-09:30 / 11:30-14:30 / 16:30-19:30 / 19:30-21:30
+  summer, +1 h winter) + stKzEnd / InKzEnd 'when a kill zone ends: cancel the waiting order and close the open trade'. Flag = the
+  next bar [close, close + bar) touches a chosen zone on the New York clock (Ovl / f_ovl like the entry hours; usClk honoured; a bar
+  of 1 day+ always touches); ONLY arming needs it (take = g_win && g_kzIn; skip note 'outside the kill zones'); a waiting order
+  armed inside keeps waiting / open trades run on; the end switch = the force-close block (g_flatNow || (kzEnd && !g_kzIn): close
+  'Kill zone end', cancel 'CANCELLED - kill zone ended', every bar outside); table exit row '... / kill zone end'. Entry hours
+  (section 9) still apply. Error if ON with no zone ticked.
+  2. Section 4 end: stC5 / InC5, stC6 / InC6 (C6 = C6 + RSI): ON = their settings as if typed in (C5: min stop 0.5%, first setup
+  of the day, yesterday's high / low, move >= 12 candles; C6: entries 13-21, min stop 0.35%, yesterday, move 12, RSI HIGHER 1 hour
+  / 2 / Pullback / 50); the boxes keep the user's values; both ON = error. Core: CSet c5 / c6, applied in Derive() BEFORE pxOff /
+  x1m (so the 1-minute-only switch still drops the min stop % above 1m - told in the tooltip); EA IndSetup tf[1] = H1 with C6.
+  Pine: the raw inputs renamed st...I, the values in use (stFstOn .. stHrOff) declared after the last input; stMnP takes the sets.
+  TV SIZE: outline tokens 29,521 -> 29,817 (estimate ~99,781 of 100,256; v15.1 ~99,459 compiled fine) - saved ~70 by sharing the
+  force-close block and the table helper f_xc (the same text); main body 16,557; largest function f_stTab4 207 external elements.
+  Tools: patches/ea152.py, pine152.py; extract.py CORE_V152 + hook key kzLog; mql2cpp EA_V152; harness / simmain keys c5, c6, kzOn,
+  kzAs, kzLo, kzNy, kzLc, kzEnd; ea/v152tests.py (equiv / eqea / kz / ea / rs), pinekz152.py; old151/ = the v15.1 binaries.
+  CHECKS: OFF = v15.1 PENDING (still running at the first commit); sets = typed by hand (boxes set to other values) core 7/7 + whole EA 2/2 byte-identical; kill
+  zone flag worked out again in Python (zoneinfo, minute by minute) = core on 2,037,534 1m bars x 6 settings + 15m + 1h, every arm
+  inside / skip outside, end ON: every cancel + close on the first bar outside, no trade open across a bar outside; whole EA = core
+  6/6 to the cent; restarts 484 = none 2/2; Pine (pine2py) kill zone flag = core 1.9 M bars, C5 / C6 values = Derive 3,000 cases,
+  f_xc text = v15.1 text 5,000 states, 2 planted bugs caught; declared-before-use OK; no name clashes; parser PENDING (running).
 
 ## How the v11.1 code works (key points)
 - 118 inputs (v11.2: 122, + group 38 stop buffer unit). Groups: 20 strategy, 21 risk / loss recovery, 24 safety, 25 daily blocking windows,
@@ -772,6 +801,9 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
    SMC_calendar.csv -> test the REAL news list (CPI, FOMC ...) on 2021-2026. With group 29 releases only
    (1m, user settings): none -18,514 / windows -18,844 / +pre 1 h -18,708 / 2 h -18,302 / 4 h -18,070,
    all -0.13R per trade (tools/ea/preeffect.py) -> news blocking does not change the edge.
+0a00. **v15.2 delivered (see Versions)**: the user compiles both (TradingView, MetaEditor F7). TradingView estimate ~99,781 of
+   100,256 (v15.1 ~99,459 compiled): if CE10117, make room in the table texts (f_stTab1..4) or drop the EMA filters only with the
+   user's OK. Kill zones / C5 / C6 not profit-tested here (the user said no test).
 0a0. **v15.1 delivered (see Versions)**: the user compiles the 3 files (TradingView x2, MetaEditor F7) and reports errors. The
    complete TradingView file is CLOSE to the token limit (estimate ~99,450 of 100,256; v15.0 at ~98,500 passed): if CE10117, the
    no RSI / EMA file still fits (~97,690) and the next room is the table texts (f_stTab1..4). Zone / MSS / pause modes were NOT

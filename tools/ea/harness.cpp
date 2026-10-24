@@ -181,6 +181,9 @@ int main(int argc, char **argv)
 #ifdef CORE_V15
    if (cfg.count("znLog")) g_znLog = fopen(cfg["znLog"].c_str(), "w");   // v15.0 test hook (see extract.py)
 #endif
+#ifdef CORE_V152
+   if (cfg.count("kzLog")) g_kzLog = fopen(cfg["kzLog"].c_str(), "w");   // v15.2 test hook (see extract.py)
+#endif
    // settings
    S.altMode = cb("altMode", false); S.pbBodyOn = cb("pbBodyOn", false); S.pbBodyRef = cb("pbBodyRef", false); S.pbSwp2 = cb("pbSwp2", false);
    S.on = true; S.r1 = cb("r1", true); S.r2 = cb("r2", true); S.sig = (int)cl("sig", 0);
@@ -263,6 +266,12 @@ int main(int argc, char **argv)
    S.pxOff = cb("pxOff", false); S.fl1m = cb("fl1m", false); S.znLast = cb("znLast", false); S.znSw = cb("znSw", false); S.znOb2 = cb("znOb2", false);
    S.mssOn = cb("mssOn", false); S.mssN = (int)cl("mssN", 2); S.mssCf = cb("mssCf", false); S.mssSt = (int)cl("mssSt", 0);
    S.ldN2 = (int)cl("ldN2", 0); S.ldSkip = (int)cl("ldSkip", 1); S.wk247 = cb("wk247", false);
+#ifdef CORE_V152
+   // v15.2 (defaults = as v15.1): the C5 / C6 + RSI sets (section 4), the kill zones (section 9)
+   S.c5 = cb("c5", false); S.c6 = cb("c6", false);
+   S.kzOn = cb("kzOn", false); S.kzAs = cb("kzAs", false); S.kzLo = cb("kzLo", true); S.kzNy = cb("kzNy", true); S.kzLc = cb("kzLc", false);
+   S.kzEnd = cb("kzEnd", false);
+#endif
 #endif
 #endif
 #ifdef CORE_V131
@@ -397,6 +406,9 @@ int main(int argc, char **argv)
 #endif
 #ifdef CORE_V15
    if (g_znLog) fclose(g_znLog);
+#endif
+#ifdef CORE_V152
+   if (g_kzLog) fclose(g_kzLog);
 #endif
    FILE *of = argc > 3 ? fopen(argv[3], "w") : stdout;
    fprintf(of, "side,dir,ebar,ep,q,xbar,xp,why,pnl,pbar,prisk,sl0\n");

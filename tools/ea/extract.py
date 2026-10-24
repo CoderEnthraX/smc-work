@@ -74,4 +74,9 @@ if 'lzMin' in core:
     assert core.count(h) == 1
     core = core.replace(h, h + '      if (g_xsLog) fprintf(g_xsLog, "%d,%lld,%d,%d,%.10f,%.10f\\n", EN.bi, (long long)g_t, k, d, piv, opl);\n')
     core = core.replace('#define CORE_V14 1\n', '#define CORE_V14 1\nstatic FILE *g_xsLog = nullptr;\n', 1)
+if 'kzEnd' in core:
+    # v15.2: kill zones + the C5 / C6 + RSI sets. Test hook (harness copy only, key kzLog): every bar's kill zone flag (v152tests.py)
+    core = '#define CORE_V152 1\nstatic FILE *g_kzLog = nullptr;\n' + core
+    hook('            (S.kzNy && Ovl(nyM, S.bMin, 420, 600)) || (S.kzLc && Ovl(nyM, S.bMin, 600, 720));\n',
+         '   if (g_kzLog) fprintf(g_kzLog, "%d,%lld,%d\\n", EN.bi, (long long)t, (int)g_kzIn);\n')
 open(sys.argv[2], 'w').write(core)

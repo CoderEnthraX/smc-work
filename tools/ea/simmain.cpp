@@ -68,6 +68,11 @@ int main(int argc, char **argv)
    InMssOn = cb("mssOn", false); InMssN = (int)cl("mssN", 2); InMssCf = cb("mssCf", false); InMssSt = (EMssSt)cl("mssSt", 0);
    InLdN2 = (int)cl("ldN2", 0); InLdSkip = (int)cl("ldSkip", 1); InWk247 = cb("wk247", false);
    InZnAll = cb("znAll", false);
+#ifdef EA_V152
+   InC5 = cb("c5", false); InC6 = cb("c6", false);   // v15.2
+   InKzOn = cb("kzOn", false); InKzAs = cb("kzAs", false); InKzLo = cb("kzLo", true); InKzNy = cb("kzNy", true); InKzLc = cb("kzLc", false);
+   InKzEnd = cb("kzEnd", false);
+#endif
 #endif
 #endif
 #ifdef EA_V14
