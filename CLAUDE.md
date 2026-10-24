@@ -480,6 +480,11 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   colour incl. darker last zone, 'x N'), 3 settings; Pine f_tfPack = core on 2,037,534 1m bars + 2 x 135,898 15m bars; the
   Pine MSS confirmation block = core on 6,370 setups (2,542 confirmed + stop, 2,427 failed; CF=1 pinezone151.py).
   Pine f_ldAlt = the EA's AltHalt on 96,000 cases (pinepause151.py, IST + New York). Parser PARSED OK (both files).
+  AFTER DELIVERY (user screenshots, both TV files): CE10235 in f_znKill (if branch ended with array.remove = a Zn, else with
+  an int; Pine needs one type when an if / else is a function's last statement) -> f_znKill and f_znStep end with an explicit
+  'true' (z.vs := 0 in both branches); warning 'barstate.islast' -> show-all zones drawn on bar_index == last_bar_index (do not
+  turn on calc_on_every_tick). pine151.py has both steps; commits 9b325c9 / b9f68d4 / b4f5a8d. The parser cannot see CE10235.
+  EA unchanged.
 
 ## How the v11.1 code works (key points)
 - 118 inputs (v11.2: 122, + group 38 stop buffer unit). Groups: 20 strategy, 21 risk / loss recovery, 24 safety, 25 daily blocking windows,
@@ -740,6 +745,17 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   split 1.5 +1,627 (3.8% empty); split 1.5 + floor +1,583 (0%, worst5% -863). Longest losing run in a year (shuffled): yours 3R
   median 11, P(>=12) 48%, P(>=18) 5%; C6+RSI 1.5R median 5, P(>=10) 2.6%, P(>=12) 0.7% (real 2024 had 11). Told the user: no money
   rule changes the average; levers = better entries (shorter streaks), floor (hard limit), split = target; nothing to build.
+- **Target / mode grid (Oct 2026, v15.1 core; page https://claude.ai/artifact/CdhPe3x27wxA2gxwk1MNJw; scratchpad rr/: grid.py,
+  g/res.jsonl, ci.py, data.json, page.html)**: 1,056 runs = 1m / 15m x 6 'Take trades on' modes (CHOCH, BOS, both, + the 3 HTF
+  zone modes) x R1 / R2 / R1+R2 / R3 x targets 1-4R x variants (yours, HTF filter (not for zone modes), min stop 0.5%, C5, C6+RSI,
+  no time rules); TV commission, recovery off, max open 0, risk 50 (1m) / 1,000 (15m). Win = trade closed in profit after costs.
+  1m yours (R1+R2) every mode loses: win 40-44% at 1R, 30-35% 2R, 26-31% 3R, 24-31% 4R; -0.08..-0.18R. Best 1m (>= 100 trades,
+  both halves +): CHOCH+BOS zone R2 C6+RSI 214 tr 53.3% / +0.106 (1R) .. 45.8% / +0.144 (4R); CHOCH zone R2 C6+RSI 54.1% / +0.130
+  (1R); CHOCH R2 C6+RSI 53.2% / +0.092 (1R); BOS modes only with min 0.5% (+0.02..+0.06). Zone modes: R2 = R1+R2 (always with
+  the HTF). 15m yours ~0 (-0.05..+0.04; 02:00 / weekend closes end most trades, target hardly matters); best CHOCH R2 min 0.5%
+  53.5% / +0.052 (1R) .. +0.083 (4R), 184 tr; the 15m zone / BOS modes nothing positive in both halves. ALL top picks' 95% ranges
+  include 0 (e.g. CHOCH+BOS zone R2 4R C6+RSI -0.020..+0.308, years -0.13 / +0.36 / +0.24 / +0.37 / +0.43 / 2026 -0.37);
+  'no time rules' 15m picks big R but 22-27% win, few trades, swap not modelled, one half negative.
 
 ## Open items / next steps
 00. **Group 41**: ask the user to attach the EA once with "save the calendar to a file" ON and send
@@ -749,7 +765,8 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
 0a0. **v15.1 delivered (see Versions)**: the user compiles the 3 files (TradingView x2, MetaEditor F7) and reports errors. The
    complete TradingView file is CLOSE to the token limit (estimate ~99,450 of 100,256; v15.0 at ~98,500 passed): if CE10117, the
    no RSI / EMA file still fits (~97,690) and the next room is the table texts (f_stTab1..4). Zone / MSS / pause modes were NOT
-   profit-tested (the user did not ask). Then Strategy Tester + demo.
+   profit-tested (the user did not ask) - only the target / mode grid (see data). CE10235 + barstate.islast warning FIXED after
+   delivery (see Versions). Then Strategy Tester + demo.
 0a. **v15.0 delivered (see Versions)**: the user compiles the 3 files (TradingView complete + no RSI / EMA, MetaEditor F7) and
    reports errors. If TradingView says CE10117 again: my token model is only 2 points (fix2 104,405 / 34,058 outline tokens;
    v14.0 100,771 / 30,725) -> compiled ~= 100,771 + 1.09 x (tokens - 30,725); more room = the zone engine / table texts.
