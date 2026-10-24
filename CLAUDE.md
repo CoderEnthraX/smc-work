@@ -513,7 +513,7 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   zone flag worked out again in Python (zoneinfo, minute by minute) = core on 2,037,534 1m bars x 6 settings + 15m + 1h, every arm
   inside / skip outside, end ON: every cancel + close on the first bar outside, no trade open across a bar outside; whole EA = core
   6/6 to the cent; restarts 484 = none 2/2; Pine (pine2py) kill zone flag = core 1.9 M bars, C5 / C6 values = Derive 3,000 cases,
-  f_xc text = v15.1 text 5,000 states, 2 planted bugs caught; declared-before-use OK; no name clashes; parser PENDING (running).
+  f_xc text = v15.1 text 5,000 states, 2 planted bugs caught; declared-before-use OK; no name clashes; parser PARSED OK.
 
 ## How the v11.1 code works (key points)
 - 118 inputs (v11.2: 122, + group 38 stop buffer unit). Groups: 20 strategy, 21 risk / loss recovery, 24 safety, 25 daily blocking windows,
