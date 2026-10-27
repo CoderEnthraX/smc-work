@@ -808,6 +808,13 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   15m base 126 -0.054, A -0.067, B 68 32% +0.235 (halves +0.14 / +0.33; L 81 +0.279; ~11 trades a year; range -0.21..+0.68);
   1h / 4h 8-28 trades (meaningless). CHOCH + BOS: 1m -0.14, 5m -0.02, 15m +0.01..+0.04, 1h -0.15, 4h +0.08 (46). Told the user:
   no help on 1m / 5m; 15m leg B the one interesting result, not proven (few trades, best of 20 versions).
+  TWEAK (user, same day): no waiting / zone touch - EVERY CHOCH is checked against the leg it breaks, also the legs made by early
+  CHOCHs (a CHOCH right after an early one breaks the leg start = always valid; after early CHOCH + BOS the new leg's 50% applies);
+  a BOS the same way as the last early CHOCH not traded (CHOCH + BOS mode). rule.run2 / study2.py / res2.json. CHOCH only: 1m base
+  -0.121, A 2,615 -0.133, B 2,121 35% -0.102 (all lose); 5m A +0.004, B -0.053 (base +0.103); 15m A 122 -0.056, B 95 30% +0.168
+  (halves +0.10 / +0.25; years +0.28 / -0.01 / +0.04 / -0.34 / +1.34 / +0.16; range -0.20..+0.53); 1h B 22 -0.175; 4h B 9 +0.160.
+  Zones vs the 50% line alone: the same (zones nearly always exist). CHOCH + BOS: 1m -0.13, 5m -0.02..-0.07, 15m -0.14..-0.02,
+  1h -0.24..-0.16, 4h +0.02..+0.16 (37-49 trades).
 
 ## Open items / next steps
 00. **Group 41**: ask the user to attach the EA once with "save the calendar to a file" ON and send
