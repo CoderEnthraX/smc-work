@@ -795,6 +795,19 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   only 2 of 219 runs (>= 100 trades) + in both halves (CHOCH+BOS R3 3R min 0.5% 500 tr 28% +0.10, range -0.06..+0.26; CHOCH R1
   1R HTF filter +0.01); gains = 2024-26 (gold's rise), 2021-23 lost; with the time rules 15m CHOCH R2 min 0.5% was + in both
   halves at all 4 targets (+0.05..+0.08) - without them 2021-23 negative at every target.
+- **'Early CHOCH' rule study (Oct 2026; user's idea, test only, NOT built; scratchpad ec/: mkcore.py = core copy + structure log
+  ecLog + signal gate ecFlags (no flags = repo harness byte-identical), rule.py, study.py, inspect15.py, an.py, h4.bin built on the
+  broker clock, weekly HTF from Sunday)**: the chart's OWN structure; an opposite CHOCH before price reached 50% of the leg = early
+  -> if the leg has OB / FVG zones (the 2 timeframes above the chart: 1m 5m+15m, 5m 15m+1h, 15m 1h+4h, 1h 4h+1D, 4h 1D+1W; zone
+  rules as the zone modes: at / below 50%, not below the leg start, made after the leg start, touch line) it is not a signal;
+  wait; a zone touch then the CHOCH back = signal; CHOCH back without a touch = no signal; close beyond the leg start = wait over.
+  NOTE: in the engine a CHOCH = close beyond the latest floor = the START of the latest leg -> 'early' only on a bigger leg:
+  leg A = from the floor before the last BOS, leg B = from the trend's start (its CHOCH); Z = zones, L = 50% line only.
+  Your entries, 3R; 1m with your time rules + news, 5m..4h no time rules / news + swap est.; 2021 - Oct 2026. CHOCH only, trades /
+  win / R: 1m base 2,903 33% -0.121, A -0.143, B 1,958 35% -0.110 (all lose); 5m base 308 +0.103, A -0.025, B 0.000 (worse);
+  15m base 126 -0.054, A -0.067, B 68 32% +0.235 (halves +0.14 / +0.33; L 81 +0.279; ~11 trades a year; range -0.21..+0.68);
+  1h / 4h 8-28 trades (meaningless). CHOCH + BOS: 1m -0.14, 5m -0.02, 15m +0.01..+0.04, 1h -0.15, 4h +0.08 (46). Told the user:
+  no help on 1m / 5m; 15m leg B the one interesting result, not proven (few trades, best of 20 versions).
 
 ## Open items / next steps
 00. **Group 41**: ask the user to attach the EA once with "save the calendar to a file" ON and send
