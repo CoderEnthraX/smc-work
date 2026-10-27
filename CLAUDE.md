@@ -812,7 +812,9 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   CHOCHs (a CHOCH right after an early one breaks the leg start = always valid; after early CHOCH + BOS the new leg's 50% applies);
   a BOS the same way as the last early CHOCH not traded (CHOCH + BOS mode). rule.run2 / study2.py / res2.json. CHOCH only: 1m base
   -0.121, A 2,615 -0.133, B 2,121 35% -0.102 (all lose); 5m A +0.004, B -0.053 (base +0.103); 15m A 122 -0.056, B 95 30% +0.168
-  (halves +0.10 / +0.25; years +0.28 / -0.01 / +0.04 / -0.34 / +1.34 / +0.16; range -0.20..+0.53); 1h B 22 -0.175; 4h B 9 +0.160.
+  (halves +0.10 / +0.25; years +0.28 / -0.01 / +0.04 / -0.34 / +1.34 / +0.16; range -0.20..+0.53; trades a year 18 / 23 / 11 / 23 /
+  13 / 7: 2025's 13 trades = +17R, the other 82 together about -1R; ~16R after swap = the first version's 68 trades, only 30
+  trades shared); 1h B 22 -0.175; 4h B 9 +0.160. Early CHOCHs: leg A ~19% of CHOCHs, leg B ~41-45%.
   Zones vs the 50% line alone: the same (zones nearly always exist). CHOCH + BOS: 1m -0.13, 5m -0.02..-0.07, 15m -0.14..-0.02,
   1h -0.24..-0.16, 4h +0.02..+0.16 (37-49 trades).
 
