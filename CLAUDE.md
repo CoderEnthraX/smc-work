@@ -819,6 +819,11 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   1h -0.24..-0.16, 4h +0.02..+0.16 (37-49 trades).
 
 ## Open items / next steps
+000. **Early CHOCH rule (28 Oct 2026)**: the user says my reading is still partly wrong and will send screenshots of the
+   exact rules later. Wait for them, restate the rule with numbers, then re-test (the study scripts were in the session
+   scratchpad ec/ - gone in a new session; rebuild from the 'Early CHOCH' notes above). Likely gaps: which leg the 50% is
+   measured on, and which structure the CHOCH comes from (the main CHOCH the strategy trades or the smaller internal one -
+   in the engine a main CHOCH always closes beyond the start of the latest leg, so it is never 'before 50%' of that leg).
 00. **Group 41**: ask the user to attach the EA once with "save the calendar to a file" ON and send
    SMC_calendar.csv -> test the REAL news list (CPI, FOMC ...) on 2021-2026. With group 29 releases only
    (1m, user settings): none -18,514 / windows -18,844 / +pre 1 h -18,708 / 2 h -18,302 / 4 h -18,070,
