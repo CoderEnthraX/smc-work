@@ -818,6 +818,33 @@ Recommended floor: "On - only cap the risk", 2,000 / 50% / 2.5%.
   Zones vs the 50% line alone: the same (zones nearly always exist). CHOCH + BOS: 1m -0.13, 5m -0.02..-0.07, 15m -0.14..-0.02,
   1h -0.24..-0.16, 4h +0.02..+0.16 (37-49 trades).
 
+- **'Is there a strategy with 50% wins at 1:2 on 5m / 15m?' (Nov 2026; user asked; test only, nothing built; scratchpad rr2/ + smc/
+  - gone in a new session: eng.py = numba engine, signal at a bar's close, entry at the next open, every exit resolved on the 1m
+  bars (stop first in a tie), real costs = the bar's spread + 0.07 commission + swap est.; strats.py, grid.py, ml.py, smc.py)**.
+  Win = target hit before the stop, no time exits, 2021 - Oct 2026. Random entries: 33.3% before costs (theory 1 / 3), 28-33%
+  after costs (5m ATR x1.5 30%, 15m ATR x3 33%); random longs by year 27-41%, shorts 28-36% (the trend years 2024-25 lift longs).
+  29 known families (EMA cross / pullback, MACD, RSI, RSI(2), Bollinger, squeeze, Donchian, Supertrend, opening range London /
+  NY, Asian range breakout / sweep, previous day sweep / breakout, engulfing, pin bar, inside bar, FVG + ICT silver bullet, break
+  and retest, VWAP, stochastic, ADX, Heikin-Ashi, three candles, big candle, Ichimoku, swing BOS / CHOCH-like, liquidity sweep,
+  order block) x trend filter (none, EMA 200, 1h EMA 50, 4h EMA 50) x hours (all, 03-12 NY, 08-12 NY) x stop (ATR x1 / 1.5 / 2 /
+  3, own) = 6,096 runs, 5,774 with >= 300 trades: plain versions 25-36% (median 31%); best 5m 38.5% (swing break with the last
+  break (5 each side) + 4h EMA 50 + NY morning, stop behind the swing, 532 tr, +0.13R, halves 37.8 / 39.2), best 15m 39.2% (MACD
+  zero cross + 4h EMA 50 + NY morning, ATR x2, 493 tr, +0.15R, 38.3 / 40.1); NONE >= 40%, none 45 / 50%. Top 25 picked on 2021-23
+  (5m 37.8%, 15m 39.8%) -> 2024-26 35.5% / 35.3%. Common factor of every top run = WITH the 4h EMA 50 in the New York morning
+  (08-12 NY) + a wide stop: random entries with only that filter 34-36% (against the trend 30%); over all setups it lifts the
+  mean win 30.0 -> 32.9% (5m), 31.7 -> 34.3% (15m) = about break-even, not an edge by itself. Runs with 60-299 trades showed up
+  to 51.5% (66 trades) = small-sample luck; one year alone: 2025 had 10 of ~2,900 15m runs >= 50%, none repeated it.
+  The user's SMC (v15.2 core; 5m HTF 1h, 15m HTF 4h; no time rules; comm 0.13; swap est.; rr 2; 504 runs): 15m plain 31-40%
+  (CHOCH R1+R2 39.5%, 205 tr, +0.16R: 2021-23 30.2%, 2024-26 49.5%, years 37 / 22 / 35 / 40 / 61 / 50); 5m plain 28-35% (CHOCH
+  R1+R2 35.4%, 509 tr; zone modes 28-30%); with the EMA HIGHER filter 4h / price vs EMA / 50 + kill zones New York + London close
+  (07-12 NY): 5m CHOCH R1 38.1% (218 tr, +0.12R, every year >= 34%), + min stop 0.5% 40.7% (150 tr, +0.19R, halves 45 / 37);
+  15m CHOCH+BOS R3 36.2% (304 tr). None >= 45%.
+  Ceiling check (LightGBM on ~80 standard readings per bar, label = the 1:2 result, walk-forward by year + leave-one-year-out):
+  AUC 0.49-0.52, as a strategy 30-36% (median 33%) = chance. THE FIRST RUN HAD A LOOK-AHEAD SLIP (the Asian range's final width
+  was visible inside the Asian session) and showed 54% (5m, 278 trades); fixed -> 35%. Told the user (that is how 'high accuracy'
+  backtests are made). Told the user: no mechanical 50% at 1:2; realistic 35-39%; 50% at 1:2 = +0.5R a trade; break-even 33.3%
+  (about 35% after costs).
+
 ## Open items / next steps
 000. **Early CHOCH rule (28 Oct 2026)**: the user says my reading is still partly wrong and will send screenshots of the
    exact rules later. Wait for them, restate the rule with numbers, then re-test (the study scripts were in the session
